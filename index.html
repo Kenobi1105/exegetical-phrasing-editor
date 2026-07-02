@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="app-version" content="202607020215"/>
+<title>Exegetical Phrasing Editor</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="app.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+</head>
+<body>
+
+<!-- ══ LANG TOGGLE for Screens 1+2 (hidden in Screen 3, toolbar has its own) ══ -->
+<div id="lang-toggle-s12">
+  <button class="lang-pill" onclick="toggleLang()" data-i18n-title="lang.toggle.title" title="Switch to Simplified Chinese (Ctrl+Space)">
+    <span class="lang-toggle-s12-label">EN</span>
+  </button>
+</div>
+
+<!-- ══ SCREEN 1: LANGUAGE ══ -->
+<div class="screen" id="s1">
+  <div class="mcard" style="width:720px;padding:40px 44px">
+    <div class="book-icon">
+      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 6C2 6 8 4 16 6C24 4 30 6 30 6V26C30 26 24 24 16 26C8 24 2 26 2 26V6Z"/>
+        <line x1="16" y1="6" x2="16" y2="26"/>
+        <path d="M6 10C8 9.5 11 9.5 14 10.5"/><path d="M6 14C8 13.5 11 13.5 14 14.5"/>
+        <path d="M6 18C8 17.5 11 17.5 14 18.5"/><path d="M18 10.5C21 9.5 24 9.5 26 10"/>
+        <path d="M18 14.5C21 13.5 24 13.5 26 14"/><path d="M18 18.5C21 17.5 24 17.5 26 18"/>
+      </svg>
+    </div>
+    <h1 data-i18n="s1.title">Exegetical Phrasing Editor</h1>
+    <p data-i18n="s1.subtitle">Choose the original language for this session. This sets text direction and canvas layout.</p>
+    
+    <div style="display:flex;gap:24px;margin-top:8px;align-items:flex-start">
+      <!-- Left: language + actions -->
+      <div style="flex:1;min-width:0">
+        <div class="sblist">
+          <button class="sbtn hb" onclick="chooseLang('hebrew')">
+            <div class="sbi">א</div>
+            <div class="sbt"><div class="st" style="font-family:var(--serif)" data-i18n="s1.hebrew.label">עברית Hebrew</div><div class="ss" data-i18n="s1.hebrew.sub">RTL · Original + Translation columns</div></div>
+          </button>
+          <button class="sbtn gk" onclick="chooseLang('greek')">
+            <div class="sbi">α</div>
+            <div class="sbt"><div class="st" data-i18n="s1.greek.label">Greek</div><div class="ss" data-i18n="s1.greek.sub">LTR · Original + Translation columns</div></div>
+          </button>
+          <button class="sbtn cu" onclick="chooseLang('custom','')">
+            <div class="sbi">✎</div>
+            <div class="sbt"><div class="st" data-i18n="s1.other.label">Other Language</div><div class="ss" data-i18n="s1.other.sub">Single column · Paste any language or choose from our available versions</div></div>
+          </button>
+
+        </div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button title="Load JSON (Ctrl+O)" onclick="document.getElementById('s1-load-file').click()" style="display:flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:99px;background:transparent;color:var(--sig);border:1.5px solid rgba(73,53,72,.25);font-family:var(--ui);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s" onmouseover="this.style.background='var(--sig)';this.style.color='var(--label)'" onmouseout="this.style.background='transparent';this.style.color='var(--sig)'">
+            <span data-i18n="s1.load-json">Load JSON</span> <span style="opacity:.55;font-weight:400;font-size:10px" data-i18n="s1.load-json.hint">(Ctrl+O)</span>
+          </button>
+          <input type="file" id="s1-load-file" accept=".json" style="display:none" onchange="loadFromScreen1(event)"/>
+        </div>
+      </div>
+      <!-- Right: recent projects -->
+      <div style="width:240px;flex-shrink:0">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+          <span style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)" data-i18n="s1.recent">Recent Projects</span>
+          <button onclick="openProjects()" id="btn-projects-s1" data-i18n-title="toolbar.projects" title="My Projects (Alt+1)" style="width:28px;height:28px;border-radius:6px;background:rgba(73,53,72,.08);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--sig);transition:background .13s;flex-shrink:0" onmouseover="this.style.background='var(--sig)';this.style.color='var(--label)'" onmouseout="this.style.background='rgba(73,53,72,.08)';this.style.color='var(--sig)'">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+          </button>
+        </div>
+        <div id="s1-recent"><div style="font-size:11px;color:var(--muted);font-family:var(--ui);padding:12px 0" data-i18n="s1.no-projects">No saved projects yet.</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ SCREEN 2: PASTE / BIBLE PICKER ══ -->
+<div class="screen hidden" id="s2">
+  <div class="mcard" style="padding:40px 44px;width:680px">
+    <h2 id="s2-title">Add your passage</h2>
+    <p class="s2-sub">Choose how to populate the editor with your passage.</p>
+    <div class="s2-toggle">
+      <button class="s2-tab-btn active" id="s2-tab-paste" onclick="s2ShowTab('paste')" data-i18n="s2.paste.tab">Paste text</button>
+      <button class="s2-tab-btn" id="s2-tab-bible" onclick="s2ShowTab('bible')" data-i18n="s2.bible.tab">Choose from Bible</button>
+    </div>
+    <!-- Paste panel -->
+    <div id="s2-paste-panel">
+      <div id="s2-version-row">
+        <span id="s2-version-label" data-i18n="s2.version.label">Translation / Version</span>
+        <input type="text" id="s2-version-input" data-i18n-ph="s2.version.ph" placeholder="e.g. NIV, ESV, NA28 — leave blank for default" oninput="sessionVersionLabel=this.value.trim()"/>
+      </div>
+      <div class="s2-hint" data-i18n-html="s2.paste.tip"><b>Tip:</b> Lines starting with a verse number are detected automatically.</div>
+      <div id="paste-ta" contenteditable="true" spellcheck="false"></div>
+    </div>
+    <!-- Bible picker panel -->
+    <div id="s2-bible-panel">
+      <div class="s2b-row" id="s2b-corpus-row">
+        <span class="s2b-label" data-i18n="s2.corpus.label">Corpus</span>
+        <select class="s2b-sel" id="s2b-corpus" onchange="s2UpdateBooks();s2UpdateVersions()"></select>
+      </div>
+      <div class="s2b-row">
+        <span class="s2b-label" data-i18n="s2.book.label">Book</span>
+        <select class="s2b-sel" id="s2b-book" onchange="s2UpdateChapters()"></select>
+      </div>
+      <div class="s2b-row">
+        <span class="s2b-label" data-i18n="s2.chapter.label">Chapter</span>
+        <select class="s2b-sel" id="s2b-chapter" onchange="s2UpdateVerses()"></select>
+      </div>
+      <div class="s2b-row">
+        <span class="s2b-label" data-i18n="s2.verses.label">Verses</span>
+        <select class="s2b-sel" id="s2b-vs" style="width:80px;flex:none"></select>
+        <span style="font-size:11px;color:var(--muted)" data-i18n="s2.verses.to">to</span>
+        <select class="s2b-sel" id="s2b-ve" style="width:80px;flex:none"></select>
+      </div>
+      <div class="s2b-row">
+        <span class="s2b-label" data-i18n="s2.version2.label">Version</span>
+        <select class="s2b-sel" id="s2b-version" onchange="s2PreviewPassage()"></select>
+      </div>
+      <div id="s2-bible-preview"></div>
+    </div>
+    <div class="s2-foot">
+      <button class="s2-confirm" onclick="s2Confirm()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <span data-i18n="s2.confirm">Confirm &amp; Open Editor</span>
+      </button>
+      <button class="s2-back" onclick="goBack()" data-i18n="s2.back">← Back</button>
+      <span class="s2-skip" onclick="skipPaste()" data-i18n="s2.skip">Skip — empty editor</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ HELP MODAL ══ -->
+<div class="screen hidden" id="help-modal">
+  <div id="help-card" class="mcard" style="padding:0;width:860px;max-width:96vw;text-align:left;height:86vh;display:flex;flex-direction:column;overflow:hidden">
+
+    <!-- Header: title + tabs + close -->
+    <div id="help-hdr">
+      <div id="help-tabs">
+        <button class="help-tab active" id="htab-tutorial" onclick="helpSwitchTab('tutorial')" data-i18n="help.tab.tutorial">Tutorial</button>
+        <button class="help-tab" id="htab-shortcuts" onclick="helpSwitchTab('shortcuts')" data-i18n="help.tab.shortcuts">Keyboard Shortcuts</button>
+      </div>
+      <button class="help-close-btn" onclick="closeHelp()">×</button>
+    </div>
+
+    <!-- ══ TAB: TUTORIAL ══ -->
+    <div id="help-pane-tutorial" class="help-pane" style="display:flex;flex:1;overflow:hidden">
+      <!-- Left outline -->
+      <nav id="tut-outline-wrap">
+        <div id="tut-outline"></div>
+      </nav>
+      <!-- Right content -->
+      <div id="tut-body">
+        <h1 id="tut-title"></h1>
+        <div id="tut-content"></div>
+      </div>
+    </div>
+
+    <!-- ══ TAB: SHORTCUTS ══ -->
+    <div id="help-pane-shortcuts" class="help-pane" style="display:none;flex:1;overflow-y:auto;padding:24px 40px 32px">
+      <p class="hm-sub" style="font-size:11px;color:var(--muted);margin-bottom:22px" data-i18n="help.hint">All shortcuts use Ctrl on Windows/Linux and ⌘ on Mac.</p>
+      <div class="hm-section">
+        <h3 data-i18n="help.editing">Text Editing</h3>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.bold">Bold</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">B</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.italic">Italic</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">I</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.superscript">Superscript</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">.</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.undo">Undo</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Z</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.redo">Redo</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Y</span></div></div>
+      </div>
+      <div class="hm-section">
+        <h3 data-i18n="help.indent">Indentation</h3>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.indent-in">Indent line</span><div class="hm-key"><span class="kbd">Tab</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.indent-out">Outdent line</span><div class="hm-key"><span class="kbd">Shift</span><span class="kbd">Tab</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.indent-bs">Outdent (also via)</span><div class="hm-key"><span class="kbd">Backspace</span> <span style="font-size:11px;color:var(--muted)" data-i18n="help.indent-bs.hint">at start of indented line</span></div></div>
+      </div>
+      <div class="hm-section">
+        <h3 data-i18n="help.rows">Row Operations</h3>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.split">Split row at caret</span><div class="hm-key"><span class="kbd">Enter</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.add-row">Add empty line below</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">+</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.split-pane">Toggle split pane in Bible Module (max 2)</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">\</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.pin-bible">Pin/unpin Bible Module panel</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">\</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.prev-chapter">Previous chapter (Bible Module)</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">[</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.next-chapter">Next chapter (Bible Module)</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">]</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.merge">Merge line up</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">−</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.nav-up">Navigate row above</span><div class="hm-key"><span class="kbd">↑</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.nav-down">Navigate row below</span><div class="hm-key"><span class="kbd">↓</span></div></div>
+      </div>
+      <div class="hm-section">
+        <h3 data-i18n="help.files">File Operations</h3>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.save">Save to app</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">S</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.projects">Open Projects panel</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">1</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.bible">Bible Module</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">2</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.export">Export as PDF or JSON</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">E</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.load">Load JSON from disk</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">O</span></div></div>
+      </div>
+      <div class="hm-section">
+        <h3 data-i18n="help.interface">Interface</h3>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.help">Open this help panel</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">H</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.colors">Color settings</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">,</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.restart">Restart session</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">R</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.clear">Clear all content</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">L</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.view-toggle">Toggle Phrasing / Diagram View</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">T</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.conn-delete">Delete a selected connector</span><div class="hm-key"><span class="kbd">Backspace</span><span class="kbd">Delete</span> <span style="font-size:11px;color:var(--muted)" data-i18n="help.conn-delete.hint">in Diagram View</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.close">Close any open panel or popup</span><div class="hm-key"><span class="kbd">Esc</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.lang-toggle">Switch UI language (EN ↔ 简体)</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Space</span></div></div>
+      </div>
+    </div>
+
+  </div><!-- end mcard -->
+</div>
+
+<!-- ══ SETTINGS MODAL ══ -->
+<div class="screen hidden" id="set-modal">
+  <div class="mcard" style="padding:40px 44px;width:500px;text-align:left">
+    <h2 data-i18n="settings.title">Settings</h2>
+    <p class="sm-sub" data-i18n="settings.subtitle">Customize the editor palette.</p>
+    <div class="sg">
+      <div class="sr"><label data-i18n="settings.bg">Background</label><div class="sd" data-i18n="settings.bg.desc">Page and canvas background.</div><input type="color" id="sc-bg" value="#F7F3E9"/></div>
+      <div class="sr"><label data-i18n="settings.accent">Accent</label><div class="sd" data-i18n="settings.accent.desc">Highlights and active indicators.</div><input type="color" id="sc-accent" value="#F0D08F"/></div>
+      <div class="sr"><label data-i18n="settings.ink">Ink</label><div class="sd" data-i18n="settings.ink.desc">Primary body text color.</div><input type="color" id="sc-ink" value="#1F1E1E"/></div>
+      <div class="sr"><label data-i18n="settings.sig">Signature</label><div class="sd" data-i18n="settings.sig.desc">Toolbar, comment headers, buttons.</div><input type="color" id="sc-sig" value="#493548"/></div>
+      <div class="sr"><label data-i18n="settings.label">Label</label><div class="sd" data-i18n="settings.label.desc">Text on Signature-colored surfaces.</div><input type="color" id="sc-label" value="#F7F3E9"/></div>
+      <div class="sr"><label data-i18n="settings.active">Active State</label><div class="sd" data-i18n="settings.active.desc">Line IDs and interactive emphasis.</div><input type="color" id="sc-active" value="#C8A84B"/></div>
+    </div>
+    <div class="sf">
+      <button class="smb rst" onclick="resetColors()" data-i18n="settings.reset">Reset to default</button>
+      <button class="smb rst" onclick="bClearCache()" style="background:rgba(180,40,40,.1);color:#b42828;border-color:rgba(180,40,40,.2)" data-i18n="settings.clear-cache">Clear Bible Cache</button>
+      <button class="smb can" onclick="closeSettings()" data-i18n="settings.cancel">Cancel</button>
+      <button class="smb apl" onclick="applySettings()" data-i18n="settings.apply">Apply</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ APP (SCREEN 3) ══ -->
+<div id="app">
+  <!-- Left divider for Projects panel when locked -->
+  <div id="proj-divider" style="display:none"></div>
+
+  <div id="editor-wrap">
+    <div id="toolbar">
+      <div class="tg">
+        <button class="tbtn" data-i18n-title="toolbar.undo" title="Undo (Ctrl+Z)" id="btn-undo" onclick="undo()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14H4V9"/><path d="M4 14a9 9 0 1 1 1.5 5.5"/></svg>
+        </button>
+        <button class="tbtn" data-i18n-title="toolbar.redo" title="Redo (Ctrl+Y)" id="btn-redo" onclick="redo()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14h5V9"/><path d="M20 14a9 9 0 1 0-1.5 5.5"/></svg>
+        </button>
+      </div>
+      <div class="tsep"></div>
+      <div class="tg">
+        <button class="tbtn" id="tb-b"   data-i18n-title="toolbar.bold"   title="Bold (Ctrl+B)"    onclick="fmtCmd('bold')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5h5a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h6a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
+        <button class="tbtn" id="tb-i"   data-i18n-title="toolbar.italic" title="Italic (Ctrl+I)"  onclick="fmtCmd('italic')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="5" x2="11" y2="5"/><line x1="13" y1="19" x2="7" y2="19"/><line x1="14" y1="5" x2="10" y2="19"/></svg></button>
+        <button class="tbtn" id="tb-s"   data-i18n-title="toolbar.strike" title="Strikethrough"    onclick="fmtCmd('strikeThrough')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6a4 4 0 0 1 4-2c2.4 0 4 1.5 4 3.5 0 1-.4 2-1.2 2.5"/><path d="M7 17c0 2 1.8 3.5 4.5 3.5S17 19 17 17c0-1.2-.6-2.2-1.5-2.8"/><line x1="4" y1="12" x2="20" y2="12" stroke-width="2.2"/></svg></button>
+        <button class="tbtn" id="tb-sup" data-i18n-title="toolbar.sup"    title="Superscript (Ctrl+.)" onclick="fmtCmd('superscript')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19 11 12M11 19 5 12"/><path d="M17.5 11h-3c0-2 3-2.5 3-4a1.5 1.5 0 0 0-3 0"/></svg></button>
+        <div class="hlw">
+          <button class="tbtn" id="tb-hl" data-i18n-title="toolbar.highlight" title="Highlight" onclick="applyHl()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15.5 3.5 20.5 8.5 10 19H5v-5z"/><path d="M15.5 3.5 10 9"/><line x1="3" y1="22" x2="21" y2="22" stroke-width="1.5" opacity=".4"/></svg>
+            <div class="hl-bar" id="hl-bar" style="background:#F0D08F"></div>
+          </button>
+          <button class="tbtn" style="width:16px;font-size:9px;color:rgba(247,243,233,.5)" onclick="openColorPalette('highlight', this, hlColor)">▾</button>
+        </div>
+      </div>
+      <div class="tsep"></div>
+      <div class="tg">
+        <select class="tsel" id="tb-sz" onchange="applySize(this.value)" data-i18n-title="toolbar.size" title="Font size">
+          <option value="" disabled data-i18n="toolbar.size">Size</option>
+          <option>10</option><option>11</option><option>12</option><option>13</option>
+          <option selected>14</option><option>16</option><option>18</option><option>20</option>
+          <option>24</option><option>28</option><option>32</option>
+        </select>
+      </div>
+      <div class="tsep"></div>
+      <div class="tg">
+        <button class="tbtn cbtn2" data-i18n-title="toolbar.text-color" title="Text color"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19H5l7-14 7 14h-4"/><line x1="7.5" y1="13" x2="16.5" y2="13"/><rect x="4" y="20" width="16" height="2" rx="1" fill="currentColor" stroke="none"/></svg><input type="color" id="txt-c" value="#1F1E1E" onchange="fmtCmd('foreColor',this.value)"/></button>
+      </div>
+      <div class="tsep"></div>
+      <div class="tg">
+        <button class="tbtn" data-i18n-title="toolbar.indent"  title="Indent (Tab)"        onclick="doIndent(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><polyline points="8,9.5 12,12 8,14.5" fill="none"/></svg></button>
+        <button class="tbtn" data-i18n-title="toolbar.outdent" title="Outdent (Shift+Tab)"  onclick="doIndent(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><polyline points="16,9.5 12,12 16,14.5" fill="none"/></svg></button>
+      </div>
+      <div class="tsep"></div>
+      <div class="tg" id="view-toggle-grp">
+        <button class="vtbtn active" id="view-btn-phrasing" data-i18n-title="view.phrasing.title" title="Phrasing View (Alt+T)" onclick="setEditorView('phrasing')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/></svg>
+          <span data-i18n="view.phrasing">Phrasing</span>
+        </button>
+        <button class="vtbtn" id="view-btn-diagram" data-i18n-title="view.diagram.title" title="Diagram View (Alt+T)" onclick="setEditorView('diagram')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="5" rx="1"/><rect x="13" y="9" width="7" height="5" rx="1"/><rect x="6" y="15" width="7" height="5" rx="1"/></svg>
+          <span data-i18n="view.diagram">Diagram</span>
+        </button>
+      </div>
+      <div class="tsep" id="dzoom-sep" style="display:none"></div>
+      <div class="tg" id="dzoom-grp" style="display:none">
+        <button class="tbtn" data-i18n-title="diagram.zoom-out" title="Zoom out (Ctrl+-)" onclick="diagramZoomOut()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+        <span id="dzoom-pct" style="font-family:var(--ui);font-size:11px;color:var(--label);min-width:36px;text-align:center;user-select:none;cursor:pointer" onclick="setDiagramZoom(100)" data-i18n-title="diagram.zoom-reset" title="Reset zoom to 100%">100%</span>
+        <button class="tbtn" data-i18n-title="diagram.zoom-in" title="Zoom in (Ctrl++)" onclick="diagramZoomIn()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div class="tsep"></div>
+      <div class="tr-r">
+        <div class="sbadge"><div class="dot"></div><span id="sess-lbl">—</span></div>
+        <div class="tsep" style="margin:0 4px"></div>
+        <button class="ibtn" id="btn-projects" data-i18n-title="toolbar.projects" title="Projects (Alt+1)" onclick="openProjects()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </button>
+        <button class="ibtn" id="btn-bible" data-i18n-title="toolbar.bible" title="Bible Module (Alt+2)" onclick="openBible()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4a2 2 0 0 1 2-2h5a3 3 0 0 1 3 3v13a2.5 2.5 0 0 0-2.5-2.5H2z"/><path d="M22 4a2 2 0 0 0-2-2h-5a3 3 0 0 0-3 3v13a2.5 2.5 0 0 1 2.5-2.5H22z"/></svg>
+        </button>
+        <div class="tsep" style="margin:0 4px"></div>
+        <button class="ibtn" data-i18n-title="toolbar.restart" title="Restart session (Ctrl+Shift+R)" onclick="restartSess()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H3"/></svg></button>
+        <button class="ibtn" data-i18n-title="toolbar.help"    title="Keyboard shortcuts (Ctrl+H)" onclick="openHelp()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9.5a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2.5 2-2.5 3.5"/><circle cx="12" cy="17.5" r=".5" fill="currentColor"/></svg></button>
+        <button class="ibtn" data-i18n-title="toolbar.settings" title="Settings (Ctrl+,)" onclick="openSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2a1 1 0 0 1 1 1v1.07a7 7 0 0 1 2.83 1.17l.76-.76a1 1 0 0 1 1.41 0l1.41 1.41a1 1 0 0 1 0 1.41l-.76.76A7 7 0 0 1 19.93 11H21a1 1 0 0 1 0 2h-1.07a7 7 0 0 1-1.17 2.83l.76.76a1 1 0 0 1 0 1.41l-1.41 1.41a1 1 0 0 1-1.41 0l-.76-.76A7 7 0 0 1 13 19.93V21a1 1 0 0 1-2 0v-1.07a7 7 0 0 1-2.83-1.17l-.76.76a1 1 0 0 1-1.41 0L4.59 18.1a1 1 0 0 1 0-1.41l.76-.76A7 7 0 0 1 4.07 13H3a1 1 0 0 1 0-2h1.07A7 7 0 0 1 5.34 8.17l-.76-.76a1 1 0 0 1 0-1.41L5.99 4.59a1 1 0 0 1 1.41 0l.76.76A7 7 0 0 1 11 4.07V3a1 1 0 0 1 1-1z"/></svg></button>
+        <div class="tsep" style="margin:0 6px 0 4px"></div>
+        <button id="lang-toggle-btn" class="lang-pill" onclick="toggleLang()" data-i18n-title="lang.toggle.title" title="Switch to Simplified Chinese (Ctrl+Space)">
+          <span id="lang-toggle-label">EN</span>
+        </button>
+      </div>
+    </div>
+
+    <div id="refbar" style="padding:0 16px">
+      <div style="display:flex;flex-direction:column;gap:2px;flex:1">
+        <input type="text" id="refin" data-i18n-ph="refin.ph" placeholder="Verse reference — e.g. John 1:1–10" spellcheck="false" oninput="autoSave()" style="padding-left:0"/>
+        <div id="version-sub" style="font-family:var(--ui);font-size:12px;color:var(--muted);min-height:16px;cursor:text;padding:0" onclick="document.getElementById('version-sub-input').style.display='block';document.getElementById('version-sub-input').focus();this.style.display='none'" data-i18n="version.ph">Version (e.g., ESV, BHS, NA28)</div>
+        <input type="text" id="version-sub-input" data-i18n-ph="version.ph" placeholder="Version (e.g., ESV, BHS, NA28)" spellcheck="false"
+          style="display:none;font-family:var(--ui);font-size:12px;color:var(--muted);padding:0;border:none;background:transparent;outline:none;width:100%"
+          oninput="sessionVersionLabel=this.value.trim();document.getElementById('version-sub').textContent=this.value.trim()||t('version.ph')"
+          onblur="this.style.display='none';document.getElementById('version-sub').style.display='block'"/>
+      </div>
+    </div>
+
+    <div id="editor-area">
+      <div id="tzone">
+        <div id="col-hdr">
+          <div class="ch" id="ch-v" style="width:60px;min-width:60px"><span data-i18n="col.verse">Verse</span><div class="chrsz" onmousedown="startCR(event,'v')"></div></div>
+          <div class="ch" id="ch-l" style="width:52px;min-width:52px" data-i18n="col.line">Line</div>
+          <div class="ch fl" id="ch-o"><span id="ch-o-lbl">Original</span><div class="chrsz" onmousedown="startCR(event,'o')"></div></div>
+          <div class="ch fl" id="ch-t" style="display:none"><span id="ch-t-lbl">Translation</span><div class="chrsz" onmousedown="startCR(event,'t')"></div></div>
+          <div class="ch" style="width:40px;min-width:40px"></div>
+        </div>
+        <div id="rows-scroll">
+          <div id="rows-body"></div>
+          <div id="row-actions">
+            <button class="ra-btn add" onclick="addEmptyRow()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span data-i18n="add-line">Add line</span> <span style="opacity:.5;font-weight:400;font-size:10px">Ctrl++</span>
+            </button>
+            <button class="ra-btn del" onclick="deleteFocusedRow()">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <span data-i18n="merge-line">Merge line up</span> <span style="opacity:.5;font-weight:400;font-size:10px">Ctrl+−</span>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div id="dzone" style="display:none">
+        <div id="dcanvas-scroll">
+          <div id="dcanvas">
+            <svg id="dconns" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
+      </div>
+      <div id="cmargin">
+        <div id="mrsz" onmousedown="startMR(event)"></div>
+        <svg id="svgl" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+
+    <div id="bbar">
+      <button class="bbtn g" data-i18n-title="bbar.save" title="Save to app (Ctrl+S)" onclick="projSave()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg><span data-i18n="bbar.save">Save</span></button>
+
+      <button class="bbtn g" data-i18n-title="bbar.load-json" title="Load JSON file from disk (Ctrl+O)" onclick="document.getElementById('lfile').click()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span data-i18n="bbar.load-json">Load JSON</span></button>
+      <input type="file" id="lfile" accept=".json" style="display:none" onchange="loadFile(event)"/>
+      <button class="bbtn p" data-i18n-title="bbar.export" title="Export as PDF or JSON (Ctrl+Shift+E)" onclick="toggleExportPopup(event)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><line x1="3" y1="21" x2="21" y2="21"/></svg><span data-i18n="bbar.export">Export ▾</span></button>
+      <button class="bbtn d" data-i18n-title="bbar.clear" title="Clear all content (Ctrl+Shift+L)" onclick="clearAll()" data-i18n="bbar.clear">Clear</button>
+      <div class="bbst" id="stbar" data-i18n="stbar.ready">Ready</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ══ PROJECTS PANEL ══ -->
+<div id="proj-panel">
+  <div id="proj-panel-hdr">
+    <h3 data-i18n="proj.title">My Projects</h3>
+    <button class="bpanel-hbtn" onclick="closeProjects()" title="Close">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div id="proj-list">
+    <div id="proj-list-empty" data-i18n-html="proj.empty">No saved projects yet.<br>Press <b>Ctrl+S</b> to save your current work.</div>
+  </div>
+  <div id="proj-panel-footer">
+    <button id="proj-save-btn" onclick="projSave()">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+      <span data-i18n="proj.save-btn">Save current project</span>
+    </button>
+    <div id="proj-export-all-wrap">
+      <div id="export-all-popup">
+        <div class="exp-all-header" data-i18n="export.all.title">Export all projects</div>
+        <button onclick="projExportAllPDF();closeExportAllPopup()" data-i18n="export.all.pdf">All projects as PDF</button>
+        <button onclick="projExportAllJSON();closeExportAllPopup()" data-i18n="export.all.json">All projects as JSON</button>
+      </div>
+      <button id="proj-export-all-btn" onclick="toggleExportAllPopup(event)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        <span data-i18n="proj.export-all-btn">Export all projects</span>
+        <svg class="export-all-chevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BIBLE MODULE PANEL ══ -->
+<div id="bible-panel">
+  <div id="bpanel-hdr">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--sig)" stroke-width="2" stroke-linecap="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+    <h3 data-i18n="bible.title">Bible Module</h3>
+    <select id="b-font-size" onchange="bSetFontSize(this.value)" title="Font size" style="height:20px;font-size:10px;font-family:var(--ui);border:1px solid rgba(0,0,0,.15);border-radius:4px;background:var(--bg);color:var(--ink);padding:0 2px;margin-right:2px">
+      <option>10</option><option>11</option><option selected>12</option><option>13</option>
+      <option>14</option><option>16</option><option>18</option><option>20</option><option>24</option>
+    </select>
+    <button class="bpanel-hbtn" id="b-scroll-lock-btn" title="Sync scroll between panes" onclick="bToggleScrollLock()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+    </button>
+    <button class="bpanel-hbtn" id="bpanel-split-btn" title="Split pane (Ctrl+\)" onclick="window.bToggleSplit?.()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
+    </button>
+    <button class="bpanel-hbtn" id="bpanel-pin-btn" title="Pin panel to right side (Ctrl+Shift+\)" onclick="bTogglePin()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/></svg>
+    </button>
+    <button class="bpanel-hbtn" title="Close (Esc)" onclick="closeBible()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+  <div id="bpanel-offline-bar" data-i18n="bible.offline">⚠ Offline — NET Bible unavailable.</div>
+  <div id="bpanel-body">
+    <div class="bpane-section" id="bpane-top-section">
+      <div class="bpane-picker-row">
+        <button class="bpane-nav-btn" id="bprev-top" title="Previous chapter (Ctrl+Shift+[)" onclick="bNavChapter('top','prev')" disabled>&#8592;</button>
+        <button class="bpane-picker-btn" id="bpicker-btn-top" onclick="bPickerOpenFor('top')" data-i18n="bible.select">Select passage…</button>
+        <button class="bpane-nav-btn" id="bnext-top" title="Next chapter (Ctrl+Shift+])" onclick="bNavChapter('top','next')" disabled>&#8594;</button>
+      </div>
+      <div id="bpicker-container-top" class="bpane-picker-container" style="display:none"></div>
+      <div class="bpane-tabbar">
+        <div class="bpane-tabs" id="bpane-top-tabs"></div>
+        <div class="bpane-tabactions">
+          <button class="btab-add" data-i18n-title="bible.add-tab" title="Add tab" onclick="bAddTab('top')">+</button>
+          <button class="btab-clear" data-i18n-title="bible.clear-tab" title="Clear passage" onclick="bClearPane('top')">✕</button>
+        </div>
+      </div>
+      <div class="bpane" id="bpane-top"
+           ondragover="bDragOver(event,'top')"
+           ondragleave="bDragLeave(event,'top')"
+           ondrop="bDrop(event,'top')"
+           onmousedown="bFocusSection('top')">
+        <div class="bpane-empty" data-i18n-html="bible.no-passage">No passage selected yet.<br>Click "Select passage…" above to begin.</div>
+      </div>
+    </div>
+    <div id="bpane-divider" onmousedown="bStartSplitDrag(event)"></div>
+    <div class="bpane-section" id="bpane-bottom-section" style="display:none">
+      <div class="bpane-picker-row">
+        <button class="bpane-nav-btn" id="bprev-bottom" title="Previous chapter (Ctrl+Shift+[)" onclick="bNavChapter('bottom','prev')" disabled>&#8592;</button>
+        <button class="bpane-picker-btn" id="bpicker-btn-bottom" onclick="bPickerOpenFor('bottom')" data-i18n="bible.select">Select passage…</button>
+        <button class="bpane-nav-btn" id="bnext-bottom" title="Next chapter (Ctrl+Shift+])" onclick="bNavChapter('bottom','next')" disabled>&#8594;</button>
+      </div>
+      <div id="bpicker-container-bottom" class="bpane-picker-container" style="display:none"></div>
+      <div class="bpane-tabbar">
+        <div class="bpane-tabs" id="bpane-bottom-tabs"></div>
+        <div class="bpane-tabactions">
+          <button class="btab-add" data-i18n-title="bible.add-tab" title="Add tab" onclick="bAddTab('bottom')">+</button>
+          <button class="btab-clear" data-i18n-title="bible.clear-tab" title="Clear passage" onclick="bClearPane('bottom')">✕</button>
+        </div>
+      </div>
+      <div class="bpane" id="bpane-bottom"
+           ondragover="bDragOver(event,'bottom')"
+           ondragleave="bDragLeave(event,'bottom')"
+           ondrop="bDrop(event,'bottom')"
+           onmousedown="bFocusSection('bottom')">
+        <div class="bpane-empty" data-i18n-html="bible.no-passage">No passage selected yet.<br>Click "Select passage…" above to begin.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ EXPORT POPUP ══ -->
+<div id="export-popup">
+  <button onclick="doExportPDF();closeExportPopup()" data-i18n="export.pdf">Export as PDF</button>
+  <button onclick="doExportJSON();closeExportPopup()" data-i18n="export.json">Export as JSON</button>
+</div>
+
+<!-- ══ DIAGRAM VIEW: CONNECTOR EDIT POPUP ══ -->
+<div id="conn-edit-popup" class="cep" style="display:none">
+  <button class="cep-style-btn" data-pattern="solid" onclick="setConnectorPattern('solid')" data-i18n-title="conn.pattern.solid" title="Solid line">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+  </button>
+  <button class="cep-style-btn" data-pattern="dotted" onclick="setConnectorPattern('dotted')" data-i18n-title="conn.pattern.dotted" title="Dotted line">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="1,4"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+  </button>
+  <div class="cep-sep"></div>
+  <button class="cep-style-btn" data-arrow="single" onclick="toggleConnectorArrow('single')" data-i18n-title="conn.arrow.single" title="Arrow (endpoint)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="12" x2="18" y2="12"/><path d="M13 7l5 5-5 5"/></svg>
+  </button>
+  <button class="cep-style-btn" data-arrow="double" onclick="toggleConnectorArrow('double')" data-i18n-title="conn.arrow.double" title="Double-headed arrow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><path d="M8 8l-4 4 4 4M16 8l4 4-4 4"/></svg>
+  </button>
+  <div class="cep-sep"></div>
+  <button class="cep-style-btn" data-weight="1" onclick="setConnectorWeight(1)" data-i18n-title="conn.weight.1" title="Thin (1px)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+  </button>
+  <button class="cep-style-btn" data-weight="1.25" onclick="setConnectorWeight(1.25)" data-i18n-title="conn.weight.1-25" title="1.25px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+  </button>
+  <button class="cep-style-btn" data-weight="1.5" onclick="setConnectorWeight(1.5)" data-i18n-title="conn.weight.1-5" title="1.5px">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+  </button>
+  <button class="cep-style-btn" data-weight="1.75" onclick="setConnectorWeight(1.75)" data-i18n-title="conn.weight.1-75" title="Thick (1.75px)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.25" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+  </button>
+  <div class="cep-sep"></div>
+  <button class="cep-color-btn" id="cep-color-swatch" style="background:#000000" data-i18n-title="conn.color" title="Line color" onclick="openColorPalette('lineColor', this, this.style.background)"></button>
+  <div class="cep-sep"></div>
+  <button class="cep-delete-btn" onclick="deleteSelectedConnector()" data-i18n-title="conn.delete" title="Delete connector (Backspace / Delete)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/></svg>
+  </button>
+</div>
+
+<!-- ══ SHARED TWO-LAYER COLOR PALETTE POPOVER (Highlight + Line Color) ══ -->
+<div id="color-palette-popover" class="cpp" style="display:none">
+  <input type="color" id="cpp-native" class="cpp-native" value="#000000" onchange="onPaletteNativeChange(this.value)"/>
+  <div class="cpp-row" id="cpp-preset-row"></div>
+  <div class="cpp-row" id="cpp-recent-row"></div>
+</div>
+
+
+<div id="btab-ver-popup"></div>
+<div id="bible-side-divider" style="display:none"></div>
+<div id="pdf-progress">
+  <div id="pdf-progress-label"><span data-i18n="toast.building-pdf">Exporting PDF…</span><span id="pdf-pct">0%</span></div>
+  <div id="pdf-progress-track"><div id="pdf-progress-fill"></div></div>
+</div>
+<div id="update-banner">
+  <!-- Full banner -->
+  <div id="update-banner-full">
+    <div id="update-banner-text">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      <span data-i18n="update.available">A new version is available.</span>
+    </div>
+    <button id="update-btn" onclick="applyUpdate()">
+      <span data-i18n="update.btn">Update</span>
+    </button>
+    <button id="update-dismiss" onclick="dismissUpdate()" title="Dismiss">✕</button>
+  </div>
+  <!-- Warning shown when user clicks ✕ -->
+  <div id="update-warn">
+    <div id="update-warn-text" data-i18n="update.warn">Declining the update is not recommended.</div>
+    <div id="update-warn-btns">
+      <button id="update-warn-ok" onclick="dismissUpdateConfirm()" data-i18n="update.understood">Understood</button>
+      <button id="update-warn-now" onclick="applyUpdate()" data-i18n="update.now">Update Now</button>
+    </div>
+  </div>
+  <!-- Pill shown after dismissing (collapsed state) -->
+  <div id="update-pill" onclick="expandUpdateBanner()">
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+    <span data-i18n="update.pill">Update available</span>
+  </div>
+</div>
+<div id="custom-modal" class="screen hidden">
+  <div class="mcard" style="padding:32px 40px;width:460px;text-align:left">
+    <h3 id="cmodal-title" style="margin:0 0 6px;font-size:17px;font-weight:700;color:var(--ink)"></h3>
+    <p id="cmodal-desc" style="margin:0 0 16px;font-size:13px;color:var(--muted);font-family:var(--ui)"></p>
+    <input id="cmodal-input" type="text" style="width:100%;box-sizing:border-box;height:40px;border-radius:10px;border:1.5px solid rgba(73,53,72,.25);padding:0 14px;font-family:var(--ui);font-size:14px;background:var(--bg);color:var(--ink);outline:none" spellcheck="false"/>
+    <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:18px">
+      <button id="cmodal-cancel" onclick="cModalCancel()" style="height:36px;padding:0 18px;border-radius:99px;border:1.5px solid rgba(73,53,72,.2);background:transparent;font-family:var(--ui);font-size:13px;font-weight:600;color:var(--sig);cursor:pointer" data-i18n="settings.cancel">Cancel</button>
+      <button id="cmodal-ok" onclick="cModalOk()" style="height:36px;padding:0 18px;border-radius:99px;border:none;background:var(--sig);font-family:var(--ui);font-size:13px;font-weight:700;color:var(--label);cursor:pointer" data-i18n="cmodal.ok">OK</button>
+    </div>
+  </div>
+</div>
+<div id="toast"></div>
+
+<script src="lang.js"></script>
+<script src="tut.js"></script>
+<script src="app.js"></script>
+<script src="bible.js"></script>
+<script>
+/* ── Service worker + update flow ── */
+window._swReg = null;
+window._swWaiting = null;
+
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    window._swReg = reg;
+
+    // Check for a worker already waiting (page was refreshed after update installed)
+    if(reg.waiting && navigator.serviceWorker.controller){
+      showUpdateBanner();
+    }
+
+    reg.addEventListener('updatefound',()=>{
+      const worker = reg.installing;
+      worker.addEventListener('statechange',()=>{
+        if(worker.state === 'installed' && navigator.serviceWorker.controller){
+          // New version is ready — don't auto-reload. Show banner instead.
+          window._swWaiting = worker;
+          showUpdateBanner();
+        }
+      });
+    });
+  }).catch(err=>console.warn('[SW] Registration failed:',err));
+
+  // When the SW activates (after applyUpdate() triggers skipWaiting),
+  // reload so users get fresh files.
+  let refreshing = false;
+  navigator.serviceWorker.addEventListener('controllerchange',()=>{
+    if(!refreshing){ refreshing=true; window.location.reload(); }
+  });
+}
+
+/* ── What's new toast on first load after update ── */
+(function(){
+  const currentV = document.querySelector('meta[name="app-version"]')?.content || '';
+  const lastV = localStorage.getItem('exeg-last-version') || '';
+  if(currentV && currentV !== lastV){
+    localStorage.setItem('exeg-last-version', currentV);
+    if(lastV){ // only show if they've used the app before (not first ever load)
+      setTimeout(()=>{
+        if(typeof toast === 'function'){
+          toast(typeof t==='function' ? t('update.whats-new') : "✨ Updated to the latest version.");
+        }
+      }, 1200);
+    }
+  }
+})();
+</script>
+</body>
+</html>
