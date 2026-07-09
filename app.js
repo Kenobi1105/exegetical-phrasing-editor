@@ -5188,6 +5188,54 @@ function _brkHandleClick(rid, pipEl){
   }
 }
 
+/* ── Document-level Shift+mousedown handler for completing a pending bracket ──
+   When BRACKET_PENDING is set (first pip was clicked), intercept any
+   Shift+mousedown anywhere on the canvas and resolve it to the nearest block.
+   This is more robust than relying on per-pip pointer-events, especially since
+   pips are position:fixed and may not reliably receive bubbled events. */
+document.addEventListener('mousedown', ev=>{
+  if(!BRACKET_PENDING) return;           // only active after first pip click
+  if(!ev.shiftKey) return;              // only Shift+clicks
+  if(EDITOR_VIEW!=='diagram') return;
+
+  // Find which dblock (if any) the user clicked on, or which pip
+  const clickedPip   = ev.target.closest('.dbrk-pip');
+  const clickedBlock = ev.target.closest('.dblock');
+
+  let targetRid = null;
+  if(clickedPip){
+    // Clicked a pip directly — get rid from its parent block
+    const parentBlock = clickedPip.closest('.dblock');
+    targetRid = parentBlock ? parentBlock.dataset.rid : null;
+  } else if(clickedBlock){
+    targetRid = clickedBlock.dataset.rid;
+  } else {
+    // Clicked canvas background while bracket pending — find nearest block by Y
+    const canvas = document.getElementById('dcanvas');
+    if(!canvas) return;
+    const clickY = ev.clientY;
+    let closest = null, closestDist = Infinity;
+    canvas.querySelectorAll('.dblock').forEach(block=>{
+      const r = block.getBoundingClientRect();
+      const midY = r.top + r.height / 2;
+      const dist = Math.abs(midY - clickY);
+      if(dist < closestDist){ closestDist = dist; closest = block; }
+    });
+    // Only snap to nearest block if within 60px
+    if(closest && closestDist < 60) targetRid = closest.dataset.rid;
+  }
+
+  if(!targetRid) return;
+
+  ev.preventDefault();
+  ev.stopPropagation();
+
+  const startRid = BRACKET_PENDING.rid;
+  _brkCancelPending();
+  if(startRid === targetRid){ toast(t('bracket.cancel')); return; }
+  _brkCreate(startRid, targetRid);
+}, true); // capture phase — runs before any element-level handlers
+
 /* ── Cancel pending first-click ── */
 function _brkCancelPending(){
   if(!BRACKET_PENDING) return;
