@@ -2201,6 +2201,7 @@ function redo(){
 function applyRowUndo(op){
   // Bracket ops — handled entirely by bracket system
   if(typeof _brkApplyUndo==='function' && _brkApplyUndo(op)) return;
+  if(op.type==='indent'){
     // Re-query the cell from the DOM (op.el reference may be stale)
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     const ce=row?row.querySelector('.cedit[data-indent]')||row.querySelector('.cedit'):op.el;
@@ -2348,6 +2349,7 @@ function applyRowUndo(op){
 function applyRowRedo(op){
   // Bracket ops — handled entirely by bracket system
   if(typeof _brkApplyRedo==='function' && _brkApplyRedo(op)) return;
+  if(op.type==='indent'){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     const ce=row?row.querySelector('.cedit[data-indent]')||row.querySelector('.cedit'):op.el;
     if(ce){ ce.dataset.indent=op.next; applyIndentStyle(ce); ce.focus(); }
