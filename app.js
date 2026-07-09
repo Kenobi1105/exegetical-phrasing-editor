@@ -379,6 +379,9 @@ function setEditorView(view){
   const isDiagram=EDITOR_VIEW==='diagram';
   document.getElementById('tzone').style.display=isDiagram?'none':'';
   document.getElementById('dzone').style.display=isDiagram?'':'none';
+  // Show pip rail only in Diagram View
+  const rail = document.getElementById('brk-pip-rail');
+  if(rail) rail.style.display = isDiagram ? '' : 'none';
   document.getElementById('view-btn-phrasing')?.classList.toggle('active',!isDiagram);
   document.getElementById('view-btn-diagram')?.classList.toggle('active',isDiagram);
   document.getElementById('dzoom-grp')?.style.setProperty('display', isDiagram?'':'none');
@@ -5114,41 +5117,53 @@ function _brkAssignLane(startRid, endRid){
   return 1;
 }
 
-/* ── Add pip handle to a .dblock ── */
-function _brkAddBlockPip(block, rid){
-  if(block.querySelector('.dbrk-pip')) return;
-  const pip = document.createElement('div');
-  pip.className = 'dbrk-pip';
-  pip.title = 'Shift+click to bracket';
-  block.appendChild(pip);
-
-  pip.addEventListener('mousedown', ev=>{
-    if(!ev.shiftKey) return;
-    ev.preventDefault();
-    _brkHandleClick(rid, pip);
-  });
-}
-
-/* ── Sync pips to all current dblocks ── */
+/* ── Build pip rail: one pip per block, positioned by Y, in #brk-pip-rail ──
+   Pips live completely outside .dblock DOM — no bubbling to startBlockDrag. */
 function _brkSyncPips(){
+  const rail = document.getElementById('brk-pip-rail');
+  if(!rail) return;
+
+  // Remove stale pips for rows that no longer exist
+  const existingRids = new Set(
+    Array.from(document.querySelectorAll('#dcanvas .dblock')).map(b=>b.dataset.rid)
+  );
+  rail.querySelectorAll('.dbrk-pip').forEach(pip=>{
+    if(!existingRids.has(pip.dataset.rid)) pip.remove();
+  });
+
+  // Add pips for any block that doesn't have one yet
   document.querySelectorAll('#dcanvas .dblock').forEach(block=>{
     const rid = block.dataset.rid;
-    if(rid) _brkAddBlockPip(block, rid);
+    if(!rid) return;
+    if(rail.querySelector(`.dbrk-pip[data-rid="${rid}"]`)) return;
+    const pip = document.createElement('div');
+    pip.className = 'dbrk-pip';
+    pip.dataset.rid = rid;
+    pip.title = 'Shift+click to bracket';
+    pip.addEventListener('mousedown', ev=>{
+      if(!ev.shiftKey) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      _brkHandleClick(rid, pip);
+    });
+    rail.appendChild(pip);
   });
+
   _brkSyncPipPositions();
 }
 
-/* ── Reposition all pips vertically to match their block's midpoint ──
-   Required because position:fixed pips can't use top:50% relative to
-   their parent — 50% of viewport ≠ 50% of the block. */
+/* ── Reposition pips in the rail to match their block's vertical midpoint ── */
 function _brkSyncPipPositions(){
-  document.querySelectorAll('#dcanvas .dbrk-pip').forEach(pip=>{
-    const block = pip.closest('.dblock');
+  const rail = document.getElementById('brk-pip-rail');
+  if(!rail) return;
+  const railRect = rail.getBoundingClientRect();
+  rail.querySelectorAll('.dbrk-pip').forEach(pip=>{
+    const rid = pip.dataset.rid;
+    const block = document.querySelector(`#dcanvas .dblock[data-rid="${rid}"]`);
     if(!block) return;
     const r = block.getBoundingClientRect();
-    const mid = r.top + r.height / 2;
-    pip.style.top = mid + 'px';
-    pip.style.marginTop = '-4px'; // half pip height (8px/2)
+    const midY = r.top + r.height / 2 - railRect.top;
+    pip.style.top = midY + 'px';
   });
 }
 

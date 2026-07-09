@@ -3424,29 +3424,66 @@ body.brk-active .dbrk-pip:hover {
 
 /* ════════════════════════════════════════
    BRACKET PIP — FIXED RIGHT ALIGNMENT
-   Pips float at a fixed X position just
-   to the left of the comment pane edge,
-   regardless of block horizontal position.
-   When the comment pane collapses to 0,
-   --cmargin-w drops to 0px and pips shift
-   to the right edge of the screen.
+   (superseded by brk-pip-rail approach)
 ════════════════════════════════════════ */
 :root { --cmargin-w: 320px; }
 
+/* ════════════════════════════════════════
+   BRACKET PIP RAIL — v3
+   Pips live in #brk-pip-rail, a thin column
+   between #dcanvas-scroll and #cmargin.
+   No DOM relationship with .dblock means
+   no event bubbling to startBlockDrag.
+════════════════════════════════════════ */
+
+/* Rail: sits in dzone flex row, just wide enough for the pip dot */
+#brk-pip-rail {
+  position: relative;
+  width: 28px;
+  flex-shrink: 0;
+  overflow: visible;
+  z-index: 10;
+}
+
+/* Override all previous pip rules */
 .dbrk-pip {
-  /* Override the previous absolute positioning */
-  position: fixed !important;
-  right: calc(var(--cmargin-w) + 8px) !important;
-  top: auto !important;
-  /* Vertical centering is handled by the block's midpoint.
-     We use transform:none and rely on the block's own
-     getBoundingClientRect midpoint via a JS nudge below.
-     For now CSS alone: inherit block vertical centre via
-     top:50% relative to viewport — overridden per-block by JS. */
-  transform: none !important;
-  left: auto !important;
-  /* Ensure it stays on top */
-  z-index: 20;
+  position: absolute !important;
+  left: 50% !important;
+  transform: translateX(-50%) translateY(-50%) !important;
+  right: auto !important;
+  top: 0 !important; /* overridden per-pip by _brkSyncPipPositions */
+  width: 10px !important;
+  height: 10px !important;
+  border-radius: 50% !important;
+  background: transparent !important;
+  border: 1.5px solid rgba(73,53,72,.3) !important;
+  cursor: crosshair !important;
+  pointer-events: none !important;  /* hidden by default — shown below */
+  transition: background .12s, border-color .12s !important;
+  z-index: 10 !important;
+  opacity: 0 !important;
+  margin-top: 0 !important;
+}
+
+/* Show pips when Shift held or bracket pending */
+body.brk-shift #brk-pip-rail .dbrk-pip,
+body.brk-active #brk-pip-rail .dbrk-pip {
+  opacity: 1 !important;
   pointer-events: auto !important;
-  cursor: crosshair;
+}
+
+/* Hover style */
+body.brk-shift #brk-pip-rail .dbrk-pip:hover,
+body.brk-active #brk-pip-rail .dbrk-pip:hover {
+  background: var(--sig, #493548) !important;
+  border-color: var(--sig, #493548) !important;
+}
+
+/* Pending (first clicked) pip */
+#brk-pip-rail .dbrk-pip.brk-pending {
+  background: var(--accent, #F0D08F) !important;
+  border-color: var(--active, #C8A84B) !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  animation: brkPulse .85s ease-in-out infinite alternate !important;
 }
