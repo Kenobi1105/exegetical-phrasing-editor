@@ -5119,10 +5119,21 @@ function _brkAddBlockPip(block, rid){
   pip.className = 'dbrk-pip';
   pip.title = 'Shift+click to start/end bracket';
   block.appendChild(pip);
+
+  // Pip is directly clickable — Shift+click the dot itself
+  pip.addEventListener('mousedown', ev=>{
+    if(!ev.shiftKey) return;
+    ev.preventDefault();
+    ev.stopPropagation(); // don't bubble to block's drag handler
+    _brkHandleClick(rid, pip);
+  });
+
+  // Also allow Shift+click anywhere on the block (not just the pip)
+  // so the interaction still works if the user clicks block text with Shift held
   block.addEventListener('mousedown', ev=>{
     if(!ev.shiftKey) return;
-    // Only fire on the block itself or the pip, not the ra-handle
     if(ev.target.closest('.dra-handle')) return;
+    if(ev.target.closest('.dbrk-pip')) return; // pip already handled above
     ev.preventDefault();
     ev.stopPropagation();
     _brkHandleClick(rid, pip);
@@ -5453,6 +5464,18 @@ function _brkApplyRedo(op){
   }
   return false;
 }
+
+/* ── Show pips while Shift is physically held down ── */
+document.addEventListener('keydown', ev=>{
+  if(ev.key==='Shift' && EDITOR_VIEW==='diagram'){
+    document.body.classList.add('brk-shift');
+  }
+});
+document.addEventListener('keyup', ev=>{
+  if(ev.key==='Shift'){
+    document.body.classList.remove('brk-shift');
+  }
+});
 
 /* ── Hook Escape ── */
 document.addEventListener('keydown', ev=>{

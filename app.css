@@ -3385,3 +3385,39 @@ body.brk-active .dblock .dbrk-pip {
 
 /* Bracket status bar hint */
 .stbar-brk { color: var(--active, #C8A84B) !important; }
+
+/* ════════════════════════════════════════
+   BRACKET PIP — INTERACTION FIX
+   Pip is now directly clickable.
+   Appears when Shift is held (brk-shift)
+   or after first click (brk-active).
+════════════════════════════════════════ */
+
+/* Make pip directly clickable */
+.dbrk-pip {
+  pointer-events: auto !important;
+  cursor: crosshair;
+}
+
+/* Hide pip by default — only show on Shift-held or bracket-active */
+.dblock .dbrk-pip {
+  opacity: 0;
+}
+.dblock:hover .dbrk-pip {
+  opacity: 0; /* suppress hover-only reveal */
+}
+
+/* Show when Shift key is held down */
+body.brk-shift .dblock .dbrk-pip,
+/* Show when bracket creation is in progress (after first click) */
+body.brk-active .dblock .dbrk-pip {
+  opacity: 1;
+}
+
+/* Pip hover state (only when visible) */
+body.brk-shift .dbrk-pip:hover,
+body.brk-active .dbrk-pip:hover {
+  background: var(--sig, #493548);
+  border-color: var(--sig, #493548);
+  transform: translateY(-50%) scale(1.25);
+}
