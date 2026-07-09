@@ -2957,6 +2957,8 @@ function toggleCmtPane(){
   const btn=document.getElementById('btn-cmt-pane');
   if(btn) btn.classList.toggle('active',!hidden);
   if(!hidden) setTimeout(drawConns,50);
+  // Update pip alignment variable so pips track the pane edge
+  document.documentElement.style.setProperty('--cmargin-w', hidden ? '0px' : '320px');
 }
 
 /* Feature 3: Add comment anchored to the currently focused or last-focused row */
@@ -5152,6 +5154,21 @@ function _brkSyncPips(){
     const rid = block.dataset.rid;
     if(rid) _brkAddBlockPip(block, rid);
   });
+  _brkSyncPipPositions();
+}
+
+/* ── Reposition all pips vertically to match their block's midpoint ──
+   Required because position:fixed pips can't use top:50% relative to
+   their parent — 50% of viewport ≠ 50% of the block. */
+function _brkSyncPipPositions(){
+  document.querySelectorAll('#dcanvas .dbrk-pip').forEach(pip=>{
+    const block = pip.closest('.dblock');
+    if(!block) return;
+    const r = block.getBoundingClientRect();
+    const mid = r.top + r.height / 2;
+    pip.style.top = mid + 'px';
+    pip.style.marginTop = '-4px'; // half pip height (8px/2)
+  });
 }
 
 /* ── Handle Shift+click on a block ── */
@@ -5251,6 +5268,9 @@ function _brkRenderDiagram(){
 
     _brkDrawSVG(dsvg, brk, laneX, yStart, yEnd);
   });
+
+  // Sync pip vertical positions after render
+  setTimeout(_brkSyncPipPositions, 0);
 }
 
 /* ── Draw one bracket ── */
@@ -5509,9 +5529,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     }});
   }catch(_){}
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
-  document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);
+  document.getElementById('dcanvas-scroll')?.addEventListener('scroll', ()=>{ drawConns(); if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions(); });
   document.getElementById('cmargin')?.addEventListener('scroll', drawConns);
-  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); });
+  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions(); });
+  // Initialise cmargin width variable for pip positioning
+  document.documentElement.style.setProperty('--cmargin-w', '320px');
   renderS1Recent();
   const vEl=document.getElementById('s1-version-num');
   if(vEl){
