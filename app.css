@@ -3082,475 +3082,41 @@ sup.bfn:hover { opacity: .7; }
 }
 .diag-pdf-cancel:hover{color:var(--sig)}
 
+
 /* ════════════════════════════════════════
-   BRACKETING SYSTEM
-   Right-side bracket handles, SVG overlay,
-   edit popup. Append-only per app.css pattern.
+   BRACKETING SYSTEM — v5 clean
+   Pips live in .drow-pip-cell (flex child
+   of .drow). No JS positioning needed.
 ════════════════════════════════════════ */
 
-/* CSS variable for bracket column width — set dynamically by JS */
-:root { --brk-col-w: 0px; }
-
-/* Bracket handle zone appended to every xrow */
-.xrow-brk-handle {
-  width: var(--brk-col-w, 0px);
-  min-width: var(--brk-col-w, 0px);
-  flex-shrink: 0;
-  position: relative;
-  display: flex;
-  align-items: stretch;
-  cursor: pointer;
-  overflow: visible;
-}
-
-/* The visible clickable dot/pip on the handle */
-.xrow-brk-pip {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1.5px solid rgba(73,53,72,.20);
-  transition: background .12s, border-color .12s, transform .12s;
-  pointer-events: none;
-}
-
-.xrow-brk-handle:hover .xrow-brk-pip {
-  background: var(--sig);
-  border-color: var(--sig);
-  transform: translate(-50%, -50%) scale(1.2);
-}
-
-/* Pending (first click done) state — pulse gold */
-.xrow-brk-handle.brk-pending .xrow-brk-pip {
-  background: var(--accent, #F0D08F);
-  border-color: var(--active, #C8A84B);
-  animation: brkPulse .85s ease-in-out infinite alternate;
-}
-
-/* All other pips pulse softly when a bracket is pending */
-body.brk-active .xrow-brk-handle:not(.brk-pending) .xrow-brk-pip {
-  border-color: var(--sig);
-  opacity: .55;
-  animation: brkPulse2 1s ease-in-out infinite alternate;
-}
-
-@keyframes brkPulse {
-  from { box-shadow: 0 0 0 0 rgba(200,168,75,.5); }
-  to   { box-shadow: 0 0 0 5px rgba(200,168,75,.0); }
-}
-@keyframes brkPulse2 {
-  from { opacity: .35; }
-  to   { opacity: .75; }
-}
-
-/* Bracket SVG lines and labels */
-.brk-line { cursor: pointer; transition: stroke-opacity .12s; }
-.brk-line:hover { stroke-opacity: .75; }
-.brk-line.brk-selected { stroke-opacity: 1; filter: drop-shadow(0 0 3px rgba(200,168,75,.6)); }
-
-.brk-label-fo { pointer-events: all; cursor: pointer; overflow: visible; }
-.brk-label-text {
-  font-family: var(--ui, sans-serif);
-  font-size: 11px;
-  fill: var(--sig, #493548);
-  user-select: none;
-  dominant-baseline: middle;
-}
-.brk-label-text:hover { fill: var(--active, #C8A84B); }
-.brk-label-text.brk-selected { fill: var(--active, #C8A84B); }
-
-/* Inline label input (SVG foreignObject textarea) */
-.brk-label-input {
-  border: none;
-  background: rgba(73,53,72,.07);
-  border-radius: 4px;
-  font-family: var(--ui, sans-serif);
-  font-size: 11px;
-  color: var(--sig, #493548);
-  padding: 1px 4px;
-  outline: 1.5px solid var(--active, #C8A84B);
-  width: 90px;
-  height: 20px;
-}
-
-/* Diagram View bracket handles — attached to drow right side */
-.drow-brk-handle {
-  position: absolute;
-  right: calc(-1 * var(--brk-col-w, 48px));
-  top: 0;
-  bottom: 0;
-  width: var(--brk-col-w, 48px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  z-index: 4;
-}
-
-.drow-brk-pip {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1.5px solid rgba(73,53,72,.20);
-  transition: background .12s, border-color .12s, transform .12s;
-  pointer-events: none;
-}
-
-.drow-brk-handle:hover .drow-brk-pip {
-  background: var(--sig);
-  border-color: var(--sig);
-  transform: scale(1.2);
-}
-.drow-brk-handle.brk-pending .drow-brk-pip {
-  background: var(--accent, #F0D08F);
-  border-color: var(--active, #C8A84B);
-  animation: brkPulse .85s ease-in-out infinite alternate;
-}
-body.brk-active .drow-brk-handle:not(.brk-pending) .drow-brk-pip {
-  border-color: var(--sig);
-  opacity: .55;
-  animation: brkPulse2 1s ease-in-out infinite alternate;
-}
-
-/* Diagram bracket SVG overlay */
+/* Bracket SVG layer inside #dcanvas */
 #dbrk-svg {
   position: absolute;
-  top: 0;
-  right: 0;
-  width: var(--brk-col-w, 48px);
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-  z-index: 5;
-}
-
-/* Weight button active state */
-.brk-wt-btn.active {
-  background: rgba(247,243,233,.28) !important;
-  border-color: rgba(247,243,233,.6) !important;
-}
-
-/* Status bar hint styling */
-.stbar-brk {
-  color: var(--active, #C8A84B) !important;
-}
-
-/* ════════════════════════════════════════
-   BRACKETING SYSTEM — BUG FIX PASS
-   Override the original bracket CSS with
-   corrected sizing that separates the always-
-   visible handle zone from the lane area.
-════════════════════════════════════════ */
-
-/* Replace the two broken variables with two separate ones */
-:root {
-  --brk-handle-w: 24px;   /* always-visible handle pip zone — never 0 */
-  --brk-lane-w:   0px;    /* extra drawing area, grows when brackets exist */
-}
-
-/* Handle: always 24px wide so it's always clickable */
-.xrow-brk-handle {
-  width: var(--brk-handle-w) !important;
-  min-width: var(--brk-handle-w) !important;
-  flex-shrink: 0;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  overflow: visible;
-}
-
-/* Pip: inline-flex, not absolute-positioned, so it has real layout size */
-.xrow-brk-pip {
-  position: static !important;
-  left: auto !important;
-  top: auto !important;
-  transform: none !important;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1.5px solid rgba(73,53,72,.22);
-  transition: background .12s, border-color .12s, transform .12s;
-  pointer-events: none;
-  flex-shrink: 0;
-}
-
-.xrow-brk-handle:hover .xrow-brk-pip {
-  background: var(--sig);
-  border-color: var(--sig);
-  transform: scale(1.2) !important;
-}
-
-.xrow-brk-handle.brk-pending .xrow-brk-pip {
-  background: var(--accent, #F0D08F) !important;
-  border-color: var(--active, #C8A84B) !important;
-}
-
-/* Diagram View handles: fixed 24px, not dependent on --brk-col-w */
-.drow-brk-handle {
-  right: -24px !important;
-  width: 24px !important;
-}
-
-.drow-brk-pip {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1.5px solid rgba(73,53,72,.22);
-  transition: background .12s, border-color .12s, transform .12s;
-  pointer-events: none;
-}
-
-/* Diagram bracket SVG: starts just past the dcanvas right edge */
-#dbrk-svg {
-  left: 100% !important;
-  right: auto !important;
-  width: calc(var(--brk-handle-w) + var(--brk-lane-w)) !important;
-}
-
-/* ════════════════════════════════════════
-   COMMENT PANE COLLAPSE FIX
-   pane-hidden now collapses to 0 width so
-   the canvas fills the full screen.
-   Diagram label % positions are unaffected
-   because #dcanvas width is not tied to
-   #cmargin — labels use canvas-relative %.
-════════════════════════════════════════ */
-#cmargin.pane-hidden{
-  width: 0 !important;
-  min-width: 0 !important;
-  overflow: hidden !important;
-  border-left-color: transparent !important;
-  padding: 0 !important;
-}
-
-/* ════════════════════════════════════════
-   BRACKET PIP on .dblock
-   Small dot on right edge of each diagram
-   block. Appears on hover; turns gold when
-   Shift+click bracket is pending.
-════════════════════════════════════════ */
-.dblock { position: relative; }
-
-.dbrk-pip {
-  position: absolute;
-  right: -10px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: transparent;
-  border: 1.5px solid rgba(73,53,72,.22);
-  pointer-events: none;   /* block's mousedown handles Shift+click */
-  transition: background .12s, border-color .12s, transform .13s;
-  z-index: 6;
-  opacity: 0;
-}
-
-/* Show pip on block hover or when bracket mode is active */
-.dblock:hover .dbrk-pip,
-body.brk-active .dblock .dbrk-pip {
-  opacity: 1;
-}
-
-/* First-click pending: pip on that block goes gold */
-.dblock .dbrk-pip.brk-pending {
-  background: var(--accent, #F0D08F) !important;
-  border-color: var(--active, #C8A84B) !important;
-  opacity: 1 !important;
-  animation: brkPulse .85s ease-in-out infinite alternate;
-}
-
-/* Bracket SVG layer — absolutely positioned inside #dcanvas,
-   overflow:visible so lines extend past dcanvas bounds */
-#dbrk-svg {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
   overflow: visible;
   pointer-events: none;
   z-index: 7;
 }
 
-/* Bracket status bar hint */
-.stbar-brk { color: var(--active, #C8A84B) !important; }
-
-/* ════════════════════════════════════════
-   BRACKET PIP — INTERACTION FIX
-   Pip is now directly clickable.
-   Appears when Shift is held (brk-shift)
-   or after first click (brk-active).
-════════════════════════════════════════ */
-
-/* Make pip directly clickable */
-.dbrk-pip {
-  pointer-events: auto !important;
-  cursor: crosshair;
-}
-
-/* Hide pip by default — only show on Shift-held or bracket-active */
-.dblock .dbrk-pip {
-  opacity: 0;
-}
-.dblock:hover .dbrk-pip {
-  opacity: 0; /* suppress hover-only reveal */
-}
-
-/* Show when Shift key is held down */
-body.brk-shift .dblock .dbrk-pip,
-/* Show when bracket creation is in progress (after first click) */
-body.brk-active .dblock .dbrk-pip {
-  opacity: 1;
-}
-
-/* Pip hover state (only when visible) */
-body.brk-shift .dbrk-pip:hover,
-body.brk-active .dbrk-pip:hover {
-  background: var(--sig, #493548);
-  border-color: var(--sig, #493548);
-  transform: translateY(-50%) scale(1.25);
-}
-
-/* ════════════════════════════════════════
-   BRACKET PIP — FIXED RIGHT ALIGNMENT
-   (superseded by brk-pip-rail approach)
-════════════════════════════════════════ */
-:root { --cmargin-w: 320px; }
-
-/* ════════════════════════════════════════
-   BRACKET PIP RAIL — v3
-   Pips live in #brk-pip-rail, a thin column
-   between #dcanvas-scroll and #cmargin.
-   No DOM relationship with .dblock means
-   no event bubbling to startBlockDrag.
-════════════════════════════════════════ */
-
-/* Rail: sits in dzone flex row, just wide enough for the pip dot */
-#brk-pip-rail {
-  position: relative;
-  width: 28px;
-  flex-shrink: 0;
-  overflow: visible;
-  z-index: 10;
-}
-
-/* Override all previous pip rules */
-.dbrk-pip {
-  position: absolute !important;
-  left: 50% !important;
-  transform: translateX(-50%) translateY(-50%) !important;
-  right: auto !important;
-  top: 0 !important; /* overridden per-pip by _brkSyncPipPositions */
-  width: 10px !important;
-  height: 10px !important;
-  border-radius: 50% !important;
-  background: transparent !important;
-  border: 1.5px solid rgba(73,53,72,.3) !important;
-  cursor: crosshair !important;
-  pointer-events: none !important;  /* hidden by default — shown below */
-  transition: background .12s, border-color .12s !important;
-  z-index: 10 !important;
-  opacity: 0 !important;
-  margin-top: 0 !important;
-}
-
-/* Show pips when Shift held or bracket pending */
-body.brk-shift #brk-pip-rail .dbrk-pip,
-body.brk-active #brk-pip-rail .dbrk-pip {
-  opacity: 1 !important;
-  pointer-events: auto !important;
-}
-
-/* Hover style */
-body.brk-shift #brk-pip-rail .dbrk-pip:hover,
-body.brk-active #brk-pip-rail .dbrk-pip:hover {
-  background: var(--sig, #493548) !important;
-  border-color: var(--sig, #493548) !important;
-}
-
-/* Pending (first clicked) pip */
-#brk-pip-rail .dbrk-pip.brk-pending {
-  background: var(--accent, #F0D08F) !important;
-  border-color: var(--active, #C8A84B) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
-  animation: brkPulse .85s ease-in-out infinite alternate !important;
-}
-
-/* ════════════════════════════════════════
-   BRACKET PIP RAIL — position fix
-   Rail is a flex sibling of #dzone and
-   #cmargin inside #editor-area (flex row).
-════════════════════════════════════════ */
-#brk-pip-rail {
-  position: relative !important;
-  width: 28px !important;
-  flex-shrink: 0 !important;
-  overflow: visible !important;
-  z-index: 10 !important;
-  /* Sits between diagram canvas and comment pane in the row */
-  align-self: stretch !important;
-}
-
-/* ════════════════════════════════════════
-   BRACKET PIP RAIL — layout v4
-   Rail is position:absolute inside #dzone,
-   pinned to its right edge. #dzone gets
-   position:relative as anchor.
-   Pip Y positions are computed relative to
-   #dzone top + dcanvas-scroll.scrollTop so
-   they track blocks even when scrolled.
-════════════════════════════════════════ */
-#dzone { position: relative !important; }
-
-#brk-pip-rail {
-  position: absolute !important;
-  right: 0 !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  width: 28px !important;
-  pointer-events: none !important; /* container transparent; pips get pointer-events */
-  z-index: 10 !important;
-  overflow: visible !important;
-}
-
-/* ════════════════════════════════════════
-   BRACKET PIP — v5 (in-row, fixed column)
-   Pip cell is part of .drow flex layout.
-   Spacer absorbs leftover space so pip cell
-   always lands in a fixed right column.
-   No JS positioning needed at all.
-════════════════════════════════════════ */
-
-/* Spacer: absorbs all free space after the lane */
+/* Spacer pushes pip cell to fixed right column */
 .drow-spacer {
   flex: 1;
   min-width: 0;
   pointer-events: none;
 }
 
-/* Pip cell: fixed width, always at far right of row */
+/* Pip cell: fixed-width column at far right of every row */
 .drow-pip-cell {
   width: 28px;
   flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  pointer-events: none; /* transparent until pip is shown */
+  pointer-events: none;
 }
 
-/* The dot itself */
+/* The pip dot */
 .dbrk-pip {
   width: 10px;
   height: 10px;
@@ -3564,14 +3130,19 @@ body.brk-active #brk-pip-rail .dbrk-pip:hover {
   flex-shrink: 0;
 }
 
-/* Show all pips when Shift held or bracket pending */
-body.brk-shift .dbrk-pip,
+/* Show pips when Shift is held */
+body.brk-shift .dbrk-pip {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Show pips when bracket is pending (after first click) */
 body.brk-active .dbrk-pip {
   opacity: 1;
   pointer-events: auto;
 }
 
-/* Also make the cell itself interactive when pips are visible */
+/* Make pip cell interactive when pips are visible */
 body.brk-shift .drow-pip-cell,
 body.brk-active .drow-pip-cell {
   pointer-events: auto;
@@ -3584,11 +3155,56 @@ body.brk-active .dbrk-pip:hover {
   border-color: var(--sig, #493548);
 }
 
-/* Pending (first click) */
+/* Pending pip (first click done) */
 .dbrk-pip.brk-pending {
-  background: var(--accent, #F0D08F) !important;
-  border-color: var(--active, #C8A84B) !important;
-  opacity: 1 !important;
-  pointer-events: auto !important;
+  background: var(--accent, #F0D08F);
+  border-color: var(--active, #C8A84B);
+  opacity: 1;
+  pointer-events: auto;
   animation: brkPulse .85s ease-in-out infinite alternate;
 }
+
+@keyframes brkPulse {
+  from { box-shadow: 0 0 0 0 rgba(200,168,75,.5); }
+  to   { box-shadow: 0 0 0 5px rgba(200,168,75,.0); }
+}
+
+/* Status bar hint */
+.stbar-brk { color: var(--active, #C8A84B); }
+
+/* Bracket SVG lines */
+.brk-line { cursor: pointer; }
+.brk-line.brk-selected { filter: drop-shadow(0 0 3px rgba(200,168,75,.6)); }
+.brk-label-fo { pointer-events: all; cursor: pointer; overflow: visible; }
+
+/* Inline label input */
+.brk-label-input {
+  border: none;
+  background: rgba(73,53,72,.07);
+  border-radius: 4px;
+  font-family: var(--ui, sans-serif);
+  font-size: 11px;
+  color: var(--sig, #493548);
+  padding: 1px 4px;
+  outline: 1.5px solid var(--active, #C8A84B);
+  width: 90px;
+  height: 20px;
+}
+
+/* Comment pane collapse */
+#cmargin.pane-hidden {
+  width: 0 !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+  border-left-color: transparent !important;
+  padding: 0 !important;
+}
+
+/* Weight button active state in bracket edit popup */
+.brk-wt-btn.active {
+  background: rgba(247,243,233,.28) !important;
+  border-color: rgba(247,243,233,.6) !important;
+}
+
+/* dzone needs position:relative as anchor for #dbrk-svg */
+#dzone { position: relative; }
