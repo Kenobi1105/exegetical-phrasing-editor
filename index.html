@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607100500"/>
+<meta name="app-version" content="202607100700"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -377,11 +377,10 @@
             <svg id="dconns" preserveAspectRatio="none"></svg>
           </div>
         </div>
+        <!-- Pip rail: absolutely positioned on the right edge of #dzone.
+             Pips are NOT children of .dblock — no bubbling to startBlockDrag. -->
+        <div id="brk-pip-rail" style="display:none"></div>
       </div>
-      <!-- Pip rail: sibling of #dzone and #cmargin inside #editor-area (flex row).
-           Sits between the diagram canvas and the comment pane.
-           Pips are NOT children of .dblock — no event bubbling to startBlockDrag. -->
-      <div id="brk-pip-rail" style="display:none"></div>
       <div id="cmargin">
         <div id="mrsz" onmousedown="startMR(event)"></div>
         <svg id="svgl" preserveAspectRatio="none"></svg>

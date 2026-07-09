@@ -3502,3 +3502,25 @@ body.brk-active #brk-pip-rail .dbrk-pip:hover {
   /* Sits between diagram canvas and comment pane in the row */
   align-self: stretch !important;
 }
+
+/* ════════════════════════════════════════
+   BRACKET PIP RAIL — layout v4
+   Rail is position:absolute inside #dzone,
+   pinned to its right edge. #dzone gets
+   position:relative as anchor.
+   Pip Y positions are computed relative to
+   #dzone top + dcanvas-scroll.scrollTop so
+   they track blocks even when scrolled.
+════════════════════════════════════════ */
+#dzone { position: relative !important; }
+
+#brk-pip-rail {
+  position: absolute !important;
+  right: 0 !important;
+  top: 0 !important;
+  bottom: 0 !important;
+  width: 28px !important;
+  pointer-events: none !important; /* container transparent; pips get pointer-events */
+  z-index: 10 !important;
+  overflow: visible !important;
+}

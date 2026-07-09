@@ -379,7 +379,7 @@ function setEditorView(view){
   const isDiagram=EDITOR_VIEW==='diagram';
   document.getElementById('tzone').style.display=isDiagram?'none':'';
   document.getElementById('dzone').style.display=isDiagram?'':'none';
-  // Show pip rail only in Diagram View
+  // Rail lives inside dzone — show it in diagram view
   const rail = document.getElementById('brk-pip-rail');
   if(rail) rail.style.display = isDiagram ? '' : 'none';
   document.getElementById('view-btn-phrasing')?.classList.toggle('active',!isDiagram);
@@ -5152,7 +5152,10 @@ function _brkSyncPips(){
   _brkSyncPipPositions();
 }
 
-/* ── Reposition pips in the rail to match their block's vertical midpoint ── */
+/* ── Reposition pips in the rail to match their block's vertical midpoint ──
+   Rail is position:absolute inside #dzone (doesn't scroll).
+   Block positions from getBoundingClientRect() are viewport-relative.
+   Rail's top is also viewport-relative. Subtract rail top to get rail-local Y. */
 function _brkSyncPipPositions(){
   const rail = document.getElementById('brk-pip-rail');
   if(!rail) return;
@@ -5162,6 +5165,8 @@ function _brkSyncPipPositions(){
     const block = document.querySelector(`#dcanvas .dblock[data-rid="${rid}"]`);
     if(!block) return;
     const r = block.getBoundingClientRect();
+    // r.top is viewport-relative; railTop is viewport-relative.
+    // Subtracting gives position within the rail (which is abs inside dzone).
     const midY = r.top + r.height / 2 - railTop;
     pip.style.top = Math.round(midY) + 'px';
   });
