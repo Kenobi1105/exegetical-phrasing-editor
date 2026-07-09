@@ -411,6 +411,10 @@ function setEditorView(view){
   if(isDiagram) renderDiagram();
   // Brackets need re-render after view switch since DOM geometry changes
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
+  // Pip positions must be measured after the diagram is fully painted
+  if(isDiagram) requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions();
+  }));
 }
 
 function _repositionCmtCards(isDiagram){
@@ -663,8 +667,10 @@ function renderDiagram(){
   renderDiagramLabels();
   refreshDiagramLabels();
   // Add pip handles to diagram blocks and render any existing brackets
-  if(typeof _brkSyncPips==='function') _brkSyncPips();
+  _brkSyncPips();
   if(typeof _brkRenderDiagram==='function') setTimeout(()=>_brkRenderDiagram(), 20);
+  // Pip positions need a completed layout pass — defer past the current paint
+  requestAnimationFrame(()=>{ if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions(); });
 }
 
 /* Build and mount one .dlabel element from a data object.
@@ -5149,7 +5155,8 @@ function _brkSyncPips(){
     rail.appendChild(pip);
   });
 
-  _brkSyncPipPositions();
+  // Defer position measurement to after layout is complete
+  requestAnimationFrame(_brkSyncPipPositions);
 }
 
 /* ── Reposition pips in the rail to match their block's vertical midpoint ──
