@@ -5156,14 +5156,14 @@ function _brkSyncPips(){
 function _brkSyncPipPositions(){
   const rail = document.getElementById('brk-pip-rail');
   if(!rail) return;
-  const railRect = rail.getBoundingClientRect();
+  const railTop = rail.getBoundingClientRect().top;
   rail.querySelectorAll('.dbrk-pip').forEach(pip=>{
     const rid = pip.dataset.rid;
     const block = document.querySelector(`#dcanvas .dblock[data-rid="${rid}"]`);
     if(!block) return;
     const r = block.getBoundingClientRect();
-    const midY = r.top + r.height / 2 - railRect.top;
-    pip.style.top = midY + 'px';
+    const midY = r.top + r.height / 2 - railTop;
+    pip.style.top = Math.round(midY) + 'px';
   });
 }
 

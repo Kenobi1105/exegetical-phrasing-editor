@@ -3487,3 +3487,18 @@ body.brk-active #brk-pip-rail .dbrk-pip:hover {
   pointer-events: auto !important;
   animation: brkPulse .85s ease-in-out infinite alternate !important;
 }
+
+/* ════════════════════════════════════════
+   BRACKET PIP RAIL — position fix
+   Rail is a flex sibling of #dzone and
+   #cmargin inside #editor-area (flex row).
+════════════════════════════════════════ */
+#brk-pip-rail {
+  position: relative !important;
+  width: 28px !important;
+  flex-shrink: 0 !important;
+  overflow: visible !important;
+  z-index: 10 !important;
+  /* Sits between diagram canvas and comment pane in the row */
+  align-self: stretch !important;
+}
