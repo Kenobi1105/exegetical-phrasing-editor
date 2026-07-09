@@ -839,13 +839,7 @@ function addDiagramLabel(){
    startConnectorDraw below) rather than moving the block. */
 function startBlockDrag(ev, rid){
   if(ev.button!==0) return; // left mouse button only
-  if(ev.shiftKey){
-    // If the click landed on the pip itself, let the pip's own listener handle it
-    if(ev.target.closest('.dbrk-pip')) return;
-    // If a bracket is already pending (second pip click), let it through too
-    if(typeof BRACKET_PENDING!=='undefined' && BRACKET_PENDING) return;
-    startConnectorDraw(ev, rid); return;
-  }
+  if(ev.shiftKey){ startConnectorDraw(ev, rid); return; }
   ev.preventDefault();
   ev.stopPropagation();
 
@@ -5125,25 +5119,12 @@ function _brkAddBlockPip(block, rid){
   if(block.querySelector('.dbrk-pip')) return;
   const pip = document.createElement('div');
   pip.className = 'dbrk-pip';
-  pip.title = 'Shift+click to start/end bracket';
+  pip.title = 'Shift+click to bracket';
   block.appendChild(pip);
 
-  // Pip is directly clickable — Shift+click the dot itself
   pip.addEventListener('mousedown', ev=>{
     if(!ev.shiftKey) return;
     ev.preventDefault();
-    ev.stopPropagation(); // don't bubble to block's drag handler
-    _brkHandleClick(rid, pip);
-  });
-
-  // Also allow Shift+click anywhere on the block (not just the pip)
-  // so the interaction still works if the user clicks block text with Shift held
-  block.addEventListener('mousedown', ev=>{
-    if(!ev.shiftKey) return;
-    if(ev.target.closest('.dra-handle')) return;
-    if(ev.target.closest('.dbrk-pip')) return; // pip already handled above
-    ev.preventDefault();
-    ev.stopPropagation();
     _brkHandleClick(rid, pip);
   });
 }
@@ -5187,54 +5168,6 @@ function _brkHandleClick(rid, pipEl){
     _brkCreate(startRid, endRid);
   }
 }
-
-/* ── Document-level Shift+mousedown handler for completing a pending bracket ──
-   When BRACKET_PENDING is set (first pip was clicked), intercept any
-   Shift+mousedown anywhere on the canvas and resolve it to the nearest block.
-   This is more robust than relying on per-pip pointer-events, especially since
-   pips are position:fixed and may not reliably receive bubbled events. */
-document.addEventListener('mousedown', ev=>{
-  if(!BRACKET_PENDING) return;           // only active after first pip click
-  if(!ev.shiftKey) return;              // only Shift+clicks
-  if(EDITOR_VIEW!=='diagram') return;
-
-  // Find which dblock (if any) the user clicked on, or which pip
-  const clickedPip   = ev.target.closest('.dbrk-pip');
-  const clickedBlock = ev.target.closest('.dblock');
-
-  let targetRid = null;
-  if(clickedPip){
-    // Clicked a pip directly — get rid from its parent block
-    const parentBlock = clickedPip.closest('.dblock');
-    targetRid = parentBlock ? parentBlock.dataset.rid : null;
-  } else if(clickedBlock){
-    targetRid = clickedBlock.dataset.rid;
-  } else {
-    // Clicked canvas background while bracket pending — find nearest block by Y
-    const canvas = document.getElementById('dcanvas');
-    if(!canvas) return;
-    const clickY = ev.clientY;
-    let closest = null, closestDist = Infinity;
-    canvas.querySelectorAll('.dblock').forEach(block=>{
-      const r = block.getBoundingClientRect();
-      const midY = r.top + r.height / 2;
-      const dist = Math.abs(midY - clickY);
-      if(dist < closestDist){ closestDist = dist; closest = block; }
-    });
-    // Only snap to nearest block if within 60px
-    if(closest && closestDist < 60) targetRid = closest.dataset.rid;
-  }
-
-  if(!targetRid) return;
-
-  ev.preventDefault();
-  ev.stopPropagation();
-
-  const startRid = BRACKET_PENDING.rid;
-  _brkCancelPending();
-  if(startRid === targetRid){ toast(t('bracket.cancel')); return; }
-  _brkCreate(startRid, targetRid);
-}, true); // capture phase — runs before any element-level handlers
 
 /* ── Cancel pending first-click ── */
 function _brkCancelPending(){
