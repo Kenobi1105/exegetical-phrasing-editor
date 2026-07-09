@@ -839,7 +839,13 @@ function addDiagramLabel(){
    startConnectorDraw below) rather than moving the block. */
 function startBlockDrag(ev, rid){
   if(ev.button!==0) return; // left mouse button only
-  if(ev.shiftKey){ startConnectorDraw(ev, rid); return; }
+  if(ev.shiftKey){
+    // If the click landed on the pip itself, let the pip's own listener handle it
+    if(ev.target.closest('.dbrk-pip')) return;
+    // If a bracket is already pending (second pip click), let it through too
+    if(typeof BRACKET_PENDING!=='undefined' && BRACKET_PENDING) return;
+    startConnectorDraw(ev, rid); return;
+  }
   ev.preventDefault();
   ev.stopPropagation();
 
