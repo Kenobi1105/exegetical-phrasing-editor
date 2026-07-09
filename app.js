@@ -260,10 +260,6 @@ function openEditor(){
   if(typeof bPinned!=='undefined'&&bPinned&&typeof bApplyPin==='function'){
     setTimeout(()=>bApplyPin(),50);
   }
-  // Initialise bracket handle column width (24px fixed handle zone)
-  if(typeof _brkUpdateColWidth==='function') _brkUpdateColWidth();
-  // Add bracket handles to any rows already in the DOM (e.g. from paste/skipPaste)
-  setTimeout(()=>{ if(typeof _brkSyncHandles==='function') _brkSyncHandles(); }, 80);
   // Silently pre-load Unicode font in background so PDF export is instant
   const fontURL=IS_RTL
     ?'https://raw.githubusercontent.com/googlefonts/noto-fonts/main/hinted/ttf/NotoSerifHebrew/NotoSerifHebrew-Regular.ttf'
@@ -329,17 +325,7 @@ function makeRowEl(rid,verse,origHTML,transHTML,cmtId){
       <button class="cmtbtn${cmtId?' on':''}" title="Comment" onclick="toggleCmt(this,${rid})">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </button>
-    </div>
-    <div class="xrow-brk-handle" data-rid="${rid}"><div class="xrow-brk-pip"></div></div>`;
-  // Wire up the bracket handle Shift+click
-  const brkH = el.querySelector('.xrow-brk-handle');
-  if(brkH){
-    brkH.addEventListener('mousedown', ev=>{
-      if(!ev.shiftKey) return;
-      ev.preventDefault(); ev.stopPropagation();
-      if(typeof _brkHandleClick==='function') _brkHandleClick(String(rid), brkH);
-    });
-  }
+    </div>`;
   const oc=el.querySelector(`#oc-${rid} .cedit`);
   if(oc&&origHTML) oc.innerHTML=origHTML;
   const tc=el.querySelector(`#tc-${rid} .cedit`);
@@ -672,11 +658,10 @@ function renderDiagram(){
   if(!rows.length) return;
   renderDiagramConnectors();
   renderDiagramLabels();
-  // Recompute bracket horizontal positions now that all block elements
-  // are in the DOM and have real layout positions.
   refreshDiagramLabels();
-  // Add bracket handles to diagram rows and render brackets
-  if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 30);
+  // Add pip handles to diagram blocks and render any existing brackets
+  if(typeof _brkSyncPips==='function') _brkSyncPips();
+  if(typeof _brkRenderDiagram==='function') setTimeout(()=>_brkRenderDiagram(), 20);
 }
 
 /* Build and mount one .dlabel element from a data object.
@@ -887,6 +872,8 @@ function startBlockDrag(ev, rid){
     // Connectors attached to this block must reroute LIVE during the drag,
     // not just snap-and-recalculate after drop.
     refreshDiagramConnectors();
+    // Brackets reposition live too — all brackets recalc from current block positions
+    if(typeof refreshBrackets==='function') refreshBrackets();
   };
 
   const onUp=()=>{
@@ -2212,7 +2199,8 @@ function redo(){
 }
 
 function applyRowUndo(op){
-  if(op.type==='indent'){
+  // Bracket ops — handled entirely by bracket system
+  if(typeof _brkApplyUndo==='function' && _brkApplyUndo(op)) return;
     // Re-query the cell from the DOM (op.el reference may be stale)
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     const ce=row?row.querySelector('.cedit[data-indent]')||row.querySelector('.cedit'):op.el;
@@ -2358,7 +2346,8 @@ function applyRowUndo(op){
 }
 
 function applyRowRedo(op){
-  if(op.type==='indent'){
+  // Bracket ops — handled entirely by bracket system
+  if(typeof _brkApplyRedo==='function' && _brkApplyRedo(op)) return;
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     const ce=row?row.querySelector('.cedit[data-indent]')||row.querySelector('.cedit'):op.el;
     if(ce){ ce.dataset.indent=op.next; applyIndentStyle(ce); ce.focus(); }
@@ -3346,9 +3335,7 @@ function loadData(data){
     const transCell=isSingle?'':`<div class="vdiv"></div><div class="xcell grow" id="tc-${rid}"><div class="cedit" contenteditable="true" spellcheck="false" data-ph="Translation…" onfocus="trackFocus(this,${rid})" onblur="autoSave()" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'t',${rid})"></div></div>`;
     const row=document.createElement('div');
     row.className='xrow'+(rd.cid?' has-cmt':'');row.dataset.rid=rid;if(rd.cid)row.dataset.cid=rd.cid;
-    row.innerHTML=`<div class="xcell mid" style="width:60px;min-width:60px"><input class="vin" type="text" maxlength="8" placeholder="v" spellcheck="false" value="${escH(rd.verse||'')}" oninput="recomputeIds();autoSave()" onkeydown="onVerseKey(event,${rid})"/></div><div class="xcell mid" style="width:52px;min-width:52px"><div class="lid">—</div></div><div class="vdiv"></div><div class="xcell grow" id="oc-${rid}"><div class="cedit${rtl}" contenteditable="true" spellcheck="false" data-ph="${origPH}" onfocus="trackFocus(this,${rid})" onblur="autoSave()" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'o',${rid})"></div></div>${transCell}<div class="xcell mid" style="width:40px;min-width:40px"><button class="cmtbtn${rd.cid?' on':''}" title="Comment" onclick="toggleCmt(this,${rid})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button></div><div class="xrow-brk-handle" data-rid="${rid}"><div class="xrow-brk-pip"></div></div>`;
-    const brkH=row.querySelector('.xrow-brk-handle');
-    if(brkH){brkH.addEventListener('mousedown',ev=>{if(!ev.shiftKey)return;ev.preventDefault();ev.stopPropagation();if(typeof _brkHandleClick==='function')_brkHandleClick(String(rid),brkH);});}
+    row.innerHTML=`<div class="xcell mid" style="width:60px;min-width:60px"><input class="vin" type="text" maxlength="8" placeholder="v" spellcheck="false" value="${escH(rd.verse||'')}" oninput="recomputeIds();autoSave()" onkeydown="onVerseKey(event,${rid})"/></div><div class="xcell mid" style="width:52px;min-width:52px"><div class="lid">—</div></div><div class="vdiv"></div><div class="xcell grow" id="oc-${rid}"><div class="cedit${rtl}" contenteditable="true" spellcheck="false" data-ph="${origPH}" onfocus="trackFocus(this,${rid})" onblur="autoSave()" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'o',${rid})"></div></div>${transCell}<div class="xcell mid" style="width:40px;min-width:40px"><button class="cmtbtn${rd.cid?' on':''}" title="Comment" onclick="toggleCmt(this,${rid})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button></div>`;
     const oc=row.querySelector(`#oc-${rid} .cedit`);
     if(oc&&rd.origHTML)oc.innerHTML=rd.origHTML;
     if(oc&&rd.origIndent){oc.dataset.indent=rd.origIndent;}
@@ -4717,7 +4704,6 @@ function clearAll(){
   if(typeof BRACKETS!=='undefined'){ BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null; }
   if(typeof _brkCancelPending==='function') _brkCancelPending();
   if(typeof _brkCloseEditPopup==='function') _brkCloseEditPopup();
-  if(typeof _brkUpdateColWidth==='function') _brkUpdateColWidth();
   addEmptyRow();
   localStorage.removeItem(storeKey());
   toast(typeof t==='function'?t('toast.cleared'):'Cleared — press Ctrl+Z to undo');
@@ -4865,37 +4851,6 @@ function exportPDF(){
     const totalRows=rowEls.length;
 
     showProgress(0,'Exporting PDF…');
-
-    // ── Bracket PDF injection ─────────────────
-    // We render brackets as jsPDF vector lines directly (not via html2canvas)
-    // so they appear crisply regardless of scale. We draw them after the rows.
-    // Collect bracket geometry in PDF points before the row loop.
-    const brkPdfData=[];
-    if(typeof BRACKETS!=='undefined' && BRACKETS.length){
-      const PT_PX_B=72/96;
-      const body_B=document.getElementById('rows-body');
-      const bodyRect_B=body_B?body_B.getBoundingClientRect():null;
-      if(bodyRect_B){
-        const overlayEl=document.getElementById('brk-overlay');
-        const colW_B=overlayEl?overlayEl.offsetWidth:0;
-        // We'll map row screen positions to PDF Y positions during the row loop.
-        // Pre-compute all bracket info now (positions locked to screen layout).
-        BRACKETS.forEach(brk=>{
-          const sRow=document.querySelector(`.xrow[data-rid="${brk.startRid}"]`);
-          const eRow=document.querySelector(`.xrow[data-rid="${brk.endRid}"]`);
-          if(!sRow||!eRow) return;
-          const sRect=sRow.getBoundingClientRect();
-          const eRect=eRow.getBoundingClientRect();
-          // Store screen top/bottom so we can interpolate PDF Y later
-          brkPdfData.push({brk,
-            screenTop:   Math.min(sRect.top+sRect.height*0.5, eRect.bottom-eRect.height*0.5),
-            screenBot:   Math.max(sRect.bottom-eRect.height*0.5, eRect.top+sRect.height*0.5),
-            screenTopRaw:sRect.top+sRect.height*0.5,
-            screenBotRaw:eRect.bottom-eRect.height*0.5,
-          });
-        });
-      }
-    }
 
     function stripHtml(html){
       return html
@@ -5048,72 +5003,6 @@ function exportPDF(){
     // Flush last page footnotes
     drawFns(pageFns);
 
-    // ── Draw brackets as PDF vectors ──────────────────────────────────────
-    // Strategy: map each bracket's screen-Y range to PDF-Y by tracking
-    // cumulative row heights during the layout pass above. Since rows render
-    // top-to-bottom in PDF order, we build a screen-Y → pdf-Y lookup here
-    // by re-measuring all rows vs the PDF final curY bookmark.
-    if(brkPdfData.length){
-      // Re-read PDF page count and page sizes — iterate pages 1..N
-      // For simplicity we draw brackets only on page 1 when the full passage
-      // fits; for multi-page we do a best-effort based on row top PDF positions.
-      // Build a rowPdfY map: rid → {pdfY, pdfH} (approximate from DOM order)
-      const rowEls2=Array.from(document.querySelectorAll('.xrow'));
-      const firstRowRect=rowEls2[0]?.getBoundingClientRect();
-      const lastRowRect=rowEls2[rowEls2.length-1]?.getBoundingClientRect();
-      if(firstRowRect && lastRowRect){
-        // Simple linear mapping: screenY → pdfY
-        // First row maps to just below column headers (curY start) ≈ 58pt
-        // We captured curY as it progressed — approximate using proportional mapping.
-        const screenRange=lastRowRect.bottom - firstRowRect.top;
-        const pdfHeaderH=38; // approx header+colhdr height in pt
-        const pdfContentStart=MAR+pdfHeaderH;
-        // We use the usableW for bracket column position
-        const brkLaneW_pt=BRK_LANE_W*PT_PX;
-        const brkSerifW_pt=BRK_SERIF_W*PT_PX;
-
-        brkPdfData.forEach(({brk, screenTopRaw, screenBotRaw})=>{
-          if(!screenRange) return;
-          // Map screen Y to PDF Y (approximate — single-page best effort)
-          const fracTop=(screenTopRaw - firstRowRect.top)/screenRange;
-          const fracBot=(screenBotRaw - firstRowRect.top)/screenRange;
-          // PDF content area height estimate: pH - 2*MAR - pdfHeaderH - footnote zone
-          const pdfContentH = pH - 2*MAR - pdfHeaderH - 20;
-          const yTop_pt = pdfContentStart + fracTop * pdfContentH;
-          const yBot_pt = pdfContentStart + fracBot * pdfContentH;
-
-          if(yTop_pt > pH - MAR || yBot_pt < pdfContentStart) return; // off-page
-
-          const laneX_pt = pW - MAR - (brk.lane - 1)*brkLaneW_pt - brkLaneW_pt*0.5;
-          const midY_pt  = (yTop_pt + yBot_pt) / 2;
-
-          // Parse color
-          let r=73,g2=53,b2=72;
-          const c=brk.color||'#493548';
-          if(c.startsWith('#') && c.length===7){
-            r=parseInt(c.slice(1,3),16); g2=parseInt(c.slice(3,5),16); b2=parseInt(c.slice(5,7),16);
-          }
-          const sw=Math.max(0.5, (brk.thickness||2)*0.5);
-          doc.setDrawColor(r,g2,b2); doc.setLineWidth(sw);
-          doc.setLineCap('round');
-          // Vertical line
-          doc.line(laneX_pt, yTop_pt, laneX_pt, yBot_pt);
-          // Top serif
-          doc.line(laneX_pt - brkSerifW_pt, yTop_pt, laneX_pt, yTop_pt);
-          // Bottom serif
-          doc.line(laneX_pt - brkSerifW_pt, yBot_pt, laneX_pt, yBot_pt);
-          // Mid tick
-          doc.line(laneX_pt, midY_pt, laneX_pt+4, midY_pt);
-          // Label
-          if(brk.label){
-            doc.setFont('helvetica','bold'); doc.setFontSize(8);
-            doc.setTextColor(r,g2,b2);
-            doc.text(brk.label, laneX_pt+5, midY_pt+2.5);
-          }
-        });
-      }
-    }
-
     showProgress(95,'Saving PDF…');
     doc.save(fname+'.pdf');
     hideProgress();
@@ -5146,322 +5035,252 @@ function toast(msg){
 }
 
 /* ════════════════════════════════════════
-   BRACKETING SYSTEM
-   Right-side bracket handles on every row.
-   Shift+click first → Shift+click second → bracket created.
-   SVG overlay renders brackets in both Phrasing and Diagram View.
-   Brackets saved in project JSON.
+   BRACKETING SYSTEM — Diagram View only
+   ───────────────────────────────────────
+   Brackets are anchored to ROW IDs.
+   They render as SVG beside diagram blocks.
+   X position = rightmost block right-edge
+   among all rows spanned by the bracket.
+   Shift+click block pip → second Shift+click
+   → bracket created with inline label prompt.
+   All brackets refresh live during block drag.
+   Undo/redo integrated via ROW_STACK.
 ════════════════════════════════════════ */
 
 /* ── State ── */
-let BRACKETS = [];           // array of bracket objects
-let BRACKET_PENDING = null;  // {rid, handleEl} | null — after first Shift+click
-let SELECTED_BRK_ID = null;  // id of currently selected bracket
-let BRK_CTR = 0;             // ever-incrementing bracket ID seed
+let BRACKETS       = [];    // [{id,startRid,endRid,label,color,thickness,lane}]
+let BRACKET_PENDING= null;  // {rid, pipEl} | null — after first Shift+click
+let SELECTED_BRK_ID= null;  // id of currently selected bracket
+let BRK_CTR        = 0;     // ever-incrementing id seed
 
-const BRK_LANE_W  = 20;  // px per bracket lane
-const BRK_SERIF_W = 6;   // px width of top/bottom serifs
-const BRK_LABEL_GAP = 6; // px between bracket line right edge and label
+const BRK_PIP_OFFSET = 8;   // px gap between block right edge and the bracket line
+const BRK_LANE_W     = 22;  // px per lane (for stacked brackets)
+const BRK_SERIF_W    = 7;   // px width of top/bottom serifs
+const BRK_LABEL_GAP  = 5;   // px between bracket line and label text
 
-/* ── How many lanes are active → drives --brk-col-w ── */
-function _brkMaxLane(){
-  if(!BRACKETS.length) return 0;
-  return Math.max(...BRACKETS.map(b=>b.lane));
+/* ── Compute X position of a bracket in canvas-local px ──
+   Finds the rightmost right-edge among all .dblock elements
+   in the spanned row range. */
+function _brkComputeX(startRid, endRid, lane){
+  const canvas = document.getElementById('dcanvas');
+  if(!canvas) return 200;
+  const canvasRect = canvas.getBoundingClientRect();
+  const zoom = DIAGRAM_ZOOM / 100;
+
+  const rows  = Array.from(document.querySelectorAll('.xrow'));
+  const rids  = rows.map(r=>r.dataset.rid);
+  const si    = rids.indexOf(String(startRid));
+  const ei    = rids.indexOf(String(endRid));
+  if(si<0||ei<0) return 200;
+  const lo = Math.min(si,ei), hi = Math.max(si,ei);
+  const spannedRids = rids.slice(lo, hi+1);
+
+  let maxRight = 0;
+  spannedRids.forEach(rid=>{
+    const block = canvas.querySelector(`.dblock[data-rid="${rid}"]`);
+    if(!block) return;
+    const r = block.getBoundingClientRect();
+    const right = (r.right - canvasRect.left) / zoom;
+    if(right > maxRight) maxRight = right;
+  });
+
+  // lane 1 = closest to blocks, higher lanes step right
+  return maxRight + BRK_PIP_OFFSET + (lane-1)*BRK_LANE_W;
 }
 
-function _brkUpdateColWidth(){
-  const lanes = _brkMaxLane();
-  // Lane drawing area: grows with brackets. Label text needs ~60px per lane.
-  const laneW = lanes > 0 ? lanes * BRK_LANE_W + 60 : 0;
-  document.documentElement.style.setProperty('--brk-lane-w', laneW+'px');
-  // --brk-col-w kept for legacy references, equals handle + lane
-  const totalW = 24 + laneW; // 24 = handle zone (--brk-handle-w)
-  document.documentElement.style.setProperty('--brk-col-w', totalW+'px');
-  // Resize the phrasing overlay to cover handle + lane area
-  const overlay = document.getElementById('brk-overlay');
-  if(overlay) overlay.style.width = totalW+'px';
-  // Also size the column header placeholder
-  const chBrk = document.getElementById('ch-brk');
-  if(chBrk){ chBrk.style.width = totalW+'px'; chBrk.style.minWidth = totalW+'px'; }
-}
-
-/* ── Lane assignment: find lowest lane with no vertical overlap ── */
+/* ── Lane assignment ── */
 function _brkAssignLane(startRid, endRid){
   const rows = Array.from(document.querySelectorAll('.xrow'));
   const rids = rows.map(r=>r.dataset.rid);
-  const si = rids.indexOf(String(startRid));
-  const ei = rids.indexOf(String(endRid));
-  if(si < 0 || ei < 0) return 1;
-  const lo = Math.min(si, ei);
-  const hi = Math.max(si, ei);
-
-  for(let lane = 1; lane <= 20; lane++){
+  const si   = rids.indexOf(String(startRid));
+  const ei   = rids.indexOf(String(endRid));
+  if(si<0||ei<0) return 1;
+  const lo = Math.min(si,ei), hi = Math.max(si,ei);
+  for(let lane=1; lane<=20; lane++){
     const conflict = BRACKETS.some(b=>{
-      if(b.lane !== lane) return false;
-      const bi = rids.indexOf(String(b.startRid));
-      const bj = rids.indexOf(String(b.endRid));
-      if(bi < 0 || bj < 0) return false;
-      const blo = Math.min(bi, bj);
-      const bhi = Math.max(bi, bj);
-      return !(hi < blo || lo > bhi);
+      if(b.lane!==lane) return false;
+      const bi=rids.indexOf(String(b.startRid));
+      const bj=rids.indexOf(String(b.endRid));
+      if(bi<0||bj<0) return false;
+      const blo=Math.min(bi,bj), bhi=Math.max(bi,bj);
+      return !(hi<blo || lo>bhi);
     });
     if(!conflict) return lane;
   }
   return 1;
 }
 
-/* ── Add a bracket handle column to a row element ── */
-function _brkAddHandle(rowEl){
-  if(!rowEl || rowEl.querySelector('.xrow-brk-handle')) return;
-  const h = document.createElement('div');
-  h.className = 'xrow-brk-handle';
-  h.setAttribute('data-rid', rowEl.dataset.rid);
-  h.innerHTML = '<div class="xrow-brk-pip"></div>';
-  h.addEventListener('mousedown', ev => {
-    if(!ev.shiftKey) return; // only act on Shift+click
-    ev.preventDefault();
-    ev.stopPropagation();
-    _brkHandleClick(rowEl.dataset.rid, h);
-  });
-  rowEl.appendChild(h);
-}
-
-/* ── Add diagram row bracket handle ── */
-function _brkAddDiagHandle(drowEl){
-  if(!drowEl || drowEl.querySelector('.drow-brk-handle')) return;
-  const rid = drowEl.dataset.rid;
-  const h = document.createElement('div');
-  h.className = 'drow-brk-handle';
-  h.setAttribute('data-rid', rid);
-  h.innerHTML = '<div class="drow-brk-pip"></div>';
-  drowEl.style.position = 'relative';
-  h.addEventListener('mousedown', ev => {
+/* ── Add pip handle to a .dblock ── */
+function _brkAddBlockPip(block, rid){
+  if(block.querySelector('.dbrk-pip')) return;
+  const pip = document.createElement('div');
+  pip.className = 'dbrk-pip';
+  pip.title = 'Shift+click to start/end bracket';
+  block.appendChild(pip);
+  block.addEventListener('mousedown', ev=>{
     if(!ev.shiftKey) return;
+    // Only fire on the block itself or the pip, not the ra-handle
+    if(ev.target.closest('.dra-handle')) return;
     ev.preventDefault();
     ev.stopPropagation();
-    _brkHandleClick(rid, h);
+    _brkHandleClick(rid, pip);
   });
-  drowEl.appendChild(h);
 }
 
-/* ── Ensure all current rows have bracket handles ── */
-function _brkSyncHandles(){
-  document.querySelectorAll('.xrow').forEach(r => _brkAddHandle(r));
-  // Diagram rows
-  document.querySelectorAll('#dcanvas .drow').forEach(r => _brkAddDiagHandle(r));
+/* ── Sync pips to all current dblocks ── */
+function _brkSyncPips(){
+  document.querySelectorAll('#dcanvas .dblock').forEach(block=>{
+    const rid = block.dataset.rid;
+    if(rid) _brkAddBlockPip(block, rid);
+  });
 }
 
-/* ── Handle a Shift+click on a row's bracket pip ── */
-function _brkHandleClick(rid, handleEl){
+/* ── Handle Shift+click on a block ── */
+function _brkHandleClick(rid, pipEl){
   if(!BRACKET_PENDING){
-    // First click — start bracket
-    BRACKET_PENDING = {rid, handleEl};
-    handleEl.classList.add('brk-pending');
+    BRACKET_PENDING = {rid, pipEl};
+    pipEl.classList.add('brk-pending');
     document.body.classList.add('brk-active');
     const stbar = document.getElementById('stbar');
-    if(stbar){ stbar.textContent = t('bracket.start-hint'); stbar.classList.add('stbar-brk'); }
+    if(stbar){ stbar.textContent=t('bracket.start-hint'); stbar.classList.add('stbar-brk'); }
   } else {
-    // Second click
     const startRid = BRACKET_PENDING.rid;
     const endRid   = rid;
     _brkCancelPending();
-    if(startRid === endRid){
-      // Same row — cancel
-      toast(t('bracket.cancel'));
-      return;
-    }
+    if(startRid===endRid){ toast(t('bracket.cancel')); return; }
     _brkCreate(startRid, endRid);
   }
 }
 
-/* ── Cancel a pending bracket (Escape) ── */
+/* ── Cancel pending first-click ── */
 function _brkCancelPending(){
   if(!BRACKET_PENDING) return;
-  BRACKET_PENDING.handleEl.classList.remove('brk-pending');
-  // Also clear any diagram handle with same rid
-  document.querySelectorAll('.drow-brk-handle.brk-pending').forEach(h=>h.classList.remove('brk-pending'));
+  BRACKET_PENDING.pipEl.classList.remove('brk-pending');
   BRACKET_PENDING = null;
   document.body.classList.remove('brk-active');
   const stbar = document.getElementById('stbar');
-  if(stbar){ stbar.textContent = t('stbar.ready'); stbar.classList.remove('stbar-brk'); }
+  if(stbar){ stbar.textContent=t('stbar.ready'); stbar.classList.remove('stbar-brk'); }
 }
 
-/* ── Create and store a bracket ── */
+/* ── Create bracket, push to undo stack ── */
 function _brkCreate(startRid, endRid){
   const lane = _brkAssignLane(startRid, endRid);
   const id   = 'brk-'+(++BRK_CTR);
   const brk  = {id, startRid, endRid, label:'', color:'#493548', thickness:2, lane};
   BRACKETS.push(brk);
-  _brkUpdateColWidth();
+  rowPush({type:'brk-add', brk:{...brk}});
   refreshBrackets();
-  // Open inline label input immediately after render
-  setTimeout(()=>_brkOpenInlineEdit(id), 50);
+  setTimeout(()=>_brkOpenInlineEdit(id), 40);
   autoSave();
 }
 
-/* ── Refresh (re-render) all brackets for the active view ── */
+/* ── Main render entry point ── */
 function refreshBrackets(){
-  _brkSyncHandles();
-  _brkUpdateColWidth();
-  if(EDITOR_VIEW === 'diagram'){
-    _brkRenderDiagram();
-  } else {
-    _brkRenderPhrasing();
-  }
+  if(EDITOR_VIEW==='diagram') _brkRenderDiagram();
+  // Phrasing View: no bracket rendering
 }
 
-/* ── Render brackets in Phrasing View ── */
-function _brkRenderPhrasing(){
-  const svg = document.getElementById('brk-svg');
-  if(!svg) return;
-  svg.innerHTML = '';
-  if(!BRACKETS.length) return;
-
-  // The SVG lives inside #brk-overlay which is inside #tzone (position:relative).
-  // We measure everything relative to #tzone's top-left so scroll is accounted for.
-  const tzone = document.getElementById('tzone');
-  if(!tzone) return;
-  const tzoneRect = tzone.getBoundingClientRect();
-
-  // Total SVG width = handle zone + lane zone
-  const lanes   = _brkMaxLane();
-  const laneAreaW = lanes > 0 ? lanes * BRK_LANE_W + 60 : 60;
-  const svgW    = 24 + laneAreaW;
-
-  // Resize overlay and SVG to the full needed width
-  const overlay = document.getElementById('brk-overlay');
-  if(overlay){ overlay.style.width = svgW+'px'; }
-  svg.style.width = svgW+'px';
-
-  BRACKETS.forEach(brk => {
-    const startRow = document.querySelector(`.xrow[data-rid="${brk.startRid}"]`);
-    const endRow   = document.querySelector(`.xrow[data-rid="${brk.endRid}"]`);
-    if(!startRow || !endRow) return;
-
-    const sRect = startRow.getBoundingClientRect();
-    const eRect = endRow.getBoundingClientRect();
-
-    // Y relative to tzone top (which is the SVG's coordinate origin)
-    const yTop    = sRect.top    - tzoneRect.top + sRect.height  * 0.5;
-    const yBottom = eRect.top    - tzoneRect.top + eRect.height  * 0.5;
-    const yStart  = Math.min(yTop, yBottom);
-    const yEnd    = Math.max(yTop, yBottom);
-
-    // X: lane 1 starts at x=4 (a few px from left edge of overlay), lanes step right
-    const laneX = 4 + (brk.lane - 1) * BRK_LANE_W + BRK_LANE_W * 0.5;
-
-    _brkDrawSVGBracket(svg, brk, laneX, yStart, yEnd, svgW);
-  });
-}
-
-/* ── Render brackets in Diagram View ── */
+/* ── Render all brackets into #dbrk-svg ── */
 function _brkRenderDiagram(){
-  // Remove old diagram bracket SVG if present
+  // Ensure pips exist on all blocks first
+  _brkSyncPips();
+
+  // Remove old SVG layer
   let dsvg = document.getElementById('dbrk-svg');
   if(dsvg) dsvg.remove();
   if(!BRACKETS.length) return;
 
   const canvas = document.getElementById('dcanvas');
   if(!canvas) return;
+  const canvasRect = canvas.getBoundingClientRect();
+  const zoom = DIAGRAM_ZOOM / 100;
 
   dsvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
   dsvg.id = 'dbrk-svg';
   dsvg.setAttribute('preserveAspectRatio','none');
   canvas.appendChild(dsvg);
 
-  const canvasRect = canvas.getBoundingClientRect();
-  const zoom = DIAGRAM_ZOOM / 100;
+  BRACKETS.forEach(brk=>{
+    const rows  = Array.from(document.querySelectorAll('.xrow'));
+    const rids  = rows.map(r=>r.dataset.rid);
+    const si    = rids.indexOf(String(brk.startRid));
+    const ei    = rids.indexOf(String(brk.endRid));
+    if(si<0||ei<0) return;
+    const lo = Math.min(si,ei), hi = Math.max(si,ei);
+    const spannedRids = rids.slice(lo, hi+1);
 
-  BRACKETS.forEach(brk => {
-    // Use drow elements (not xrow) for diagram positions
-    const startDrow = canvas.querySelector(`.drow[data-rid="${brk.startRid}"]`);
-    const endDrow   = canvas.querySelector(`.drow[data-rid="${brk.endRid}"]`);
-    if(!startDrow || !endDrow) return;
+    // Y: top of start drow, bottom of end drow — in canvas-local px
+    const startDrow = canvas.querySelector(`.drow[data-rid="${rids[lo]}"]`);
+    const endDrow   = canvas.querySelector(`.drow[data-rid="${rids[hi]}"]`);
+    if(!startDrow||!endDrow) return;
 
     const sRect = startDrow.getBoundingClientRect();
     const eRect = endDrow.getBoundingClientRect();
+    const yStart = (sRect.top    - canvasRect.top) / zoom;
+    const yEnd   = (eRect.bottom - canvasRect.top) / zoom;
 
-    const yTop    = (sRect.top    - canvasRect.top) / zoom + (sRect.height / zoom) * 0.5;
-    const yBottom = (eRect.bottom - canvasRect.top) / zoom - (eRect.height / zoom) * 0.5;
-    const yStart  = Math.min(yTop, yBottom);
-    const yEnd    = Math.max(yTop, yBottom);
+    // X: rightmost block among spanned rows + lane offset
+    let maxRight = 0;
+    spannedRids.forEach(rid=>{
+      const block = canvas.querySelector(`.dblock[data-rid="${rid}"]`);
+      if(!block) return;
+      const r = block.getBoundingClientRect();
+      const right = (r.right - canvasRect.left) / zoom;
+      if(right > maxRight) maxRight = right;
+    });
+    const laneX = maxRight + BRK_PIP_OFFSET + (brk.lane-1)*BRK_LANE_W + BRK_LANE_W*0.5;
 
-    // For diagram, laneX starts from right edge of canvas content
-    const laneX = (brk.lane - 1) * BRK_LANE_W + BRK_LANE_W * 0.5;
-
-    const svgW = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--brk-col-w'))||48;
-    _brkDrawSVGBracket(dsvg, brk, laneX, yStart, yEnd, svgW);
+    _brkDrawSVG(dsvg, brk, laneX, yStart, yEnd);
   });
 }
 
-/* ── Draw a single bracket into an SVG element ── */
-function _brkDrawSVGBracket(svg, brk, laneX, yStart, yEnd, svgW){
-  const c        = brk.color || '#493548';
-  const sw       = brk.thickness || 2;
-  const isSelected = brk.id === SELECTED_BRK_ID;
+/* ── Draw one bracket ── */
+function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
+  const c  = brk.color||'#493548';
+  const sw = brk.thickness||2;
+  const sel= brk.id===SELECTED_BRK_ID;
+  const cls= 'brk-line'+(sel?' brk-selected':'');
+  const midY = (yStart+yEnd)/2;
 
   const g = document.createElementNS('http://www.w3.org/2000/svg','g');
   g.dataset.brkId = brk.id;
 
-  // Vertical line
-  const vLine = document.createElementNS('http://www.w3.org/2000/svg','line');
-  vLine.setAttribute('x1', laneX); vLine.setAttribute('y1', yStart);
-  vLine.setAttribute('x2', laneX); vLine.setAttribute('y2', yEnd);
-  vLine.setAttribute('stroke', c); vLine.setAttribute('stroke-width', sw);
-  vLine.setAttribute('stroke-linecap','round');
-  vLine.className.baseVal = 'brk-line'+(isSelected?' brk-selected':'');
-  g.appendChild(vLine);
+  function ln(x1,y1,x2,y2,extraCls){
+    const l=document.createElementNS('http://www.w3.org/2000/svg','line');
+    l.setAttribute('x1',x1); l.setAttribute('y1',y1);
+    l.setAttribute('x2',x2); l.setAttribute('y2',y2);
+    l.setAttribute('stroke',c); l.setAttribute('stroke-width',sw);
+    l.setAttribute('stroke-linecap','round');
+    l.className.baseVal = cls+(extraCls?' '+extraCls:'');
+    g.appendChild(l);
+  }
 
-  // Top serif (horizontal tick pointing left toward text)
-  const topSerif = document.createElementNS('http://www.w3.org/2000/svg','line');
-  topSerif.setAttribute('x1', laneX - BRK_SERIF_W); topSerif.setAttribute('y1', yStart);
-  topSerif.setAttribute('x2', laneX);                topSerif.setAttribute('y2', yStart);
-  topSerif.setAttribute('stroke', c); topSerif.setAttribute('stroke-width', sw);
-  topSerif.setAttribute('stroke-linecap','round');
-  topSerif.className.baseVal = 'brk-line'+(isSelected?' brk-selected':'');
-  g.appendChild(topSerif);
+  ln(laneX, yStart, laneX, yEnd);                               // vertical
+  ln(laneX-BRK_SERIF_W, yStart, laneX, yStart);                // top serif
+  ln(laneX-BRK_SERIF_W, yEnd,   laneX, yEnd);                  // bottom serif
+  ln(laneX, midY, laneX+BRK_LABEL_GAP, midY);                  // mid tick
 
-  // Bottom serif
-  const botSerif = document.createElementNS('http://www.w3.org/2000/svg','line');
-  botSerif.setAttribute('x1', laneX - BRK_SERIF_W); botSerif.setAttribute('y1', yEnd);
-  botSerif.setAttribute('x2', laneX);                botSerif.setAttribute('y2', yEnd);
-  botSerif.setAttribute('stroke', c); botSerif.setAttribute('stroke-width', sw);
-  botSerif.setAttribute('stroke-linecap','round');
-  botSerif.className.baseVal = 'brk-line'+(isSelected?' brk-selected':'');
-  g.appendChild(botSerif);
+  // Wide transparent hit line
+  const hit = document.createElementNS('http://www.w3.org/2000/svg','line');
+  hit.setAttribute('x1',laneX); hit.setAttribute('y1',yStart);
+  hit.setAttribute('x2',laneX); hit.setAttribute('y2',yEnd);
+  hit.setAttribute('stroke','transparent'); hit.setAttribute('stroke-width',14);
+  hit.style.cursor='pointer'; hit.style.pointerEvents='stroke';
+  hit.addEventListener('click', ev=>{ ev.stopPropagation(); _brkSelect(brk.id,ev); });
+  g.appendChild(hit);
 
-  // Midpoint tick
-  const midY = (yStart + yEnd) / 2;
-  const midTick = document.createElementNS('http://www.w3.org/2000/svg','line');
-  midTick.setAttribute('x1', laneX); midTick.setAttribute('y1', midY);
-  midTick.setAttribute('x2', laneX + BRK_LABEL_GAP); midTick.setAttribute('y2', midY);
-  midTick.setAttribute('stroke', c); midTick.setAttribute('stroke-width', sw);
-  midTick.setAttribute('stroke-linecap','round');
-  midTick.className.baseVal = 'brk-line'+(isSelected?' brk-selected':'');
-  g.appendChild(midTick);
-
-  // Hit-test transparent wider line (for easier clicking)
-  const hitLine = document.createElementNS('http://www.w3.org/2000/svg','line');
-  hitLine.setAttribute('x1', laneX); hitLine.setAttribute('y1', yStart);
-  hitLine.setAttribute('x2', laneX); hitLine.setAttribute('y2', yEnd);
-  hitLine.setAttribute('stroke', 'transparent'); hitLine.setAttribute('stroke-width', 12);
-  hitLine.style.cursor = 'pointer';
-  hitLine.style.pointerEvents = 'stroke';
-  hitLine.addEventListener('click', ev => { ev.stopPropagation(); _brkSelect(brk.id, ev); });
-  g.appendChild(hitLine);
-
-  // Label text (if any)
+  // Label
   if(brk.label){
-    const labelX = laneX + BRK_LABEL_GAP + 4;
     const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-    fo.setAttribute('x', labelX); fo.setAttribute('y', midY - 10);
-    fo.setAttribute('width', svgW - labelX); fo.setAttribute('height', 20);
+    fo.setAttribute('x', laneX+BRK_LABEL_GAP+3);
+    fo.setAttribute('y', midY-10);
+    fo.setAttribute('width', 120);
+    fo.setAttribute('height', 20);
     fo.className.baseVal = 'brk-label-fo';
     const span = document.createElement('span');
-    span.className = 'brk-label-text'+(isSelected?' brk-selected':'');
-    span.style.cssText = `display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;color:${isSelected?'var(--active,#C8A84B)':c};white-space:nowrap;cursor:pointer;line-height:20px;`;
+    span.style.cssText=`display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;color:${sel?'var(--active,#C8A84B)':c};white-space:nowrap;cursor:pointer;line-height:20px;`;
     span.textContent = brk.label;
-    span.addEventListener('click', ev => { ev.stopPropagation(); _brkSelect(brk.id, ev); });
+    span.addEventListener('click', ev=>{ ev.stopPropagation(); _brkSelect(brk.id,ev); });
     fo.appendChild(span);
     g.appendChild(fo);
   }
@@ -5469,7 +5288,7 @@ function _brkDrawSVGBracket(svg, brk, laneX, yStart, yEnd, svgW){
   svg.appendChild(g);
 }
 
-/* ── Select a bracket ── */
+/* ── Select bracket → show edit popup ── */
 function _brkSelect(id, ev){
   SELECTED_BRK_ID = id;
   refreshBrackets();
@@ -5477,7 +5296,6 @@ function _brkSelect(id, ev){
   if(brk) _brkOpenEditPopup(ev.clientX, ev.clientY, brk);
 }
 
-/* ── Deselect all brackets ── */
 function _brkDeselect(){
   if(!SELECTED_BRK_ID) return;
   SELECTED_BRK_ID = null;
@@ -5485,210 +5303,169 @@ function _brkDeselect(){
   refreshBrackets();
 }
 
-/* ── Open bracket edit popup ── */
-function _brkOpenEditPopup(clientX, clientY, brk){
+/* ── Edit popup ── */
+function _brkOpenEditPopup(cx, cy, brk){
   const popup = document.getElementById('brk-edit-popup');
   if(!popup) return;
-
-  // Populate fields
-  document.getElementById('brk-label-input').value = brk.label || '';
-  document.getElementById('brk-color-input').value = brk.color || '#493548';
-
-  // Highlight active weight button
+  document.getElementById('brk-label-input').value = brk.label||'';
+  document.getElementById('brk-color-input').value = brk.color||'#493548';
   popup.querySelectorAll('.brk-wt-btn').forEach(btn=>{
-    btn.classList.toggle('active', parseInt(btn.dataset.w) === brk.thickness);
+    btn.classList.toggle('active', parseInt(btn.dataset.w)===brk.thickness);
   });
-
-  // Position popup near click, keep within viewport
-  popup.style.display = 'flex';
-  const pw = 220, ph = 160;
-  let x = clientX + 12, y = clientY - 20;
-  if(x + pw > window.innerWidth - 10)  x = clientX - pw - 12;
-  if(y + ph > window.innerHeight - 10) y = window.innerHeight - ph - 10;
-  if(y < 10) y = 10;
-  popup.style.left = x + 'px';
-  popup.style.top  = y + 'px';
-
-  // Apply i18n to popup
+  popup.style.display='flex';
+  const pw=220, ph=165;
+  let x=cx+12, y=cy-20;
+  if(x+pw>window.innerWidth-10)  x=cx-pw-12;
+  if(y+ph>window.innerHeight-10) y=window.innerHeight-ph-10;
+  if(y<10) y=10;
+  popup.style.left=x+'px'; popup.style.top=y+'px';
   applyLang();
 }
-
 function _brkCloseEditPopup(){
-  const popup = document.getElementById('brk-edit-popup');
-  if(popup) popup.style.display = 'none';
+  const popup=document.getElementById('brk-edit-popup');
+  if(popup) popup.style.display='none';
 }
 
-/* ── Popup field handlers ── */
+/* ── Popup field handlers (called from HTML) ── */
 function brkEditLabelChange(val){
-  const brk = BRACKETS.find(b=>b.id===SELECTED_BRK_ID);
-  if(!brk) return;
-  brk.label = val;
-  refreshBrackets();
-  autoSave();
+  const brk=BRACKETS.find(b=>b.id===SELECTED_BRK_ID); if(!brk) return;
+  const old=brk.label;
+  brk.label=val;
+  rowPush({type:'brk-style', id:brk.id, prop:'label', oldVal:old, newVal:val});
+  refreshBrackets(); autoSave();
 }
-
 function brkEditWeight(w){
-  const brk = BRACKETS.find(b=>b.id===SELECTED_BRK_ID);
-  if(!brk) return;
-  brk.thickness = w;
+  const brk=BRACKETS.find(b=>b.id===SELECTED_BRK_ID); if(!brk) return;
+  const old=brk.thickness;
+  brk.thickness=w;
+  rowPush({type:'brk-style', id:brk.id, prop:'thickness', oldVal:old, newVal:w});
   document.querySelectorAll('.brk-wt-btn').forEach(btn=>{
-    btn.classList.toggle('active', parseInt(btn.dataset.w) === w);
+    btn.classList.toggle('active', parseInt(btn.dataset.w)===w);
   });
-  refreshBrackets();
-  autoSave();
+  refreshBrackets(); autoSave();
 }
-
 function brkEditColorChange(val){
-  const brk = BRACKETS.find(b=>b.id===SELECTED_BRK_ID);
-  if(!brk) return;
-  brk.color = val;
-  refreshBrackets();
-  autoSave();
+  const brk=BRACKETS.find(b=>b.id===SELECTED_BRK_ID); if(!brk) return;
+  const old=brk.color;
+  brk.color=val;
+  rowPush({type:'brk-style', id:brk.id, prop:'color', oldVal:old, newVal:val});
+  refreshBrackets(); autoSave();
 }
-
 function brkDeleteCurrent(){
   if(!SELECTED_BRK_ID) return;
-  BRACKETS = BRACKETS.filter(b=>b.id !== SELECTED_BRK_ID);
-  SELECTED_BRK_ID = null;
+  const brk=BRACKETS.find(b=>b.id===SELECTED_BRK_ID);
+  if(!brk) return;
+  rowPush({type:'brk-remove', brk:{...brk}});
+  BRACKETS=BRACKETS.filter(b=>b.id!==SELECTED_BRK_ID);
+  SELECTED_BRK_ID=null;
   _brkCloseEditPopup();
-  _brkUpdateColWidth();
-  refreshBrackets();
-  autoSave();
+  refreshBrackets(); autoSave();
 }
 
-/* ── Open inline label input right after bracket creation ── */
+/* ── Inline label input after bracket creation ── */
 function _brkOpenInlineEdit(id){
-  const brk = BRACKETS.find(b=>b.id===id);
-  if(!brk) return;
+  const dsvg=document.getElementById('dbrk-svg'); if(!dsvg) return;
+  const g=dsvg.querySelector(`g[data-brk-id="${id}"]`); if(!g) return;
+  const brk=BRACKETS.find(b=>b.id===id); if(!brk) return;
 
-  // Find the midpoint tick's SVG group in the active SVG
-  const svgEl = EDITOR_VIEW==='diagram'
-    ? document.getElementById('dbrk-svg')
-    : document.getElementById('brk-svg');
-  if(!svgEl) return;
-
-  const g = svgEl.querySelector(`g[data-brk-id="${id}"]`);
-  if(!g) return;
-
-  // Find position of midpoint tick
-  const lines = Array.from(g.querySelectorAll('line.brk-line'));
-  const vLine  = lines.find(l=>l.getAttribute('x1')===l.getAttribute('x2'));
-  if(!vLine) return;
-
-  const midY = (parseFloat(vLine.getAttribute('y1'))+parseFloat(vLine.getAttribute('y2')))/2;
-  const laneX = parseFloat(vLine.getAttribute('x1'));
-  const labelX = laneX + BRK_LABEL_GAP + 4;
-
-  // Create a foreignObject with an input
-  const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-  fo.setAttribute('x', labelX); fo.setAttribute('y', midY - 10);
-  fo.setAttribute('width', 100); fo.setAttribute('height', 22);
-  fo.id = 'brk-inline-fo';
-
-  const inp = document.createElement('input');
-  inp.type = 'text';
-  inp.spellcheck = false;
-  inp.className = 'brk-label-input';
-  inp.placeholder = t('bracket.label-ph');
-
-  inp.addEventListener('keydown', ev=>{
-    if(ev.key==='Enter'||ev.key==='Escape'){
-      ev.preventDefault();
-      brk.label = inp.value.trim();
-      fo.remove();
-      refreshBrackets();
-      autoSave();
-    }
+  // Find vertical line to get midY and laneX
+  let vl=null;
+  g.querySelectorAll('line').forEach(l=>{
+    if(l.getAttribute('x1')===l.getAttribute('x2') && l.getAttribute('stroke')!=='transparent') vl=l;
   });
-  inp.addEventListener('blur', ()=>{
-    brk.label = inp.value.trim();
+  if(!vl) return;
+  const laneX=parseFloat(vl.getAttribute('x1'));
+  const midY=(parseFloat(vl.getAttribute('y1'))+parseFloat(vl.getAttribute('y2')))/2;
+
+  const fo=document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
+  fo.setAttribute('x', laneX+BRK_LABEL_GAP+3);
+  fo.setAttribute('y', midY-11);
+  fo.setAttribute('width', 110);
+  fo.setAttribute('height', 22);
+  fo.id='brk-inline-fo';
+
+  const inp=document.createElement('input');
+  inp.type='text'; inp.spellcheck=false;
+  inp.className='brk-label-input';
+  inp.placeholder=t('bracket.label-ph');
+
+  const commit=()=>{
+    brk.label=inp.value.trim();
     fo.remove();
-    refreshBrackets();
-    autoSave();
+    refreshBrackets(); autoSave();
+  };
+  inp.addEventListener('keydown', ev=>{
+    if(ev.key==='Enter'||ev.key==='Escape'){ ev.preventDefault(); commit(); }
   });
+  inp.addEventListener('blur', commit);
 
   fo.appendChild(inp);
   g.appendChild(fo);
   setTimeout(()=>inp.focus(), 10);
 }
 
-/* ── Serialize brackets for collectData() ── */
+/* ── Serialise / restore ── */
 function collectBracketData(){
   return BRACKETS.map(b=>({...b}));
 }
-
-/* ── Restore brackets from loadData() ── */
 function loadBracketData(arr){
-  BRACKETS = Array.isArray(arr) ? arr.map(b=>({...b})) : [];
-  // Bump BRK_CTR past highest saved id
+  BRACKETS=Array.isArray(arr)?arr.map(b=>({...b})):[];
   BRACKETS.forEach(b=>{
-    const n = parseInt(String(b.id||'').replace(/^brk-/,''),10);
-    if(!isNaN(n) && n >= BRK_CTR) BRK_CTR = n+1;
+    const n=parseInt(String(b.id||'').replace(/^brk-/,''),10);
+    if(!isNaN(n)&&n>=BRK_CTR) BRK_CTR=n+1;
   });
-  SELECTED_BRK_ID = null;
-  _brkUpdateColWidth();
-  // Defer render until DOM rows are fully built
+  SELECTED_BRK_ID=null;
   setTimeout(()=>refreshBrackets(), 100);
 }
 
-/* ── Hook into Escape to cancel pending bracket ── */
-const _brkOrigEscHandler = window._escHandler;
+/* ── Undo/redo handlers — wired into applyRowUndo / applyRowRedo ── */
+function _brkApplyUndo(op){
+  if(op.type==='brk-add'){
+    BRACKETS=BRACKETS.filter(b=>b.id!==op.brk.id);
+    if(SELECTED_BRK_ID===op.brk.id){ SELECTED_BRK_ID=null; _brkCloseEditPopup(); }
+    refreshBrackets(); return true;
+  }
+  if(op.type==='brk-remove'){
+    if(!BRACKETS.find(b=>b.id===op.brk.id)) BRACKETS.push({...op.brk});
+    refreshBrackets(); return true;
+  }
+  if(op.type==='brk-style'){
+    const brk=BRACKETS.find(b=>b.id===op.id);
+    if(brk){ brk[op.prop]=op.oldVal; refreshBrackets(); } return true;
+  }
+  return false;
+}
+function _brkApplyRedo(op){
+  if(op.type==='brk-add'){
+    if(!BRACKETS.find(b=>b.id===op.brk.id)) BRACKETS.push({...op.brk});
+    refreshBrackets(); return true;
+  }
+  if(op.type==='brk-remove'){
+    BRACKETS=BRACKETS.filter(b=>b.id!==op.brk.id);
+    if(SELECTED_BRK_ID===op.brk.id){ SELECTED_BRK_ID=null; _brkCloseEditPopup(); }
+    refreshBrackets(); return true;
+  }
+  if(op.type==='brk-style'){
+    const brk=BRACKETS.find(b=>b.id===op.id);
+    if(brk){ brk[op.prop]=op.newVal; refreshBrackets(); } return true;
+  }
+  return false;
+}
+
+/* ── Hook Escape ── */
 document.addEventListener('keydown', ev=>{
-  if(ev.key === 'Escape'){
-    if(BRACKET_PENDING){
-      _brkCancelPending();
-      toast(t('bracket.cancel'));
-    }
+  if(ev.key==='Escape'){
+    if(BRACKET_PENDING){ _brkCancelPending(); toast(t('bracket.cancel')); }
     _brkDeselect();
   }
-}, true); // capture phase so it runs before other Escape handlers
-
-/* ── Click outside popup to close it ── */
-document.addEventListener('mousedown', ev=>{
-  const popup = document.getElementById('brk-edit-popup');
-  if(!popup || popup.style.display==='none') return;
-  if(!popup.contains(ev.target)) _brkDeselect();
 }, true);
 
-/* ── Keep handles in sync when rows are added/deleted/merged ── */
-const _brkOrigRecomputeIds = recomputeIds;
-// Patch: after recomputeIds, sync bracket handles (new rows won't have handles yet)
-const _brkRecomputePatch = function(){
-  _brkOrigRecomputeIds.apply(this, arguments);
-  // Use requestAnimationFrame so DOM is fully updated first
-  requestAnimationFrame(()=>{
-    _brkSyncHandles();
-    refreshBrackets();
-  });
-};
-// Override recomputeIds
-window.recomputeIds = _brkRecomputePatch;
-
-/* ── Refresh brackets on scroll (keep alignment) ── */
-function _brkOnScroll(){
-  if(EDITOR_VIEW!=='diagram') _brkRenderPhrasing();
-}
-
-/* ── PDF export integration: render bracket SVG into the clone ── */
-/* Called by exportPDF() before html2canvas capture — we prepend a copy of
-   brk-svg directly into the rendered area so html2canvas sees it. */
-function _brkInjectForPDFPhrasing(container){
-  // container = the element being html2canvas'd (editor-area or rows-body)
-  const svg = document.getElementById('brk-svg');
-  if(!svg || !BRACKETS.length) return null;
-  const clone = svg.cloneNode(true);
-  clone.id = 'brk-svg-pdf-clone';
-  clone.style.cssText = 'position:absolute;top:0;right:0;pointer-events:none;overflow:visible;';
-  clone.style.width  = svg.parentElement.offsetWidth+'px';
-  clone.style.height = svg.parentElement.offsetHeight+'px';
-  container.style.position = 'relative';
-  container.appendChild(clone);
-  return clone;
-}
-
-function _brkRemovePDFClone(){
-  document.getElementById('brk-svg-pdf-clone')?.remove();
-}
+/* ── Click outside popup ── */
+document.addEventListener('mousedown', ev=>{
+  const popup=document.getElementById('brk-edit-popup');
+  if(!popup||popup.style.display==='none') return;
+  if(!popup.contains(ev.target)) _brkDeselect();
+}, true);
 
 document.addEventListener('DOMContentLoaded',()=>{
   // Restore saved colors
@@ -5700,12 +5477,11 @@ document.addEventListener('DOMContentLoaded',()=>{
       const el=document.getElementById('sc-'+k);if(el)el.value=v;
     }});
   }catch(_){}
-  document.getElementById('rows-scroll').addEventListener('scroll',()=>{ drawConns(); _brkOnScroll(); });
-  document.getElementById('dcanvas-scroll')?.addEventListener('scroll',drawConns);
-  document.getElementById('cmargin')?.addEventListener('scroll',drawConns);
+  document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
+  document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);
+  document.getElementById('cmargin')?.addEventListener('scroll', drawConns);
   window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); });
   renderS1Recent();
-  // Populate version display on Screen 1
   const vEl=document.getElementById('s1-version-num');
   if(vEl){
     const v=document.querySelector('meta[name="app-version"]')?.content||'';
