@@ -3524,3 +3524,71 @@ body.brk-active #brk-pip-rail .dbrk-pip:hover {
   z-index: 10 !important;
   overflow: visible !important;
 }
+
+/* ════════════════════════════════════════
+   BRACKET PIP — v5 (in-row, fixed column)
+   Pip cell is part of .drow flex layout.
+   Spacer absorbs leftover space so pip cell
+   always lands in a fixed right column.
+   No JS positioning needed at all.
+════════════════════════════════════════ */
+
+/* Spacer: absorbs all free space after the lane */
+.drow-spacer {
+  flex: 1;
+  min-width: 0;
+  pointer-events: none;
+}
+
+/* Pip cell: fixed width, always at far right of row */
+.drow-pip-cell {
+  width: 28px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* transparent until pip is shown */
+}
+
+/* The dot itself */
+.dbrk-pip {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: transparent;
+  border: 1.5px solid rgba(73,53,72,.3);
+  cursor: crosshair;
+  pointer-events: none;
+  opacity: 0;
+  transition: background .12s, border-color .12s, opacity .12s;
+  flex-shrink: 0;
+}
+
+/* Show all pips when Shift held or bracket pending */
+body.brk-shift .dbrk-pip,
+body.brk-active .dbrk-pip {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+/* Also make the cell itself interactive when pips are visible */
+body.brk-shift .drow-pip-cell,
+body.brk-active .drow-pip-cell {
+  pointer-events: auto;
+}
+
+/* Hover */
+body.brk-shift .dbrk-pip:hover,
+body.brk-active .dbrk-pip:hover {
+  background: var(--sig, #493548);
+  border-color: var(--sig, #493548);
+}
+
+/* Pending (first click) */
+.dbrk-pip.brk-pending {
+  background: var(--accent, #F0D08F) !important;
+  border-color: var(--active, #C8A84B) !important;
+  opacity: 1 !important;
+  pointer-events: auto !important;
+  animation: brkPulse .85s ease-in-out infinite alternate;
+}

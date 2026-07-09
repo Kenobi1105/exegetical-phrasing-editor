@@ -379,9 +379,6 @@ function setEditorView(view){
   const isDiagram=EDITOR_VIEW==='diagram';
   document.getElementById('tzone').style.display=isDiagram?'none':'';
   document.getElementById('dzone').style.display=isDiagram?'':'none';
-  // Rail lives inside dzone — show it in diagram view
-  const rail = document.getElementById('brk-pip-rail');
-  if(rail) rail.style.display = isDiagram ? '' : 'none';
   document.getElementById('view-btn-phrasing')?.classList.toggle('active',!isDiagram);
   document.getElementById('view-btn-diagram')?.classList.toggle('active',isDiagram);
   document.getElementById('dzoom-grp')?.style.setProperty('display', isDiagram?'':'none');
@@ -411,10 +408,6 @@ function setEditorView(view){
   if(isDiagram) renderDiagram();
   // Brackets need re-render after view switch since DOM geometry changes
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
-  // Pip positions must be measured after the diagram is fully painted
-  if(isDiagram) requestAnimationFrame(()=>requestAnimationFrame(()=>{
-    if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions();
-  }));
 }
 
 function _repositionCmtCards(isDiagram){
@@ -607,6 +600,26 @@ function makeDiagramRowEl(row){
     dRow.appendChild(lane);
   }
 
+  // Spacer pushes pip cell to fixed right column regardless of block indent
+  const spacer = document.createElement('div');
+  spacer.className = 'drow-spacer';
+  dRow.appendChild(spacer);
+
+  // Pip cell — sibling of lane, never a child of .dblock, so no bubbling to startBlockDrag
+  const pipCell = document.createElement('div');
+  pipCell.className = 'drow-pip-cell';
+  const pipDot = document.createElement('div');
+  pipDot.className = 'dbrk-pip';
+  pipDot.dataset.rid = rid;
+  pipDot.addEventListener('mousedown', ev=>{
+    if(!ev.shiftKey) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    _brkHandleClick(rid, pipDot);
+  });
+  pipCell.appendChild(pipDot);
+  dRow.appendChild(pipCell);
+
   return dRow;
 }
 
@@ -667,10 +680,8 @@ function renderDiagram(){
   renderDiagramLabels();
   refreshDiagramLabels();
   // Add pip handles to diagram blocks and render any existing brackets
-  _brkSyncPips();
+  if(typeof _brkSyncPips==='function') _brkSyncPips();
   if(typeof _brkRenderDiagram==='function') setTimeout(()=>_brkRenderDiagram(), 20);
-  // Pip positions need a completed layout pass — defer past the current paint
-  requestAnimationFrame(()=>{ if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions(); });
 }
 
 /* Build and mount one .dlabel element from a data object.
@@ -2960,8 +2971,6 @@ function toggleCmtPane(){
   const btn=document.getElementById('btn-cmt-pane');
   if(btn) btn.classList.toggle('active',!hidden);
   if(!hidden) setTimeout(drawConns,50);
-  // Update pip alignment variable so pips track the pane edge
-  document.documentElement.style.setProperty('--cmargin-w', hidden ? '0px' : '320px');
 }
 
 /* Feature 3: Add comment anchored to the currently focused or last-focused row */
@@ -5123,61 +5132,9 @@ function _brkAssignLane(startRid, endRid){
   return 1;
 }
 
-/* ── Build pip rail: one pip per block, positioned by Y, in #brk-pip-rail ──
-   Pips live completely outside .dblock DOM — no bubbling to startBlockDrag. */
-function _brkSyncPips(){
-  const rail = document.getElementById('brk-pip-rail');
-  if(!rail) return;
-
-  // Remove stale pips for rows that no longer exist
-  const existingRids = new Set(
-    Array.from(document.querySelectorAll('#dcanvas .dblock')).map(b=>b.dataset.rid)
-  );
-  rail.querySelectorAll('.dbrk-pip').forEach(pip=>{
-    if(!existingRids.has(pip.dataset.rid)) pip.remove();
-  });
-
-  // Add pips for any block that doesn't have one yet
-  document.querySelectorAll('#dcanvas .dblock').forEach(block=>{
-    const rid = block.dataset.rid;
-    if(!rid) return;
-    if(rail.querySelector(`.dbrk-pip[data-rid="${rid}"]`)) return;
-    const pip = document.createElement('div');
-    pip.className = 'dbrk-pip';
-    pip.dataset.rid = rid;
-    pip.title = 'Shift+click to bracket';
-    pip.addEventListener('mousedown', ev=>{
-      if(!ev.shiftKey) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      _brkHandleClick(rid, pip);
-    });
-    rail.appendChild(pip);
-  });
-
-  // Defer position measurement to after layout is complete
-  requestAnimationFrame(_brkSyncPipPositions);
-}
-
-/* ── Reposition pips in the rail to match their block's vertical midpoint ──
-   Rail is position:absolute inside #dzone (doesn't scroll).
-   Block positions from getBoundingClientRect() are viewport-relative.
-   Rail's top is also viewport-relative. Subtract rail top to get rail-local Y. */
-function _brkSyncPipPositions(){
-  const rail = document.getElementById('brk-pip-rail');
-  if(!rail) return;
-  const railTop = rail.getBoundingClientRect().top;
-  rail.querySelectorAll('.dbrk-pip').forEach(pip=>{
-    const rid = pip.dataset.rid;
-    const block = document.querySelector(`#dcanvas .dblock[data-rid="${rid}"]`);
-    if(!block) return;
-    const r = block.getBoundingClientRect();
-    // r.top is viewport-relative; railTop is viewport-relative.
-    // Subtracting gives position within the rail (which is abs inside dzone).
-    const midY = r.top + r.height / 2 - railTop;
-    pip.style.top = Math.round(midY) + 'px';
-  });
-}
+/* ── Pips are now part of each .drow — no rail, no position sync needed ── */
+function _brkSyncPips(){ /* no-op: pips render in makeDiagramRowEl */ }
+function _brkSyncPipPositions(){ /* no-op: pips are in flex flow */ }
 
 /* ── Handle Shift+click on a block ── */
 function _brkHandleClick(rid, pipEl){
@@ -5537,11 +5494,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     }});
   }catch(_){}
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
-  document.getElementById('dcanvas-scroll')?.addEventListener('scroll', ()=>{ drawConns(); if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions(); });
+  document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);
   document.getElementById('cmargin')?.addEventListener('scroll', drawConns);
-  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); if(typeof _brkSyncPipPositions==='function') _brkSyncPipPositions(); });
-  // Initialise cmargin width variable for pip positioning
-  document.documentElement.style.setProperty('--cmargin-w', '320px');
+  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); });
   renderS1Recent();
   const vEl=document.getElementById('s1-version-num');
   if(vEl){
