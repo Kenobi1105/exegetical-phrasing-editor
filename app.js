@@ -5347,167 +5347,105 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   });
   g.appendChild(botHandle);
 
-  // ── Label ─────────────────────────────────────────────────────────────
+  // ── Label — contenteditable div, always in place ────────────────────
+  // Works exactly like (translation): click → caret appears → type directly.
+  // Empty state shows CSS placeholder. Drag > 4px vertically repositions.
   const labelX = laneX + BRK_LABEL_GAP + 3;
-  const labelW = brk.label ? _brkMeasureLabelWidth(brk.label) + 8 : 60;
   const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
   fo.setAttribute('x', labelX);
   fo.setAttribute('y', labelY - 10);
-  fo.setAttribute('width', Math.max(labelW, 60));
+  fo.setAttribute('width', 160);
   fo.setAttribute('height', 20);
   fo.className.baseVal = 'brk-label-fo';
   fo.style.overflow = 'visible';
 
-  const span = document.createElement('span');
+  const div = document.createElement('div');
+  div.contentEditable = 'true';
+  div.spellcheck = false;
+  div.className = 'brk-label-ce';
+  div.dataset.ph = t('bracket.label-ph');
+  div.style.cssText = `font-family:var(--ui,sans-serif);font-size:11px;`
+    + `color:${sel?'var(--active,#C8A84B)':c};white-space:nowrap;`
+    + `line-height:20px;outline:none;min-width:40px;cursor:text;`
+    + `user-select:text;background:transparent;border:none;`;
+  div.textContent = brk.label || '';
 
-  if(brk.label){
-    span.style.cssText = `display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;`
-      + `color:${sel?'var(--active,#C8A84B)':c};white-space:nowrap;`
-      + `line-height:20px;cursor:ns-resize;user-select:none;`;
-    span.title = 'Click to select  •  Double-click to edit  •  Drag ↕ to reposition';
-    span.textContent = brk.label;
+  // Commit on blur
+  const oldLabel = brk.label;
+  div.addEventListener('blur', ()=>{
+    const newLabel = div.textContent.trim();
+    if(newLabel !== brk.label){
+      const prev = brk.label;
+      brk.label = newLabel;
+      rowPush({type:'brk-style', id:brk.id, prop:'label', oldVal:prev, newVal:newLabel});
+      autoSave();
+    }
+    // Re-render to update width and color
+    refreshBrackets();
+  });
 
-    // Use mousedown with a timer to distinguish single-click (select)
-    // from double-click (edit inline) — avoids refreshBrackets() destroying
-    // the element before dblclick can fire.
-    let clickTimer = null;
-    let dragStarted = false;
-    let dragActive  = false;
+  // Enter commits, Escape reverts
+  div.addEventListener('keydown', ev=>{
+    if(ev.key==='Enter'){ ev.preventDefault(); div.blur(); }
+    if(ev.key==='Escape'){
+      ev.preventDefault();
+      div.textContent = brk.label || '';
+      div.blur();
+    }
+  });
 
-    span.addEventListener('mousedown', ev=>{
-      if(ev.button!==0) return;
-      ev.stopPropagation();
+  // Mousedown: distinguish drag (vertical > 4px) from click-to-edit
+  div.addEventListener('mousedown', ev=>{
+    if(ev.button!==0) return;
+    ev.stopPropagation(); // don't bubble to canvas deselect
 
-      dragStarted = false;
-      dragActive  = false;
-      const downY = ev.clientY;
-      const startOffset = brk.labelOffsetY || 0;
-      const zoom = DIAGRAM_ZOOM / 100;
+    const downY = ev.clientY;
+    const startOffset = brk.labelOffsetY || 0;
+    const zoom = DIAGRAM_ZOOM / 100;
+    let dragActive = false;
 
-      // Watch for drag
-      const onMove = mv=>{
-        if(dragActive) return;
-        if(Math.abs(mv.clientY - downY) > 4){
-          dragStarted = true;
-          dragActive  = true;
-          // Cancel any pending click timer
-          if(clickTimer){ clearTimeout(clickTimer); clickTimer=null; }
+    const onMove = mv=>{
+      if(dragActive) return;
+      if(Math.abs(mv.clientY - downY) > 4){
+        dragActive = true;
+        // Prevent focus from landing on the div during drag
+        div.blur();
 
-          // Inline drag logic (fix: use live mv.clientY, not stale ev.clientY)
-          const mid = (yStart + yEnd) / 2;
-          const halfLabel = 10;
-          const onDragMove = dmv=>{
-            const dy = (dmv.clientY - downY) / zoom;
-            const newAbsY = Math.max(yStart+halfLabel, Math.min(yEnd-halfLabel, mid+startOffset+dy));
-            brk.labelOffsetY = Math.round(newAbsY - mid);
-            refreshBrackets();
-          };
-          const onDragUp = ()=>{
-            document.removeEventListener('mousemove', onDragMove);
-            document.removeEventListener('mouseup',   onDragUp);
-            if(brk.labelOffsetY !== startOffset){
-              rowPush({type:'brk-style', id:brk.id, prop:'labelOffsetY',
-                       oldVal:startOffset, newVal:brk.labelOffsetY});
-            }
-            autoSave();
-          };
-          document.removeEventListener('mousemove', onMove);
-          document.removeEventListener('mouseup',   onUp);
-          document.addEventListener('mousemove', onDragMove);
-          document.addEventListener('mouseup',   onDragUp);
-        }
-      };
-
-      const onUp = ()=>{
+        const mid = (yStart + yEnd) / 2;
+        const halfLabel = 10;
+        const onDragMove = dmv=>{
+          const dy = (dmv.clientY - downY) / zoom;
+          const newAbsY = Math.max(yStart+halfLabel, Math.min(yEnd-halfLabel, mid+startOffset+dy));
+          brk.labelOffsetY = Math.round(newAbsY - mid);
+          refreshBrackets();
+        };
+        const onDragUp = ()=>{
+          document.removeEventListener('mousemove', onDragMove);
+          document.removeEventListener('mouseup',   onDragUp);
+          if(brk.labelOffsetY !== startOffset){
+            rowPush({type:'brk-style', id:brk.id, prop:'labelOffsetY',
+                     oldVal:startOffset, newVal:brk.labelOffsetY});
+          }
+          autoSave();
+        };
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup',   onUp);
-        if(dragStarted) return; // drag was handled above
+        document.addEventListener('mousemove', onDragMove);
+        document.addEventListener('mouseup',   onDragUp);
+      }
+    };
+    const onUp = ()=>{
+      document.removeEventListener('mousemove', onMove);
+      document.removeEventListener('mouseup',   onUp);
+      // Not a drag — let the click land on the div naturally (browser focuses it)
+    };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup',   onUp);
+  });
 
-        if(clickTimer){
-          // Second click within 300ms → double-click → open inline editor
-          clearTimeout(clickTimer);
-          clickTimer = null;
-          _brkOpenLabelInlineEdit(brk.id, labelX, labelY);
-        } else {
-          // First click — wait to see if second comes
-          clickTimer = setTimeout(()=>{
-            clickTimer = null;
-            // Single click → select bracket
-            SELECTED_BRK_ID = brk.id;
-            refreshBrackets();
-            _brkOpenEditPopup(ev.clientX, ev.clientY, BRACKETS.find(b=>b.id===brk.id));
-          }, 280);
-        }
-      };
-
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup',   onUp);
-    });
-
-  } else {
-    // Placeholder — single click opens inline editor directly, no popup
-    span.style.cssText = `display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;`
-      + `color:rgba(73,53,72,.35);white-space:nowrap;font-style:italic;`
-      + `line-height:20px;cursor:text;user-select:none;`;
-    span.title = 'Click to add label';
-    span.textContent = t('bracket.label-ph');
-
-    span.addEventListener('mousedown', ev=>{
-      if(ev.button!==0) return;
-      ev.stopPropagation();
-      ev.preventDefault();
-    });
-    span.addEventListener('click', ev=>{
-      ev.stopPropagation();
-      _brkOpenLabelInlineEdit(brk.id, labelX, labelY);
-    });
-  }
-
-  fo.appendChild(span);
+  fo.appendChild(div);
   g.appendChild(fo);
   svg.appendChild(g);
-}
-
-/* ── Open inline label editor (single-click placeholder, double-click label) ── */
-function _brkOpenLabelInlineEdit(id, labelX, labelY){
-  // Remove existing inline editor if open
-  document.getElementById('brk-inline-fo')?.remove();
-
-  const brk = BRACKETS.find(b=>b.id===id); if(!brk) return;
-  const dsvg = document.getElementById('dbrk-svg'); if(!dsvg) return;
-  const g = dsvg.querySelector(`g[data-brk-id="${id}"]`); if(!g) return;
-
-  const editFo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-  editFo.setAttribute('x', labelX);
-  editFo.setAttribute('y', labelY - 11);
-  editFo.setAttribute('width', 120);
-  editFo.setAttribute('height', 22);
-  editFo.id = 'brk-inline-fo';
-
-  const inp = document.createElement('input');
-  inp.type = 'text'; inp.spellcheck = false;
-  inp.className = 'brk-label-input';
-  inp.placeholder = t('bracket.label-ph');
-  inp.value = brk.label || '';
-
-  const commit = ()=>{
-    const newLabel = inp.value.trim();
-    if(newLabel !== brk.label){
-      const old = brk.label;
-      brk.label = newLabel;
-      rowPush({type:'brk-style', id, prop:'label', oldVal:old, newVal:newLabel});
-    }
-    editFo.remove();
-    refreshBrackets(); autoSave();
-  };
-  inp.addEventListener('keydown', ev=>{
-    if(ev.key==='Enter'||ev.key==='Escape'){ ev.preventDefault(); commit(); }
-  });
-  inp.addEventListener('blur', commit);
-
-  editFo.appendChild(inp);
-  g.appendChild(editFo);
-  setTimeout(()=>{ inp.focus(); inp.select(); }, 10);
 }
 
 /* ── Serif drag: resize bracket span by dragging top or bottom serif ── */
@@ -5648,28 +5586,6 @@ function brkDeleteCurrent(){
   SELECTED_BRK_ID=null;
   _brkCloseEditPopup();
   refreshBrackets(); autoSave();
-}
-
-/* ── Open inline label editor right after bracket creation ── */
-function _brkOpenInlineEdit(id){
-  const dsvg = document.getElementById('dbrk-svg'); if(!dsvg) return;
-  const g    = dsvg.querySelector(`g[data-brk-id="${id}"]`); if(!g) return;
-  const brk  = BRACKETS.find(b=>b.id===id); if(!brk) return;
-
-  // Find vertical line to get laneX and labelY
-  let vl = null;
-  g.querySelectorAll('line').forEach(l=>{
-    if(l.getAttribute('x1')===l.getAttribute('x2') && l.getAttribute('stroke')!=='transparent') vl=l;
-  });
-  if(!vl) return;
-  const laneX  = parseFloat(vl.getAttribute('x1'));
-  const vY1    = parseFloat(vl.getAttribute('y1'));
-  const vY2    = parseFloat(vl.getAttribute('y2'));
-  const midY   = (vY1+vY2)/2;
-  const labelY = midY + (brk.labelOffsetY||0);
-  const labelX = laneX + BRK_LABEL_GAP + 3;
-
-  _brkOpenLabelInlineEdit(id, labelX, labelY);
 }
 
 /* ── Serialise / restore ── */
