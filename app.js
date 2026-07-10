@@ -3615,7 +3615,10 @@ async function _exportAllDiagPDF(idx){
       loadData(data);
       recomputeIds();
       setEditorView('diagram');
-      // Wait for diagram to render
+      // Wait for diagram rows AND bracket SVG to fully render.
+      // loadBracketData defers refreshBrackets() by one rAF — we wait
+      // multiple frames to ensure both renderDiagram and _brkRenderDiagram complete.
+      await new Promise(r=>setTimeout(r, 120));
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
       const pdfBlob=await _captureDiagramPDFBlob('a4','landscape');
       if(pdfBlob){
@@ -3667,6 +3670,8 @@ async function _captureDiagramPDFBlob(format,orientation){
   clone.querySelectorAll('.dcell.dl').forEach(el=>el.style.color='#C8A84B');
   clone.querySelectorAll('.dcell').forEach(el=>{if(!el.style.color)el.style.color='#C8A84B';});
   clone.style.background='#ffffff';
+  // Render brackets into clone using offset-based positioning (not getBoundingClientRect)
+  if(typeof _brkRenderIntoClone==='function') _brkRenderIntoClone(clone);
   await new Promise(r=>requestAnimationFrame(r));
 
   let capturedCanvas=null;
@@ -5126,6 +5131,92 @@ function _brkAssignLane(startRid, endRid){
   return 1;
 }
 
+/* ── Render brackets into a cloned #dcanvas for PDF export ──
+   Uses offsetTop/offsetHeight instead of getBoundingClientRect so
+   it works when the clone is positioned off-screen. */
+function _brkRenderIntoClone(cloneCanvas){
+  if(!BRACKETS.length) return;
+
+  // Remove any stale bracket SVG from the clone
+  cloneCanvas.querySelector('#dbrk-svg')?.remove();
+
+  const dsvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
+  dsvg.id = 'dbrk-svg';
+  dsvg.setAttribute('preserveAspectRatio','none');
+  dsvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:7;';
+  cloneCanvas.appendChild(dsvg);
+
+  // Use zoom=1 for clone (clone.style.zoom is forced to '1' before capture)
+  const zoom = 1;
+
+  const rows = Array.from(document.querySelectorAll('.xrow'));
+  const rids = rows.map(r=>r.dataset.rid);
+
+  // Helper: get element's top offset relative to cloneCanvas using offsetTop chain
+  function offsetRelTo(el, ancestor){
+    let top = 0, cur = el;
+    while(cur && cur !== ancestor){
+      top += cur.offsetTop;
+      cur = cur.offsetParent;
+    }
+    return top;
+  }
+
+  // Build laneXMap using clone block offsets
+  const sorted = [...BRACKETS].sort((a,b)=>a.lane-b.lane);
+  const laneXMap = {};
+  let prevLaneX = null, prevLabelW = 0;
+
+  sorted.forEach(brk=>{
+    const si = rids.indexOf(String(brk.startRid));
+    const ei = rids.indexOf(String(brk.endRid));
+    if(si<0||ei<0) return;
+    const lo = Math.min(si,ei), hi = Math.max(si,ei);
+    const spannedRids = rids.slice(lo, hi+1);
+
+    let maxRight = 0;
+    spannedRids.forEach(rid=>{
+      const block = cloneCanvas.querySelector(`.dblock[data-rid="${rid}"]`);
+      if(!block) return;
+      // offsetLeft relative to cloneCanvas + width
+      let left = 0, cur = block;
+      while(cur && cur !== cloneCanvas){ left += cur.offsetLeft; cur = cur.offsetParent; }
+      const right = left + block.offsetWidth;
+      if(right > maxRight) maxRight = right;
+    });
+
+    const baseX = maxRight + BRK_PIP_OFFSET + BRK_LANE_W * 0.5;
+    let laneX;
+    if(prevLaneX === null){
+      laneX = baseX;
+    } else {
+      const minStep = prevLabelW > 0 ? prevLabelW + BRK_LABEL_GAP + 20 : BRK_LANE_W;
+      laneX = Math.max(baseX, prevLaneX + minStep);
+    }
+    laneXMap[brk.lane] = laneX;
+    prevLaneX  = laneX;
+    prevLabelW = _brkMeasureLabelWidth(brk.label);
+  });
+
+  // Draw each bracket
+  BRACKETS.forEach(brk=>{
+    const si = rids.indexOf(String(brk.startRid));
+    const ei = rids.indexOf(String(brk.endRid));
+    if(si<0||ei<0) return;
+    const lo = Math.min(si,ei), hi = Math.max(si,ei);
+
+    const startDrow = cloneCanvas.querySelector(`.drow[data-rid="${rids[lo]}"]`);
+    const endDrow   = cloneCanvas.querySelector(`.drow[data-rid="${rids[hi]}"]`);
+    if(!startDrow||!endDrow) return;
+
+    const yStart = offsetRelTo(startDrow, cloneCanvas);
+    const yEnd   = offsetRelTo(endDrow,   cloneCanvas) + endDrow.offsetHeight;
+    const laneX  = laneXMap[brk.lane] ?? (100 + (brk.lane-1)*BRK_LANE_W);
+
+    _brkDrawSVG(dsvg, brk, laneX, yStart, yEnd);
+  });
+}
+
 /* ── Pips are now part of each .drow — no rail, no position sync needed ── */
 function _brkSyncPips(){ /* no-op: pips render in makeDiagramRowEl */ }
 function _brkSyncPipPositions(){ /* no-op: pips are in flex flow */ }
@@ -5593,7 +5684,8 @@ function loadBracketData(arr){
     if(!isNaN(n)&&n>=BRK_CTR) BRK_CTR=n+1;
   });
   SELECTED_BRK_ID=null;
-  setTimeout(()=>refreshBrackets(), 100);
+  // Defer one frame so diagram rows are in the DOM before measuring
+  requestAnimationFrame(()=>refreshBrackets());
 }
 
 /* ── Undo/redo handlers — wired into applyRowUndo / applyRowRedo ── */
