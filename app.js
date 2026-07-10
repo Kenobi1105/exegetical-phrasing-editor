@@ -247,12 +247,18 @@ function openEditor(){
   document.getElementById('app').style.display='flex';
   _applySessionLabels();
   document.getElementById('ch-t').style.display=IS_SINGLE?'none':'';
-  // Always open on Phrasing View
+  // Always open on Phrasing View — explicitly reset all view zones
   EDITOR_VIEW='phrasing';
   document.getElementById('tzone').style.display='';
   document.getElementById('dzone').style.display='none';
+  document.getElementById('szone').style.display='none';
+  document.getElementById('sl-presenter').style.display='none';
   document.getElementById('view-btn-phrasing')?.classList.add('active');
   document.getElementById('view-btn-diagram')?.classList.remove('active');
+  document.getElementById('view-btn-slides')?.classList.remove('active');
+  // Restore comment pane button
+  const cmtBtnOE=document.getElementById('btn-cmt-pane');
+  if(cmtBtnOE) cmtBtnOE.disabled=false;
   // Reset bracket state for new session
   BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
   if(typeof _brkCancelPending==='function') _brkCancelPending();
@@ -420,7 +426,7 @@ function setEditorView(view){
   const cmtBtn=document.getElementById('btn-cmt-pane');
   if(cmtBtn) cmtBtn.disabled=isSlides;
   if(isDiagram) renderDiagram();
-  if(isSlides) setTimeout(()=>slRenderAll(), 80);
+  if(isSlides) setTimeout(()=>{ if(SL_DECK.slides.length===0){slRenderAll();}else{slRenderAll(); slRefreshSlide();} }, 80);
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
 }
 
@@ -3379,6 +3385,7 @@ function loadData(data){
   recomputeIds();
   restoreAllIndents();
   const margin=document.getElementById('cmargin');
+  SL_CMT_CACHE={};  // reset comment cache
   (data.cmts||[]).forEach(c=>{
     const row=document.querySelector(`.xrow[data-rid="${c.rid}"]`);
     const lid=row?(row.querySelector('.lid')?.textContent||''):'';
@@ -3386,6 +3393,8 @@ function loadData(data){
     card.style.cssText=`top:${c.top||'8px'};left:${c.left||'18px'};width:${c.width||'226px'};${c.height?'height:'+c.height+';':''}${c.hidden?'display:none;':''}`;
     card.innerHTML=`<div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))"><span class="chdr-l">Comment</span><span class="chdr-i">${lid!=='—'?lid:''}</span><button class="ccl" onclick="closeCmt('${c.cid}')">✕</button></div><div class="cbody"><div class="cedit-c" contenteditable="true" spellcheck="false" onfocus="activeEl=this" onblur="autoSave()" onkeydown="if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);}setTimeout(()=>{saveRange();updateTb();},0)"></div></div><div class="crh" onmousedown="startCR2(event,this.closest('.ccard'))"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/><line x1="6" y1="10" x2="10" y2="6"/></svg></div>`;
     const ed=card.querySelector('.cedit-c');if(ed&&c.html)ed.innerHTML=c.html;
+    // Cache comment HTML for use when pane is hidden (slides view)
+    if(c.cid) SL_CMT_CACHE[c.cid]=c.html||'';
     margin.appendChild(card);new ResizeObserver(drawConns).observe(card);
   });
   setTimeout(drawConns,100);
@@ -4077,6 +4086,12 @@ function renderS1Recent(){
 /* ── Auto-save to localStorage project ── */
 function autoSave(){
   if(!SESS)return;
+  // Keep comment cache fresh for slide rendering (comment pane may be hidden)
+  document.querySelectorAll('.ccard').forEach(card=>{
+    const cid=card.dataset.cid; if(!cid) return;
+    const ed=card.querySelector('.cedit-c');
+    if(ed) SL_CMT_CACHE[cid]=ed.innerHTML;
+  });
   clearTimeout(asT);
   asT=setTimeout(()=>{
     // Session autosave (crash recovery)
@@ -5456,6 +5471,7 @@ let SL_PROJ_WIN   = null;             // projector window reference
 let SL_PRES_IDX   = 0;                // current slide index in presenter mode
 let SL_CANVAS_W   = 960;              // computed canvas width in px
 let SL_CANVAS_H   = 540;              // computed canvas height in px (16:9)
+let SL_CMT_CACHE  = {};               // {cid: rawHTML} — comment cache for slide rendering (DOM may be hidden)
 
 const SL_RATIO    = 16/9;
 
@@ -5619,11 +5635,28 @@ function slDuplicateSlide(idx){
   SL_ACTIVE_IDX=newIdx; slRenderAll(); autoSave();
 }
 
-/* ── Select slide ── */
+/* ── Select slide — re-renders canvas from fresh data ── */
 function slSelectSlide(idx){
   SL_SEL_EL_ID=null; SL_ACTIVE_IDX=idx;
-  slUpdatePropsPanel(); slRenderActive();
+  slUpdatePropsPanel();
+  slRefreshSlide(); // re-render from live data on selection
   document.querySelectorAll('.sl-thumb').forEach((t,i)=>t.classList.toggle('active',i===idx));
+}
+
+/* ── Refresh current slide canvas + thumbnail from live project data ── */
+function slRefreshSlide(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  // If diagram mode, ensure #dcanvas is populated before cloning
+  if(sl.view==='diagram'){
+    const dc=document.getElementById('dcanvas');
+    const hasBlocks=dc&&dc.querySelectorAll('.dblock').length>0;
+    if(!hasBlocks){
+      // Render diagram silently into live canvas first, then capture
+      renderDiagram();
+    }
+  }
+  slRenderActive();
+  slRenderThumb(SL_ACTIVE_IDX);
 }
 
 /* ── Add text box ── */
@@ -5643,14 +5676,16 @@ function slSetView(view){
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'view',oldVal:old,newVal:view});
   document.getElementById('sl-view-phrasing')?.classList.toggle('active',view==='phrasing');
   document.getElementById('sl-view-diagram')?.classList.toggle('active',view==='diagram');
-  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+  autoSave();
+  // No live re-render — user clicks Refresh or selects slide to update
 }
 function slVisChange(key,val){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const old=sl.visibility[key];
   sl.visibility[key]=val;
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'visibility',key,oldVal:old,newVal:val});
-  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+  autoSave();
+  // No live re-render — user clicks Refresh to see result
 }
 function slNotesChange(val){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
@@ -5661,14 +5696,14 @@ function slSelectAllRows(){
   const old=[...sl.rowIds];
   sl.rowIds=Array.from(document.querySelectorAll('.xrow')).map(r=>r.dataset.rid).filter(Boolean);
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[...sl.rowIds]});
-  slUpdateRowList(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+  slUpdateRowList(); autoSave();
 }
 function slClearAllRows(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const old=[...sl.rowIds];
   sl.rowIds=[];
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[]});
-  slUpdateRowList(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+  slUpdateRowList(); autoSave();
 }
 
 /* ── Update props panel from active slide ── */
@@ -5961,15 +5996,16 @@ function slRenderSlideInto(slide, container, w, h){
         const v=slide.visibility;
         if(!v.indentation) rb.querySelectorAll('.cedit').forEach(c=>{c.style.paddingLeft='0';c.style.paddingRight='0';});
         if(!v.translation)  rb.querySelectorAll('.xcell.grow + .vdiv, .xcell.grow ~ .xcell.grow').forEach(e=>e.style.display='none');
-        // Verse numbers always shown — no toggle
-        // Comments as footnotes — use innerHTML+strip since innerText returns '' on hidden ancestors
+        // Comments as footnotes — read from in-memory cache (DOM may be hidden)
         if(v.comments){
           const fns=[];
           slide.rowIds.forEach(rid=>{
             const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
             const cid=xrow?.dataset.cid; if(!cid) return;
-            const cmtEl=document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`);
-            const raw=cmtEl?.innerHTML||'';
+            // Read from in-memory comment cache, fallback to DOM
+            const cached=SL_CMT_CACHE[cid];
+            const raw=cached!==undefined ? cached
+              : (document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`)?.innerHTML||'');
             const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
             if(!txt) return;
             const lid=xrow.querySelector('.lid')?.textContent||'';
@@ -6108,40 +6144,62 @@ function slRenderSlideInto(slide, container, w, h){
     const div=document.createElement('div');
     div.className='sl-el sl-el-textbox';
     div.dataset.elId=el.id;
-    div.style.cssText=`left:${el.x/100*w}px;top:${el.y/100*h}px;width:${el.w/100*w}px;height:${el.h/100*h}px;`;
+    div.style.cssText=`left:${el.x/100*w}px;top:${el.y/100*h}px;width:${el.w/100*w}px;height:${el.h/100*h}px;position:absolute;`;
+
     const inner=document.createElement('div');
     inner.className='sl-el-textbox-inner';
-    inner.contentEditable='true';
+    // contentEditable starts as false — enabled on double-click only
+    inner.contentEditable='false';
     inner.spellcheck=false;
     inner.dataset.ph=t('slides.textbox.ph');
     inner.style.fontSize=(el.fontSize||18)+'px';
     inner.style.color=el.color||'#1F1E1E';
     inner.style.textAlign=el.align||'left';
+    inner.style.cursor='default';
     inner.innerHTML=el.html||'';
-    inner.addEventListener('blur',()=>{
+
+    const commitText=()=>{
+      inner.contentEditable='false';
+      inner.style.cursor='default';
       const old=el.html; const newHtml=inner.innerHTML;
-      if(newHtml!==old){ el.html=newHtml; _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'html',oldVal:old,newVal:newHtml}); autoSave(); }
+      if(newHtml!==old){
+        el.html=newHtml;
+        _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'html',oldVal:old,newVal:newHtml});
+        autoSave();
+      }
       slRenderThumb(SL_ACTIVE_IDX);
+    };
+    inner.addEventListener('blur', commitText);
+    inner.addEventListener('keydown',ev=>{
+      if(ev.key==='Escape'){ ev.preventDefault(); inner.blur(); }
+      ev.stopPropagation();
     });
-    inner.addEventListener('keydown',ev=>{ if(ev.key==='Escape'){ev.preventDefault();inner.blur();} ev.stopPropagation(); });
-    inner.addEventListener('mousedown',ev=>ev.stopPropagation());
     div.appendChild(inner);
 
-    // Selection and drag
     if(EDITOR_VIEW==='slides'){
+      // Single click → select box and enable drag
       div.addEventListener('mousedown',ev=>{
-        if(ev.target===inner||inner.contains(ev.target)) return; // let text editing happen
+        if(inner.contentEditable==='true') return; // already in edit mode
         ev.stopPropagation();
         slSelectEl(el.id);
         slStartElDrag(ev, el, div, w, h);
       });
-      div.addEventListener('click',ev=>{ ev.stopPropagation(); slSelectEl(el.id); });
+      // Double-click → enter text edit mode
+      div.addEventListener('dblclick',ev=>{
+        ev.stopPropagation();
+        slSelectEl(el.id);
+        inner.contentEditable='true';
+        inner.style.cursor='text';
+        inner.focus();
+        // Place caret at click position
+        const range=document.caretRangeFromPoint?.(ev.clientX,ev.clientY);
+        if(range){ const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range); }
+      });
       div.addEventListener('contextmenu',ev=>{ ev.preventDefault(); ev.stopPropagation(); SL_CTX_EL_ID=el.id; slShowCtxMenu(ev.clientX,ev.clientY); });
     }
 
     if(SL_SEL_EL_ID===el.id && EDITOR_VIEW==='slides'){
       div.classList.add('selected');
-      // Add resize handles
       ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
         const rh=document.createElement('div');
         rh.className=`sl-resize-handle sl-rh-${dir}`;
@@ -6326,17 +6384,16 @@ function slRenderActive(){
   slRenderSlideInto(slide, cv, SL_CANVAS_W, SL_CANVAS_H);
 }
 
-/* ── Full re-render ── */
+/* ── Full re-render (thumbnails + panel + active canvas) ── */
 function slRenderAll(){
   if(SL_DECK.slides.length===0){
-    // Auto-create a blank slide so the editor is never empty
     const slide=slMakeBlank();
     SL_DECK.slides.push(slide);
     SL_ACTIVE_IDX=0;
   }
   slRenderThumbList();
   slUpdatePropsPanel();
-  slRenderActive();
+  slRefreshSlide(); // always refresh from live data
 }
 
 /* ── Window resize → re-size canvas ── */
