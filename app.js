@@ -3584,9 +3584,6 @@ function projExportAllDiagPDF(){
 }
 
 async function _exportAllDiagPDF(idx){
-  // Uses the live exportDiagramPDF() capture engine — loads each project,
-  // renders the diagram canvas, captures via html2canvas (includes labels,
-  // brackets, connectors, comments), then restores the original session.
   if(typeof JSZip==='undefined'){
     toast(typeof t==='function'?t('toast.loading'):'Loading…');
     await _loadJSZip();
@@ -3609,21 +3606,25 @@ async function _exportAllDiagPDF(idx){
       const raw=localStorage.getItem('exeg-proj-'+entry.id);
       if(!raw) continue;
       const data=JSON.parse(raw);
-      // Load project and switch to diagram view for capture
+
+      // Load project, switch to diagram view — exactly as a user would
       SESS=data.lang||SESS; LANG=data.langLabel||LANG;
       IS_RTL=data.isRTL||false; IS_SINGLE=data.isSingle||false;
       loadData(data);
       recomputeIds();
       setEditorView('diagram');
-      // Wait for diagram rows AND bracket SVG to fully render.
-      // loadBracketData defers refreshBrackets() by one rAF — we wait
-      // multiple frames to ensure both renderDiagram and _brkRenderDiagram complete.
-      await new Promise(r=>setTimeout(r, 120));
+
+      // Wait for renderDiagram + loadBracketData rAF + bracket SVG render
+      await new Promise(r=>setTimeout(r,150));
       await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
-      const pdfBlob=await _captureDiagramPDFBlob('a4','landscape');
-      if(pdfBlob){
-        const fname=buildDiagramFilename(data.verseRef||entry.name||'Untitled');
-        zip.file(fname+'.pdf',pdfBlob);
+
+      const ref=(data.verseRef||entry.name||'Untitled').trim();
+      const langSrc=data.langLabel||'';
+      const doc=await _runDiagramPDFExport(ref, langSrc, 'a4', 'landscape');
+      if(doc){
+        const fname=buildDiagramFilename(ref);
+        const pdfArrayBuffer=doc.output('arraybuffer');
+        zip.file(fname+'.pdf', pdfArrayBuffer);
         count++;
       }
     }catch(e){console.warn('Diagram PDF export failed for',entry.name,e);}
@@ -3645,223 +3646,7 @@ async function _exportAllDiagPDF(idx){
   toast((typeof t==='function'?t('toast.export-all-done'):'Exported ')+count+' project'+(count!==1?'s':'')+' as Diagram PDF.');
 }
 
-// Shared diagram PDF capture — same logic as exportDiagramPDF but returns a Blob.
-async function _captureDiagramPDFBlob(format,orientation){
-  const canvas=document.getElementById('dcanvas');
-  if(!canvas) return null;
-  const {jsPDF}=window.jspdf;
-  if(!jsPDF) return null;
-  const PAGE_SIZES={
-    a4:{portrait:[595.28,841.89],landscape:[841.89,595.28]},
-    letter:{portrait:[612,792],landscape:[792,612]}
-  };
-  const [pW,pH]=PAGE_SIZES[format][orientation];
-  const MAR=28,usableW=pW-MAR*2;
-  const ref=(document.getElementById('refin')?.value||'').trim()||'Diagram';
-  const langSrc=LANG||'';
 
-  const host=document.createElement('div');
-  host.style.cssText='position:fixed;left:-9999px;top:0;overflow:visible;pointer-events:none;';
-  document.body.appendChild(host);
-  const clone=canvas.cloneNode(true);
-  clone.style.zoom='1';clone.style.position='static';clone.style.width=canvas.scrollWidth+'px';
-  host.appendChild(clone);
-  clone.querySelectorAll('.dcell.dv').forEach(el=>el.style.color='#A89F90');
-  clone.querySelectorAll('.dcell.dl').forEach(el=>el.style.color='#C8A84B');
-  clone.querySelectorAll('.dcell').forEach(el=>{if(!el.style.color)el.style.color='#C8A84B';});
-  clone.style.background='#ffffff';
-  // Render brackets into clone using offset-based positioning (not getBoundingClientRect)
-  if(typeof _brkRenderIntoClone==='function') _brkRenderIntoClone(clone);
-  await new Promise(r=>requestAnimationFrame(r));
-
-  let capturedCanvas=null;
-  try{
-    capturedCanvas=await html2canvas(clone,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:0,width:clone.scrollWidth||canvas.scrollWidth,height:clone.scrollHeight||canvas.scrollHeight,windowWidth:clone.scrollWidth||canvas.scrollWidth,windowHeight:clone.scrollHeight||canvas.scrollHeight});
-  }catch(err){console.error('html2canvas error:',err);}
-  finally{document.body.removeChild(host);}
-  if(!capturedCanvas) return null;
-
-  const doc=new jsPDF({orientation,unit:'pt',format:format});
-  const HEADER_H=34,imgW=usableW;
-  const imgH=(capturedCanvas.height/capturedCanvas.width)*imgW;
-  const usableH1=pH-MAR*2-HEADER_H,usableHN=pH-MAR*2;
-
-  function drawDiagHeader2(){
-    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(31,30,30);doc.text(ref,MAR,MAR+10);
-    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(168,159,144);
-    doc.text((langSrc?langSrc+' \u00B7 ':'')+'Exegetical Phrasing \u00B7 Diagram',MAR,MAR+22);
-    return MAR+HEADER_H;
-  }
-
-  // ── Footnote map (same logic as exportDiagramPDF) ─────────────────────
-  const FN_LINE_H2=13,FN_GAP2=5,FN_SEP_H2=10,FN_SPACE_ABOVE2=14;
-  const zoomRatio3=DIAGRAM_ZOOM/100;
-  const fn2RowMap=[];
-  const canvasEl2=document.getElementById('dcanvas');
-  const cR2=canvasEl2?canvasEl2.getBoundingClientRect():{top:0};
-  function stripHtmlFn2(html){
-    return html.replace(/<br\s*\/?>/gi,' ').replace(/<\/[^>]+>/g,' ')
-      .replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
-      .replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
-  }
-  document.querySelectorAll('#dcanvas .drow').forEach(drow=>{
-    const rid=drow.dataset.rid;
-    const pRow=document.querySelector(`.xrow[data-rid="${rid}"]`);
-    const cid=pRow?pRow.dataset.cid:null;
-    if(!cid) return;
-    const cmtEl=document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`);
-    if(!cmtEl||!cmtEl.innerText.trim()) return;
-    const txt=stripHtmlFn2(cmtEl.innerHTML);
-    if(!txt) return;
-    const lid=pRow?pRow.querySelector('.lid')?.textContent||'':'';
-    const dR=drow.getBoundingClientRect();
-    const logTop=(dR.top-cR2.top)/zoomRatio3;
-    const logBot=(dR.bottom-cR2.top)/zoomRatio3;
-    fn2RowMap.push({rowTopPx:Math.round(logTop*2),rowBotPx:Math.round(logBot*2),fn:{lineId:lid&&lid!=='—'?lid:'',text:txt}});
-  });
-  function fn2TextLines(fn){
-    const cpl=Math.floor(usableW/5.5);const words=fn.text.split(' ');
-    const lines=[];let line='';
-    words.forEach(w=>{const test=line?line+' '+w:w;if(test.length>cpl&&line){lines.push(line);line=w;}else line=test;});
-    if(line)lines.push(line);return lines;
-  }
-  function fn2HeightPt(fn){return Math.max(1,fn2TextLines(fn).length)*FN_LINE_H2+FN_GAP2;}
-  function fn2ZonePt(fns){return fns.length?(FN_SEP_H2+fns.reduce((s,fn)=>s+fn2HeightPt(fn),0)):0;}
-  function drawFns2(fns){
-    if(!fns.length)return;
-    const zone=fn2ZonePt(fns);
-    let fy=pH-MAR-zone;
-    doc.setDrawColor(73,53,72);doc.setLineWidth(0.4);doc.line(MAR,fy,MAR+usableW*0.3,fy);fy+=8;
-    fns.forEach(fn=>{
-      const labelW=fn.lineId?(fn.lineId.length*4.5+4):0;
-      doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(73,53,72);
-      if(fn.lineId)doc.text(fn.lineId,MAR,fy+FN_LINE_H2-3);
-      doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(31,30,30);
-      const lines=fn2TextLines(fn);
-      lines.forEach((l,i)=>doc.text(l,MAR+labelW,fy+FN_LINE_H2+i*FN_LINE_H2-3));
-      fy+=Math.max(1,lines.length)*FN_LINE_H2+FN_GAP2;
-    });
-  }
-
-  let srcY=0,pageIdx=0;
-  while(srcY<capturedCanvas.height){
-    const baseUsableH=pageIdx===0?usableH1:usableHN;
-    let tentativeSlicePx=Math.min(capturedCanvas.height-srcY,Math.round((baseUsableH/imgH)*capturedCanvas.height));
-    const tentativeEndY=srcY+tentativeSlicePx;
-    const rowsStraddling=fn2RowMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<tentativeEndY&&r.rowBotPx>tentativeEndY);
-    const rowsOnPage=fn2RowMap.filter(r=>r.rowTopPx>=srcY&&r.rowBotPx<=tentativeEndY);
-    if(rowsStraddling.length&&rowsOnPage.length>0){tentativeSlicePx=rowsStraddling[0].rowTopPx-srcY;}
-    const pageEndY=srcY+tentativeSlicePx;
-    const thisFns=fn2RowMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<pageEndY).map(r=>r.fn);
-    const fnZone=thisFns.length?(fn2ZonePt(thisFns)+FN_SPACE_ABOVE2):0;
-    const adjustedUsableH=baseUsableH-fnZone;
-    const slicePxH=Math.min(capturedCanvas.height-srcY,Math.max(1,Math.round((adjustedUsableH/imgH)*capturedCanvas.height)));
-    const sliceC=document.createElement('canvas');
-    sliceC.width=capturedCanvas.width;sliceC.height=slicePxH;
-    sliceC.getContext('2d').drawImage(capturedCanvas,0,srcY,capturedCanvas.width,slicePxH,0,0,capturedCanvas.width,slicePxH);
-    const sliceImgH=(slicePxH/capturedCanvas.width)*imgW;
-    if(pageIdx>0)doc.addPage();
-    const pageContentY=drawDiagHeader2();
-    doc.addImage(sliceC.toDataURL('image/png'),'PNG',MAR,pageContentY,imgW,sliceImgH);
-    if(thisFns.length)drawFns2(thisFns);
-    srcY+=slicePxH;pageIdx++;
-  }
-  return doc.output('blob');
-}
-
-
-async function _renderProjectDiagramPDF(data,name){
-  const {jsPDF}=window.jspdf;
-  if(!jsPDF) return null;
-  const ref=data.verseRef||name;
-  const isRTL=data.isRTL||false;
-  const langLabel=data.langLabel||'';
-  const INDENT_PX_OFF=32;
-  const _counts={};let _lastVerse='';
-  const _lineIds=(data.rows||[]).map(rd=>{
-    const v=(rd.verse||'').trim();
-    const effective=v||_lastVerse;
-    if(v)_lastVerse=v;
-    if(!effective)return'—';
-    if(!_counts[effective])_counts[effective]=0;
-    const letter=String.fromCharCode(97+_counts[effective]++);
-    return effective+letter;
-  });
-  const host=document.createElement('div');
-  host.style.cssText='position:fixed;left:-9999px;top:0;width:900px;background:#ffffff;padding:12px 0;';
-  document.body.appendChild(host);
-  (data.rows||[]).forEach((rd,i)=>{
-    const indent=rd.indent||0;
-    const row=document.createElement('div');
-    row.style.cssText='display:flex;align-items:flex-start;margin-bottom:10px;'+(isRTL?'direction:rtl;':'');
-    const vEl=document.createElement('div');
-    vEl.style.cssText='width:60px;flex-shrink:0;font-size:11px;color:#A89F90;';
-    vEl.textContent=rd.verse||'';
-    const lid=_lineIds[i];
-    const lEl=document.createElement('div');
-    lEl.style.cssText='width:52px;flex-shrink:0;font-size:11px;font-weight:600;color:#C8A84B;';
-    lEl.textContent=(lid&&lid!=='—')?lid:'';
-    const blk=document.createElement('div');
-    blk.style.cssText='display:inline-block;border:1.5px solid rgba(73,53,72,.22);border-radius:8px;'
-      +'padding:4px 10px;font-size:13px;line-height:1.5;max-width:500px;'
-      +(isRTL?`margin-right:${indent*INDENT_PX_OFF}px;direction:rtl;text-align:right;`
-             :`margin-left:${indent*INDENT_PX_OFF}px;`);
-    blk.innerHTML=rd.origHTML||'';
-    if(isRTL){row.appendChild(blk);row.appendChild(lEl);row.appendChild(vEl);}
-    else{row.appendChild(vEl);row.appendChild(lEl);row.appendChild(blk);}
-    host.appendChild(row);
-  });
-  // Render saved labels as absolutely-positioned text boxes over the host
-  // so they appear in the exported PDF at their stored positions.
-  const savedLabels=(data.diagramData&&data.diagramData.labels)||[];
-  if(savedLabels.length){
-    // host needs relative positioning for absolute children
-    host.style.position='relative';
-    savedLabels.forEach(lb=>{
-      if(!lb.text&&lb.text!==0) return; // skip empty labels
-      const lbEl=document.createElement('div');
-      lbEl.style.cssText=
-        `position:absolute;left:${lb.x||0}%;top:${lb.y||0}%;`
-        +`width:${lb.width||140}px;`
-        +'background:#ffffff;border:1.5px solid rgba(73,53,72,.22);border-radius:8px;'
-        +'padding:4px 8px;font-size:12px;line-height:1.4;color:#1F1E1E;'
-        +'white-space:pre-wrap;word-break:break-word;';
-      lbEl.textContent=lb.text||'';
-      host.appendChild(lbEl);
-    });
-  }
-  let pdfBlob=null;
-  try{
-    const canvas=await html2canvas(host,{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false});
-    document.body.removeChild(host);
-    const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
-    const pW=doc.internal.pageSize.getWidth(),pH=doc.internal.pageSize.getHeight();
-    const MAR=28,usableW=pW-MAR*2,HEADER_H=34;
-    doc.setFont('helvetica','bold');doc.setFontSize(13);doc.setTextColor(31,30,30);doc.text(ref,MAR,MAR+10);
-    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(168,159,144);
-    doc.text((langLabel?langLabel+' \u00B7 ':'')+'Exegetical Phrasing \u00B7 Diagram',MAR,MAR+22);
-    const imgW=usableW,imgH=(canvas.height/canvas.width)*imgW;
-    const usableH1=pH-MAR*2-HEADER_H,usableHN=pH-MAR*2;
-    let srcY=0,pageIdx=0;
-    while(srcY<canvas.height){
-      const usableH=pageIdx===0?usableH1:usableHN;
-      const slicePxH=Math.min(canvas.height-srcY,Math.round((usableH/imgH)*canvas.height));
-      const sliceC=document.createElement('canvas');
-      sliceC.width=canvas.width;sliceC.height=slicePxH;
-      sliceC.getContext('2d').drawImage(canvas,0,srcY,canvas.width,slicePxH,0,0,canvas.width,slicePxH);
-      const sliceImgH=(slicePxH/canvas.width)*imgW;
-      const pageY=MAR+(pageIdx===0?HEADER_H:0);
-      if(pageIdx>0)doc.addPage();
-      doc.addImage(sliceC.toDataURL('image/png'),'PNG',MAR,pageY,imgW,sliceImgH);
-      srcY+=slicePxH;pageIdx++;
-    }
-    pdfBlob=doc.output('blob');
-  }catch(e){
-    if(document.body.contains(host))document.body.removeChild(host);
-    console.warn('Diagram PDF render error:',e);
-  }
-  return pdfBlob;
-}
 
 async function _exportAllJSON(idx){
   // Load JSZip on demand
@@ -4334,59 +4119,56 @@ function closeDiagPdfModal(){
 
 async function exportDiagramPDF(format, orientation){
   closeDiagPdfModal();
-
   const canvas=document.getElementById('dcanvas');
   if(!canvas){ toast('No diagram canvas found.'); return; }
-
   const {jsPDF}=window.jspdf;
   if(!jsPDF){ toast('PDF library not loaded.'); return; }
-
   toast(typeof t==='function'?t('export.pdf.generating'):'Generating PDF\u2026');
+  const ref=(document.getElementById('refin')?.value||'').trim()||'Diagram';
+  const doc=await _runDiagramPDFExport(ref, LANG||'', format, orientation);
+  if(!doc){ toast('PDF export failed.'); return; }
+  doc.save(buildDiagramFilename(ref)+'.pdf');
+}
+
+/* ── Shared diagram PDF engine ──────────────────────────────────────────────
+   Captures the live #dcanvas, slices into pages with footnotes and
+   block-snap anti-cut logic, returns a jsPDF doc (or null on failure).
+   Used by both exportDiagramPDF (single) and _exportAllDiagPDF (bulk). */
+async function _runDiagramPDFExport(ref, langSrc, format, orientation){
+  const canvas=document.getElementById('dcanvas');
+  if(!canvas) return null;
+  const {jsPDF}=window.jspdf;
+  if(!jsPDF) return null;
 
   const PAGE_SIZES={
     a4:     {portrait:[595.28,841.89], landscape:[841.89,595.28]},
     letter: {portrait:[612,792],       landscape:[792,612]}
   };
-  const [pW,pH]=PAGE_SIZES[format][orientation];
-  const MAR=28;
-  const usableW=pW-MAR*2;
+  const [pW,pH]=PAGE_SIZES[format]?.[orientation]||PAGE_SIZES.a4.landscape;
+  const MAR=28, usableW=pW-MAR*2;
 
-  // Clone #dcanvas into an off-screen container so we can:
-  //   • Set zoom:1 on the clone (not the live canvas — that breaks bracket rects)
-  //   • Inline all CSS-variable colours so html2canvas resolves them correctly
-  //   • Capture the full logical canvas without scroll-offset cropping
+  // ── Clone canvas off-screen ────────────────────────────────────────
   const host=document.createElement('div');
   host.style.cssText='position:fixed;left:-9999px;top:0;overflow:visible;pointer-events:none;';
   document.body.appendChild(host);
 
   const clone=canvas.cloneNode(true);
-  // Remove zoom so html2canvas sees logical pixels at 1:1
   clone.style.zoom='1';
   clone.style.position='static';
   clone.style.width=canvas.scrollWidth+'px';
   host.appendChild(clone);
 
-  // Inline CSS-variable colours — html2canvas doesn't always resolve var(--x)
-  // from :root when operating on a detached/off-screen subtree.
   clone.querySelectorAll('.dcell.dv').forEach(el=>el.style.color='#A89F90');
   clone.querySelectorAll('.dcell.dl').forEach(el=>el.style.color='#C8A84B');
-  // Base .dcell colour (line IDs use this via inheritance when .dl has no explicit colour)
-  clone.querySelectorAll('.dcell').forEach(el=>{
-    if(!el.style.color) el.style.color='#C8A84B';
-  });
-  // White background — no ink wasted on parchment colour
+  clone.querySelectorAll('.dcell').forEach(el=>{ if(!el.style.color) el.style.color='#C8A84B'; });
   clone.style.background='#ffffff';
 
-  // Wait one frame for the clone to paint before measuring
   await new Promise(r=>requestAnimationFrame(r));
 
-  let capturedCanvas;
+  let capturedCanvas=null;
   try{
     capturedCanvas=await html2canvas(clone,{
-      scale:2,
-      useCORS:true,
-      backgroundColor:'#ffffff',
-      logging:false,
+      scale:2, useCORS:true, backgroundColor:'#ffffff', logging:false,
       scrollX:0, scrollY:0,
       width:  clone.scrollWidth  || canvas.scrollWidth,
       height: clone.scrollHeight || canvas.scrollHeight,
@@ -4395,49 +4177,25 @@ async function exportDiagramPDF(format, orientation){
     });
   }catch(err){
     console.error('html2canvas error:',err);
-    toast('PDF export failed. See console for details.');
   }finally{
     document.body.removeChild(host);
   }
+  if(!capturedCanvas) return null;
 
-  if(!capturedCanvas) return;
+  // ── Build footnote map ────────────────────────────────────────────
+  const FN_LINE_H=13, FN_GAP=5, FN_SEP_H=10, FN_SPACE_ABOVE=14;
+  const FN_LINE_H_S=10, FN_LBL_PT=7, FN_TXT_PT=8;
+  const zoomRatio=DIAGRAM_ZOOM/100;
+  const captureScale=2;
 
-  const doc=new jsPDF({orientation,unit:'pt',format:format});
-
-  // Header
-  const ref=(document.getElementById('refin')?.value||'').trim()||'Diagram';
-  const langSrc=LANG||'';
-  doc.setFont('helvetica','bold'); doc.setFontSize(13);
-  doc.setTextColor(31,30,30);
-  doc.text(ref, MAR, MAR+10);
-  doc.setFont('helvetica','normal'); doc.setFontSize(8);
-  doc.setTextColor(168,159,144);
-  doc.text((langSrc?langSrc+' \u00B7 ':'')+'Exegetical Phrasing \u00B7 Diagram', MAR, MAR+22);
-
-  // Slice into pages
-  const HEADER_H=34;
-  const imgW=usableW;
-  const imgH=(capturedCanvas.height/capturedCanvas.width)*imgW;
-  const usableH1=pH-MAR*2-HEADER_H;
-  const usableHN=pH-MAR*2;
-
-  // ── Build per-row footnote map ────────────────────────────────────────
-  const FN_LINE_H=13, FN_GAP=5, FN_SEP_H=10;
-  function stripHtmlFn(html){
+  function stripHtmlFn2(html){
     return html.replace(/<br\s*\/?>/gi,' ').replace(/<\/[^>]+>/g,' ')
       .replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
       .replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
   }
-  // Map: canvasPxY (top of row in capturedCanvas pixels) → footnote object
-  // We measure each drow's position relative to the cloned canvas.
-  // The clone was captured at scale:2 / zoomRatio, same as CAPTURE_SCALE/zoomRatio.
-  const zoomRatio2=DIAGRAM_ZOOM/100;
-  const cloneRect=clone? {top:0} : {top:0}; // clone already removed; use stored offset
-  // Instead, compute row Y positions from the original canvas scroll heights
-  // by measuring each drow before the clone was removed.
-  // Since clone is gone, use the live dcanvas drows (same logical layout).
-  const rowFnMap=[]; // [{rowTopPx, rowBotPx, fn}] in capturedCanvas pixels
-  const captureScale=2; // scale used for html2canvas
+
+  const rowFnMap=[];
+  const cR=canvas.getBoundingClientRect();
   document.querySelectorAll('#dcanvas .drow').forEach(drow=>{
     const rid=drow.dataset.rid;
     const pRow=document.querySelector(`.xrow[data-rid="${rid}"]`);
@@ -4445,19 +4203,16 @@ async function exportDiagramPDF(format, orientation){
     if(!cid) return;
     const cmtEl=document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`);
     if(!cmtEl||!cmtEl.innerText.trim()) return;
-    const txt=stripHtmlFn(cmtEl.innerHTML);
+    const txt=stripHtmlFn2(cmtEl.innerHTML);
     if(!txt) return;
     const lid=pRow?pRow.querySelector('.lid')?.textContent||'':'';
-    // Row top/bottom in logical canvas px (unzoomed), then scaled to capturedCanvas px
-    const canvasEl=document.getElementById('dcanvas');
-    const cR=canvasEl?canvasEl.getBoundingClientRect():{top:0};
     const dR=drow.getBoundingClientRect();
-    const logTop=(dR.top-cR.top)/zoomRatio2;
-    const logBot=(dR.bottom-cR.top)/zoomRatio2;
+    const logTop=(dR.top-cR.top)/zoomRatio;
+    const logBot=(dR.bottom-cR.top)/zoomRatio;
     rowFnMap.push({
-      rowTopPx: Math.round(logTop*captureScale),
-      rowBotPx: Math.round(logBot*captureScale),
-      fn:{lineId:lid&&lid!=='—'?lid:'', text:txt}
+      rowTopPx:Math.round(logTop*captureScale),
+      rowBotPx:Math.round(logBot*captureScale),
+      fn:{lineId:lid&&lid!=='—'?lid:'',text:txt}
     });
   });
 
@@ -4473,68 +4228,63 @@ async function exportDiagramPDF(format, orientation){
     if(line) lines.push(line);
     return lines;
   }
-  // Smaller footnote fonts to match _captureDiagramPDFBlob
-  const FN_LINE_H_S=10, FN_LBL_PT=7, FN_TXT_PT=8;
   function fnHeightPt(fn){ return Math.max(1,fnTextLines(fn).length)*FN_LINE_H_S+FN_GAP; }
   function fnZonePt(fns){ return fns.length?(FN_SEP_H+fns.reduce((s,fn)=>s+fnHeightPt(fn),0)):0; }
+
+  // ── Build jsPDF doc ──────────────────────────────────────────────
+  const doc=new jsPDF({orientation,unit:'pt',format});
+  const HEADER_H=34;
+  const imgW=usableW;
+  const imgH=(capturedCanvas.height/capturedCanvas.width)*imgW;
+  const usableH1=pH-MAR*2-HEADER_H;
+  const usableHN=pH-MAR*2;
+
+  function drawDiagHeader(){
+    doc.setFont('helvetica','bold'); doc.setFontSize(13);
+    doc.setTextColor(31,30,30);
+    doc.text(ref,MAR,MAR+10);
+    doc.setFont('helvetica','normal'); doc.setFontSize(8);
+    doc.setTextColor(168,159,144);
+    doc.text((langSrc?langSrc+' \u00B7 ':'')+'Exegetical Phrasing \u00B7 Diagram',MAR,MAR+22);
+    return MAR+HEADER_H;
+  }
+
   function drawFnsDiag(fns){
     if(!fns.length) return;
     const zone=fnZonePt(fns);
     let fy=pH-MAR-zone;
-    doc.setDrawColor(73,53,72);doc.setLineWidth(0.4);
+    doc.setDrawColor(73,53,72); doc.setLineWidth(0.4);
     doc.line(MAR,fy,MAR+usableW*0.3,fy);
     fy+=8;
     fns.forEach(fn=>{
       const labelW=fn.lineId?(fn.lineId.length*3.5+3):0;
-      doc.setFontSize(FN_LBL_PT);doc.setFont('helvetica','bold');doc.setTextColor(73,53,72);
+      doc.setFontSize(FN_LBL_PT); doc.setFont('helvetica','bold'); doc.setTextColor(73,53,72);
       if(fn.lineId) doc.text(fn.lineId,MAR,fy+FN_LINE_H_S-3);
-      doc.setFontSize(FN_TXT_PT);doc.setFont('helvetica','normal');doc.setTextColor(31,30,30);
+      doc.setFontSize(FN_TXT_PT); doc.setFont('helvetica','normal'); doc.setTextColor(31,30,30);
       const cpl=Math.floor(usableW/4.8);
-      const words=fn.text.split(' ');const lines=[];let line='';
+      const words=fn.text.split(' '); const lines=[]; let line='';
       words.forEach(w=>{const test=line?line+' '+w:w;if(test.length>cpl&&line){lines.push(line);line=w;}else line=test;});
-      if(line)lines.push(line);
+      if(line) lines.push(line);
       lines.forEach((l,i)=>doc.text(l,MAR+labelW,fy+FN_LINE_H_S+i*FN_LINE_H_S-3));
       fy+=Math.max(1,lines.length)*FN_LINE_H_S+FN_GAP;
     });
   }
 
-  // Helper: draw the page header and return the Y after it
-  function drawDiagHeader(){
-    doc.setFont('helvetica','bold'); doc.setFontSize(13);
-    doc.setTextColor(31,30,30);
-    doc.text(ref, MAR, MAR+10);
-    doc.setFont('helvetica','normal'); doc.setFontSize(8);
-    doc.setTextColor(168,159,144);
-    doc.text((langSrc?langSrc+' \u00B7 ':'')+'Exegetical Phrasing \u00B7 Diagram', MAR, MAR+22);
-    return MAR+HEADER_H;
-  }
-  const FN_SPACE_ABOVE=14;
-
-  // ── Correct slice loop order ────────────────────────────────────────────
-  // Step 1: estimate footnotes using full baseUsableH to get fnZone.
-  // Step 2: compute adjustedUsableH = baseUsableH - fnZone.
-  // Step 3: compute slicePxH within adjustedUsableH.
-  // Step 4: snap back to avoid mid-block cuts inside adjustedUsableH.
-  // This guarantees the image NEVER bleeds into the footnote or margin area.
+  // ── Page slicing with block-snap ─────────────────────────────────
   let srcY=0, pageIdx=0;
   while(srcY<capturedCanvas.height){
     const baseUsableH=pageIdx===0?usableH1:usableHN;
-
-    // Step 1: pre-estimate which footnotes land on this page using full height
     const preEndY=srcY+Math.round((baseUsableH/imgH)*capturedCanvas.height);
     const preFns=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<preEndY).map(r=>r.fn);
     const fnZone=preFns.length?(fnZonePt(preFns)+FN_SPACE_ABOVE):0;
+    const adjustedUsableH=Math.max(baseUsableH*0.4,baseUsableH-fnZone);
 
-    // Step 2: adjusted usable height leaving room for footnotes
-    const adjustedUsableH=Math.max(baseUsableH*0.4, baseUsableH-fnZone);
-
-    // Step 3: max image slice in adjusted space
     let slicePxH=Math.min(
       capturedCanvas.height-srcY,
       Math.max(1,Math.round((adjustedUsableH/imgH)*capturedCanvas.height))
     );
 
-    // Step 4: snap back so we don't cut a block mid-row (within adjusted space)
+    // Block-snap: don't cut mid-row
     const snapEndY=srcY+slicePxH;
     const rowsOnPage=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowBotPx<=snapEndY);
     const rowsStraddling=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<snapEndY&&r.rowBotPx>snapEndY);
@@ -4542,18 +4292,13 @@ async function exportDiagramPDF(format, orientation){
       slicePxH=Math.max(1,rowsStraddling[0].rowTopPx-srcY);
     }
 
-    // Final footnotes within actual slice
     const pageEndY=srcY+slicePxH;
     const thisFns=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<pageEndY).map(r=>r.fn);
 
     const sliceC=document.createElement('canvas');
     sliceC.width=capturedCanvas.width;
     sliceC.height=slicePxH;
-    sliceC.getContext('2d').drawImage(
-      capturedCanvas,0,srcY,capturedCanvas.width,slicePxH,
-      0,0,capturedCanvas.width,slicePxH
-    );
-    // Image height in pts — capped to adjustedUsableH so image never bleeds into margins
+    sliceC.getContext('2d').drawImage(capturedCanvas,0,srcY,capturedCanvas.width,slicePxH,0,0,capturedCanvas.width,slicePxH);
     const sliceImgH=Math.min(adjustedUsableH,(slicePxH/capturedCanvas.width)*imgW);
 
     if(pageIdx>0) doc.addPage();
@@ -4564,8 +4309,7 @@ async function exportDiagramPDF(format, orientation){
     pageIdx++;
   }
 
-  const slug=buildDiagramFilename(ref);
-  doc.save(slug+'.pdf');
+  return doc;
 }
 async function doExportJSON(){
   closeExportPopup();
@@ -5132,90 +4876,6 @@ function _brkAssignLane(startRid, endRid){
 }
 
 /* ── Render brackets into a cloned #dcanvas for PDF export ──
-   Uses offsetTop/offsetHeight instead of getBoundingClientRect so
-   it works when the clone is positioned off-screen. */
-function _brkRenderIntoClone(cloneCanvas){
-  if(!BRACKETS.length) return;
-
-  // Remove any stale bracket SVG from the clone
-  cloneCanvas.querySelector('#dbrk-svg')?.remove();
-
-  const dsvg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-  dsvg.id = 'dbrk-svg';
-  dsvg.setAttribute('preserveAspectRatio','none');
-  dsvg.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:7;';
-  cloneCanvas.appendChild(dsvg);
-
-  // Use zoom=1 for clone (clone.style.zoom is forced to '1' before capture)
-  const zoom = 1;
-
-  const rows = Array.from(document.querySelectorAll('.xrow'));
-  const rids = rows.map(r=>r.dataset.rid);
-
-  // Helper: get element's top offset relative to cloneCanvas using offsetTop chain
-  function offsetRelTo(el, ancestor){
-    let top = 0, cur = el;
-    while(cur && cur !== ancestor){
-      top += cur.offsetTop;
-      cur = cur.offsetParent;
-    }
-    return top;
-  }
-
-  // Build laneXMap using clone block offsets
-  const sorted = [...BRACKETS].sort((a,b)=>a.lane-b.lane);
-  const laneXMap = {};
-  let prevLaneX = null, prevLabelW = 0;
-
-  sorted.forEach(brk=>{
-    const si = rids.indexOf(String(brk.startRid));
-    const ei = rids.indexOf(String(brk.endRid));
-    if(si<0||ei<0) return;
-    const lo = Math.min(si,ei), hi = Math.max(si,ei);
-    const spannedRids = rids.slice(lo, hi+1);
-
-    let maxRight = 0;
-    spannedRids.forEach(rid=>{
-      const block = cloneCanvas.querySelector(`.dblock[data-rid="${rid}"]`);
-      if(!block) return;
-      // offsetLeft relative to cloneCanvas + width
-      let left = 0, cur = block;
-      while(cur && cur !== cloneCanvas){ left += cur.offsetLeft; cur = cur.offsetParent; }
-      const right = left + block.offsetWidth;
-      if(right > maxRight) maxRight = right;
-    });
-
-    const baseX = maxRight + BRK_PIP_OFFSET + BRK_LANE_W * 0.5;
-    let laneX;
-    if(prevLaneX === null){
-      laneX = baseX;
-    } else {
-      const minStep = prevLabelW > 0 ? prevLabelW + BRK_LABEL_GAP + 20 : BRK_LANE_W;
-      laneX = Math.max(baseX, prevLaneX + minStep);
-    }
-    laneXMap[brk.lane] = laneX;
-    prevLaneX  = laneX;
-    prevLabelW = _brkMeasureLabelWidth(brk.label);
-  });
-
-  // Draw each bracket
-  BRACKETS.forEach(brk=>{
-    const si = rids.indexOf(String(brk.startRid));
-    const ei = rids.indexOf(String(brk.endRid));
-    if(si<0||ei<0) return;
-    const lo = Math.min(si,ei), hi = Math.max(si,ei);
-
-    const startDrow = cloneCanvas.querySelector(`.drow[data-rid="${rids[lo]}"]`);
-    const endDrow   = cloneCanvas.querySelector(`.drow[data-rid="${rids[hi]}"]`);
-    if(!startDrow||!endDrow) return;
-
-    const yStart = offsetRelTo(startDrow, cloneCanvas);
-    const yEnd   = offsetRelTo(endDrow,   cloneCanvas) + endDrow.offsetHeight;
-    const laneX  = laneXMap[brk.lane] ?? (100 + (brk.lane-1)*BRK_LANE_W);
-
-    _brkDrawSVG(dsvg, brk, laneX, yStart, yEnd);
-  });
-}
 
 /* ── Pips are now part of each .drow — no rail, no position sync needed ── */
 function _brkSyncPips(){ /* no-op: pips render in makeDiagramRowEl */ }
