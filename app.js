@@ -5171,7 +5171,6 @@ function _brkCreate(startRid, endRid){
   BRACKETS.push(brk);
   rowPush({type:'brk-add', brk:{...brk}});
   refreshBrackets();
-  setTimeout(()=>_brkOpenInlineEdit(id), 40);
   autoSave();
 }
 
@@ -5349,7 +5348,6 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   g.appendChild(botHandle);
 
   // ── Label ─────────────────────────────────────────────────────────────
-  // Always render a label zone (even if empty) so user can click to edit
   const labelX = laneX + BRK_LABEL_GAP + 3;
   const labelW = brk.label ? _brkMeasureLabelWidth(brk.label) + 8 : 60;
   const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
@@ -5361,45 +5359,107 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   fo.style.overflow = 'visible';
 
   const span = document.createElement('span');
+
   if(brk.label){
     span.style.cssText = `display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;`
       + `color:${sel?'var(--active,#C8A84B)':c};white-space:nowrap;`
       + `line-height:20px;cursor:ns-resize;user-select:none;`;
-    span.title = 'Drag ↕ to reposition  •  Double-click to edit';
+    span.title = 'Click to select  •  Double-click to edit  •  Drag ↕ to reposition';
     span.textContent = brk.label;
+
+    // Use mousedown with a timer to distinguish single-click (select)
+    // from double-click (edit inline) — avoids refreshBrackets() destroying
+    // the element before dblclick can fire.
+    let clickTimer = null;
+    let dragStarted = false;
+    let dragActive  = false;
+
+    span.addEventListener('mousedown', ev=>{
+      if(ev.button!==0) return;
+      ev.stopPropagation();
+
+      dragStarted = false;
+      dragActive  = false;
+      const downY = ev.clientY;
+      const startOffset = brk.labelOffsetY || 0;
+      const zoom = DIAGRAM_ZOOM / 100;
+
+      // Watch for drag
+      const onMove = mv=>{
+        if(dragActive) return;
+        if(Math.abs(mv.clientY - downY) > 4){
+          dragStarted = true;
+          dragActive  = true;
+          // Cancel any pending click timer
+          if(clickTimer){ clearTimeout(clickTimer); clickTimer=null; }
+
+          // Inline drag logic (fix: use live mv.clientY, not stale ev.clientY)
+          const mid = (yStart + yEnd) / 2;
+          const halfLabel = 10;
+          const onDragMove = dmv=>{
+            const dy = (dmv.clientY - downY) / zoom;
+            const newAbsY = Math.max(yStart+halfLabel, Math.min(yEnd-halfLabel, mid+startOffset+dy));
+            brk.labelOffsetY = Math.round(newAbsY - mid);
+            refreshBrackets();
+          };
+          const onDragUp = ()=>{
+            document.removeEventListener('mousemove', onDragMove);
+            document.removeEventListener('mouseup',   onDragUp);
+            if(brk.labelOffsetY !== startOffset){
+              rowPush({type:'brk-style', id:brk.id, prop:'labelOffsetY',
+                       oldVal:startOffset, newVal:brk.labelOffsetY});
+            }
+            autoSave();
+          };
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup',   onUp);
+          document.addEventListener('mousemove', onDragMove);
+          document.addEventListener('mouseup',   onDragUp);
+        }
+      };
+
+      const onUp = ()=>{
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup',   onUp);
+        if(dragStarted) return; // drag was handled above
+
+        if(clickTimer){
+          // Second click within 300ms → double-click → open inline editor
+          clearTimeout(clickTimer);
+          clickTimer = null;
+          _brkOpenLabelInlineEdit(brk.id, labelX, labelY);
+        } else {
+          // First click — wait to see if second comes
+          clickTimer = setTimeout(()=>{
+            clickTimer = null;
+            // Single click → select bracket
+            SELECTED_BRK_ID = brk.id;
+            refreshBrackets();
+            _brkOpenEditPopup(ev.clientX, ev.clientY, BRACKETS.find(b=>b.id===brk.id));
+          }, 280);
+        }
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup',   onUp);
+    });
+
   } else {
-    // Placeholder — faint italic, click to edit
+    // Placeholder — single click opens inline editor directly, no popup
     span.style.cssText = `display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;`
       + `color:rgba(73,53,72,.35);white-space:nowrap;font-style:italic;`
       + `line-height:20px;cursor:text;user-select:none;`;
-    span.title = 'Double-click to add label';
+    span.title = 'Click to add label';
     span.textContent = t('bracket.label-ph');
-  }
 
-  // Single click → select bracket
-  span.addEventListener('click', ev=>{ ev.stopPropagation(); _brkSelect(brk.id,ev); });
-
-  // Double-click → open inline label editor
-  span.addEventListener('dblclick', ev=>{
-    ev.stopPropagation(); ev.preventDefault();
-    _brkOpenLabelInlineEdit(brk.id, fo, labelX, labelY);
-  });
-
-  // Drag (only when label exists) → reposition Y
-  if(brk.label){
     span.addEventListener('mousedown', ev=>{
       if(ev.button!==0) return;
-      // Let dblclick fire naturally; only start drag on sustained mousedown
       ev.stopPropagation();
-      let dragging = false;
-      const startY = ev.clientY;
-      const onMove = mv=>{
-        if(!dragging && Math.abs(mv.clientY-startY) > 3) dragging = true;
-        if(dragging){ ev.preventDefault(); _brkStartLabelDrag(ev, brk.id, yStart, yEnd); cleanup(); }
-      };
-      const cleanup = ()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',cleanup); };
-      document.addEventListener('mousemove', onMove);
-      document.addEventListener('mouseup', cleanup);
+      ev.preventDefault();
+    });
+    span.addEventListener('click', ev=>{
+      ev.stopPropagation();
+      _brkOpenLabelInlineEdit(brk.id, labelX, labelY);
     });
   }
 
@@ -5408,8 +5468,8 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   svg.appendChild(g);
 }
 
-/* ── Open inline label editor on an existing bracket (double-click) ── */
-function _brkOpenLabelInlineEdit(id, fo, labelX, labelY){
+/* ── Open inline label editor (single-click placeholder, double-click label) ── */
+function _brkOpenLabelInlineEdit(id, labelX, labelY){
   // Remove existing inline editor if open
   document.getElementById('brk-inline-fo')?.remove();
 
@@ -5516,44 +5576,6 @@ function _brkStartSerifDrag(ev, brkId, which){
   document.addEventListener('mouseup',   onUp);
 }
 
-/* ── Label Y drag ── */
-function _brkStartLabelDrag(ev, brkId, yStart, yEnd){
-  const brk = BRACKETS.find(b=>b.id===brkId);
-  if(!brk) return;
-
-  const startClientY = ev.clientY;
-  const startOffset  = brk.labelOffsetY || 0;
-  const oldOffset    = startOffset;
-  const zoom         = DIAGRAM_ZOOM / 100;
-
-  // Clamp range: label can travel from bracket top to bracket bottom
-  const span      = yEnd - yStart;
-  const halfLabel = 10; // half label height in canvas px
-
-  const onMove = mv=>{
-    const dy = (mv.clientY - startClientY) / zoom;
-    const mid = (yStart + yEnd) / 2;
-    // New absolute Y of label (canvas-local), then convert to offset from midY
-    const newAbsY  = Math.max(yStart + halfLabel, Math.min(yEnd - halfLabel, mid + startOffset + dy));
-    brk.labelOffsetY = Math.round(newAbsY - mid);
-    refreshBrackets();
-  };
-
-  const onUp = ()=>{
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup',   onUp);
-    // Push undo entry only if position actually changed
-    if(brk.labelOffsetY !== oldOffset){
-      rowPush({type:'brk-style', id:brkId, prop:'labelOffsetY',
-               oldVal:oldOffset, newVal:brk.labelOffsetY});
-    }
-    autoSave();
-  };
-
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup',   onUp);
-}
-
 /* ── Select bracket → show edit popup ── */
 function _brkSelect(id, ev){
   SELECTED_BRK_ID = id;
@@ -5647,7 +5669,7 @@ function _brkOpenInlineEdit(id){
   const labelY = midY + (brk.labelOffsetY||0);
   const labelX = laneX + BRK_LABEL_GAP + 3;
 
-  _brkOpenLabelInlineEdit(id, null, labelX, labelY);
+  _brkOpenLabelInlineEdit(id, labelX, labelY);
 }
 
 /* ── Serialise / restore ── */
