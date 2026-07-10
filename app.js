@@ -5250,8 +5250,8 @@ function _brkRenderDiagram(){
       laneX = baseX;
     } else {
       const minStep = prevLabelW > 0
-        ? prevLabelW + BRK_LABEL_GAP + 8   // label width + gap + padding
-        : BRK_LANE_W;                        // no label: use fixed minimum
+        ? prevLabelW + BRK_LABEL_GAP + 20   // label width + gap + padding
+        : BRK_LANE_W;                         // no label: use fixed minimum
       laneX = Math.max(baseX, prevLaneX + minStep);
     }
 
@@ -5281,7 +5281,7 @@ function _brkRenderDiagram(){
   });
 }
 
-/* ── Draw one bracket with draggable label ── */
+/* ── Draw one bracket with draggable label and resizable serifs ── */
 function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   const c   = brk.color||'#493548';
   const sw  = brk.thickness||2;
@@ -5304,14 +5304,15 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
     l.setAttribute('stroke-linecap','round');
     l.className.baseVal = cls;
     g.appendChild(l);
+    return l;
   }
 
   ln(laneX, yStart, laneX, yEnd);                         // vertical
-  ln(laneX-BRK_SERIF_W, yStart, laneX, yStart);           // top serif
-  ln(laneX-BRK_SERIF_W, yEnd,   laneX, yEnd);             // bottom serif
-  ln(laneX, labelY, laneX+BRK_LABEL_GAP, labelY);         // label tick (follows drag)
+  ln(laneX-BRK_SERIF_W, yStart, laneX, yStart);           // top serif (visible)
+  ln(laneX-BRK_SERIF_W, yEnd,   laneX, yEnd);             // bottom serif (visible)
+  ln(laneX, labelY, laneX+BRK_LABEL_GAP, labelY);         // label tick
 
-  // Wide transparent hit line for easier bracket selection
+  // Wide transparent hit line for bracket selection
   const hit = document.createElementNS('http://www.w3.org/2000/svg','line');
   hit.setAttribute('x1',laneX); hit.setAttribute('y1',yStart);
   hit.setAttribute('x2',laneX); hit.setAttribute('y2',yEnd);
@@ -5320,41 +5321,199 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   hit.addEventListener('click', ev=>{ ev.stopPropagation(); _brkSelect(brk.id,ev); });
   g.appendChild(hit);
 
-  // Label — draggable vertically
-  if(brk.label){
-    const labelX = laneX + BRK_LABEL_GAP + 3;
-    const labelW = _brkMeasureLabelWidth(brk.label) + 8; // +8 padding
-    const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-    fo.setAttribute('x', labelX);
-    fo.setAttribute('y', labelY - 10);
-    fo.setAttribute('width', Math.max(labelW, 40));
-    fo.setAttribute('height', 20);
-    fo.className.baseVal = 'brk-label-fo';
-    fo.style.overflow = 'visible';
+  // ── Serif drag handles (transparent, wide hit area) ──────────────────
+  // Top serif handle — drag to move startRid
+  const topHandle = document.createElementNS('http://www.w3.org/2000/svg','line');
+  topHandle.setAttribute('x1', laneX-BRK_SERIF_W-4); topHandle.setAttribute('y1', yStart);
+  topHandle.setAttribute('x2', laneX+6);              topHandle.setAttribute('y2', yStart);
+  topHandle.setAttribute('stroke','transparent'); topHandle.setAttribute('stroke-width',12);
+  topHandle.style.cursor = 'ns-resize';
+  topHandle.style.pointerEvents = 'stroke';
+  topHandle.addEventListener('mousedown', ev=>{
+    ev.stopPropagation(); ev.preventDefault();
+    _brkStartSerifDrag(ev, brk.id, 'start');
+  });
+  g.appendChild(topHandle);
 
-    const span = document.createElement('span');
+  // Bottom serif handle — drag to move endRid
+  const botHandle = document.createElementNS('http://www.w3.org/2000/svg','line');
+  botHandle.setAttribute('x1', laneX-BRK_SERIF_W-4); botHandle.setAttribute('y1', yEnd);
+  botHandle.setAttribute('x2', laneX+6);              botHandle.setAttribute('y2', yEnd);
+  botHandle.setAttribute('stroke','transparent'); botHandle.setAttribute('stroke-width',12);
+  botHandle.style.cursor = 'ns-resize';
+  botHandle.style.pointerEvents = 'stroke';
+  botHandle.addEventListener('mousedown', ev=>{
+    ev.stopPropagation(); ev.preventDefault();
+    _brkStartSerifDrag(ev, brk.id, 'end');
+  });
+  g.appendChild(botHandle);
+
+  // ── Label ─────────────────────────────────────────────────────────────
+  // Always render a label zone (even if empty) so user can click to edit
+  const labelX = laneX + BRK_LABEL_GAP + 3;
+  const labelW = brk.label ? _brkMeasureLabelWidth(brk.label) + 8 : 60;
+  const fo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
+  fo.setAttribute('x', labelX);
+  fo.setAttribute('y', labelY - 10);
+  fo.setAttribute('width', Math.max(labelW, 60));
+  fo.setAttribute('height', 20);
+  fo.className.baseVal = 'brk-label-fo';
+  fo.style.overflow = 'visible';
+
+  const span = document.createElement('span');
+  if(brk.label){
     span.style.cssText = `display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;`
       + `color:${sel?'var(--active,#C8A84B)':c};white-space:nowrap;`
       + `line-height:20px;cursor:ns-resize;user-select:none;`;
-    span.title = 'Drag to reposition label';
+    span.title = 'Drag ↕ to reposition  •  Double-click to edit';
     span.textContent = brk.label;
-
-    // Click to select bracket
-    span.addEventListener('click', ev=>{ ev.stopPropagation(); _brkSelect(brk.id,ev); });
-
-    // Drag to reposition label Y
-    span.addEventListener('mousedown', ev=>{
-      if(ev.button!==0) return;
-      ev.stopPropagation();
-      ev.preventDefault();
-      _brkStartLabelDrag(ev, brk.id, yStart, yEnd);
-    });
-
-    fo.appendChild(span);
-    g.appendChild(fo);
+  } else {
+    // Placeholder — faint italic, click to edit
+    span.style.cssText = `display:inline-block;font-family:var(--ui,sans-serif);font-size:11px;`
+      + `color:rgba(73,53,72,.35);white-space:nowrap;font-style:italic;`
+      + `line-height:20px;cursor:text;user-select:none;`;
+    span.title = 'Double-click to add label';
+    span.textContent = t('bracket.label-ph');
   }
 
+  // Single click → select bracket
+  span.addEventListener('click', ev=>{ ev.stopPropagation(); _brkSelect(brk.id,ev); });
+
+  // Double-click → open inline label editor
+  span.addEventListener('dblclick', ev=>{
+    ev.stopPropagation(); ev.preventDefault();
+    _brkOpenLabelInlineEdit(brk.id, fo, labelX, labelY);
+  });
+
+  // Drag (only when label exists) → reposition Y
+  if(brk.label){
+    span.addEventListener('mousedown', ev=>{
+      if(ev.button!==0) return;
+      // Let dblclick fire naturally; only start drag on sustained mousedown
+      ev.stopPropagation();
+      let dragging = false;
+      const startY = ev.clientY;
+      const onMove = mv=>{
+        if(!dragging && Math.abs(mv.clientY-startY) > 3) dragging = true;
+        if(dragging){ ev.preventDefault(); _brkStartLabelDrag(ev, brk.id, yStart, yEnd); cleanup(); }
+      };
+      const cleanup = ()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',cleanup); };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', cleanup);
+    });
+  }
+
+  fo.appendChild(span);
+  g.appendChild(fo);
   svg.appendChild(g);
+}
+
+/* ── Open inline label editor on an existing bracket (double-click) ── */
+function _brkOpenLabelInlineEdit(id, fo, labelX, labelY){
+  // Remove existing inline editor if open
+  document.getElementById('brk-inline-fo')?.remove();
+
+  const brk = BRACKETS.find(b=>b.id===id); if(!brk) return;
+  const dsvg = document.getElementById('dbrk-svg'); if(!dsvg) return;
+  const g = dsvg.querySelector(`g[data-brk-id="${id}"]`); if(!g) return;
+
+  const editFo = document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
+  editFo.setAttribute('x', labelX);
+  editFo.setAttribute('y', labelY - 11);
+  editFo.setAttribute('width', 120);
+  editFo.setAttribute('height', 22);
+  editFo.id = 'brk-inline-fo';
+
+  const inp = document.createElement('input');
+  inp.type = 'text'; inp.spellcheck = false;
+  inp.className = 'brk-label-input';
+  inp.placeholder = t('bracket.label-ph');
+  inp.value = brk.label || '';
+
+  const commit = ()=>{
+    const newLabel = inp.value.trim();
+    if(newLabel !== brk.label){
+      const old = brk.label;
+      brk.label = newLabel;
+      rowPush({type:'brk-style', id, prop:'label', oldVal:old, newVal:newLabel});
+    }
+    editFo.remove();
+    refreshBrackets(); autoSave();
+  };
+  inp.addEventListener('keydown', ev=>{
+    if(ev.key==='Enter'||ev.key==='Escape'){ ev.preventDefault(); commit(); }
+  });
+  inp.addEventListener('blur', commit);
+
+  editFo.appendChild(inp);
+  g.appendChild(editFo);
+  setTimeout(()=>{ inp.focus(); inp.select(); }, 10);
+}
+
+/* ── Serif drag: resize bracket span by dragging top or bottom serif ── */
+function _brkStartSerifDrag(ev, brkId, which){
+  const brk = BRACKETS.find(b=>b.id===brkId); if(!brk) return;
+
+  const canvas = document.getElementById('dcanvas'); if(!canvas) return;
+  const zoom   = DIAGRAM_ZOOM / 100;
+  const oldRid = which==='start' ? brk.startRid : brk.endRid;
+
+  // Build ordered list of row rids and their canvas-Y midpoints
+  const rows = Array.from(document.querySelectorAll('.xrow'));
+  const rids = rows.map(r=>r.dataset.rid);
+  const canvasRect = canvas.getBoundingClientRect();
+
+  // Pre-compute midY of each drow in canvas-local px
+  const rowMids = rids.map(rid=>{
+    const drow = canvas.querySelector(`.drow[data-rid="${rid}"]`);
+    if(!drow) return null;
+    const r = drow.getBoundingClientRect();
+    return (r.top + r.height/2 - canvasRect.top) / zoom;
+  });
+
+  // Which row index is the fixed end?
+  const fixedRid = which==='start' ? brk.endRid : brk.startRid;
+  const fixedIdx = rids.indexOf(String(fixedRid));
+
+  let currentRid = oldRid;
+
+  const onMove = mv=>{
+    // Convert mouse Y to canvas-local Y
+    const mouseY = (mv.clientY - canvasRect.top) / zoom;
+    // Find nearest row
+    let nearest = -1, nearestDist = Infinity;
+    rowMids.forEach((mid,i)=>{
+      if(mid===null) return;
+      // Don't allow drag past fixed end (must keep at least 1 row span)
+      if(which==='start' && i >= fixedIdx) return;
+      if(which==='end'   && i <= fixedIdx) return;
+      const dist = Math.abs(mid - mouseY);
+      if(dist < nearestDist){ nearestDist=dist; nearest=i; }
+    });
+    if(nearest<0) return;
+    const targetRid = rids[nearest];
+    if(targetRid === currentRid) return;
+    currentRid = targetRid;
+    if(which==='start') brk.startRid = targetRid;
+    else                brk.endRid   = targetRid;
+    // Re-assign lane in case containment changed
+    brk.lane = _brkAssignLane(brk.startRid, brk.endRid);
+    refreshBrackets();
+  };
+
+  const onUp = ()=>{
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup',   onUp);
+    if(currentRid !== oldRid){
+      rowPush({type:'brk-style', id:brkId,
+               prop: which==='start' ? 'startRid' : 'endRid',
+               oldVal:oldRid, newVal:currentRid});
+    }
+    autoSave();
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup',   onUp);
 }
 
 /* ── Label Y drag ── */
@@ -5469,46 +5628,26 @@ function brkDeleteCurrent(){
   refreshBrackets(); autoSave();
 }
 
-/* ── Inline label input after bracket creation ── */
+/* ── Open inline label editor right after bracket creation ── */
 function _brkOpenInlineEdit(id){
-  const dsvg=document.getElementById('dbrk-svg'); if(!dsvg) return;
-  const g=dsvg.querySelector(`g[data-brk-id="${id}"]`); if(!g) return;
-  const brk=BRACKETS.find(b=>b.id===id); if(!brk) return;
+  const dsvg = document.getElementById('dbrk-svg'); if(!dsvg) return;
+  const g    = dsvg.querySelector(`g[data-brk-id="${id}"]`); if(!g) return;
+  const brk  = BRACKETS.find(b=>b.id===id); if(!brk) return;
 
-  // Find vertical line to get midY and laneX
-  let vl=null;
+  // Find vertical line to get laneX and labelY
+  let vl = null;
   g.querySelectorAll('line').forEach(l=>{
     if(l.getAttribute('x1')===l.getAttribute('x2') && l.getAttribute('stroke')!=='transparent') vl=l;
   });
   if(!vl) return;
-  const laneX=parseFloat(vl.getAttribute('x1'));
-  const midY=(parseFloat(vl.getAttribute('y1'))+parseFloat(vl.getAttribute('y2')))/2;
+  const laneX  = parseFloat(vl.getAttribute('x1'));
+  const vY1    = parseFloat(vl.getAttribute('y1'));
+  const vY2    = parseFloat(vl.getAttribute('y2'));
+  const midY   = (vY1+vY2)/2;
+  const labelY = midY + (brk.labelOffsetY||0);
+  const labelX = laneX + BRK_LABEL_GAP + 3;
 
-  const fo=document.createElementNS('http://www.w3.org/2000/svg','foreignObject');
-  fo.setAttribute('x', laneX+BRK_LABEL_GAP+3);
-  fo.setAttribute('y', midY-11);
-  fo.setAttribute('width', 110);
-  fo.setAttribute('height', 22);
-  fo.id='brk-inline-fo';
-
-  const inp=document.createElement('input');
-  inp.type='text'; inp.spellcheck=false;
-  inp.className='brk-label-input';
-  inp.placeholder=t('bracket.label-ph');
-
-  const commit=()=>{
-    brk.label=inp.value.trim();
-    fo.remove();
-    refreshBrackets(); autoSave();
-  };
-  inp.addEventListener('keydown', ev=>{
-    if(ev.key==='Enter'||ev.key==='Escape'){ ev.preventDefault(); commit(); }
-  });
-  inp.addEventListener('blur', commit);
-
-  fo.appendChild(inp);
-  g.appendChild(fo);
-  setTimeout(()=>inp.focus(), 10);
+  _brkOpenLabelInlineEdit(id, null, labelX, labelY);
 }
 
 /* ── Serialise / restore ── */
@@ -5538,7 +5677,13 @@ function _brkApplyUndo(op){
   }
   if(op.type==='brk-style'){
     const brk=BRACKETS.find(b=>b.id===op.id);
-    if(brk){ brk[op.prop]=op.oldVal; refreshBrackets(); } return true;
+    if(brk){
+      brk[op.prop]=op.oldVal;
+      // Re-assign lane if span changed
+      if(op.prop==='startRid'||op.prop==='endRid')
+        brk.lane=_brkAssignLane(brk.startRid, brk.endRid);
+      refreshBrackets();
+    } return true;
   }
   return false;
 }
@@ -5554,7 +5699,12 @@ function _brkApplyRedo(op){
   }
   if(op.type==='brk-style'){
     const brk=BRACKETS.find(b=>b.id===op.id);
-    if(brk){ brk[op.prop]=op.newVal; refreshBrackets(); } return true;
+    if(brk){
+      brk[op.prop]=op.newVal;
+      if(op.prop==='startRid'||op.prop==='endRid')
+        brk.lane=_brkAssignLane(brk.startRid, brk.endRid);
+      refreshBrackets();
+    } return true;
   }
   return false;
 }
