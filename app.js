@@ -416,7 +416,9 @@ function setEditorView(view){
     if(popup) popup.style.display='none';
     cancelRightAngleArm();
   }
-  _repositionCmtCards(isDiagram);
+  // Disable comment pane toggle in Slides View
+  const cmtBtn=document.getElementById('btn-cmt-pane');
+  if(cmtBtn) cmtBtn.disabled=isSlides;
   if(isDiagram) renderDiagram();
   if(isSlides) setTimeout(()=>slRenderAll(), 80);
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
@@ -2971,6 +2973,7 @@ function selectDiagBlock(rid){
 
 /* Toggle the comment pane (#cmargin) show/hide */
 function toggleCmtPane(){
+  if(EDITOR_VIEW==='slides') return; // disabled in Slides View
   const cm=document.getElementById('cmargin');
   if(!cm) return;
   const hidden=cm.classList.toggle('pane-hidden');
@@ -5458,7 +5461,7 @@ const SL_RATIO    = 16/9;
 
 /* ── Default visibility ── */
 const SL_VIS_DEFAULT = {
-  indentation:false, translation:false, verseNums:false,
+  indentation:false, translation:false,
   comments:false, connectors:false, brackets:false, labels:false
 };
 
@@ -5675,7 +5678,6 @@ function slUpdatePropsPanel(){
   document.getElementById('sl-view-diagram')?.classList.toggle('active',sl.view==='diagram');
   document.getElementById('sl-vis-indent')   .checked=!!sl.visibility.indentation;
   document.getElementById('sl-vis-trans')    .checked=!!sl.visibility.translation;
-  document.getElementById('sl-vis-verse')    .checked=!!sl.visibility.verseNums;
   document.getElementById('sl-vis-comments') .checked=!!sl.visibility.comments;
   document.getElementById('sl-vis-connectors').checked=!!sl.visibility.connectors;
   document.getElementById('sl-vis-brackets') .checked=!!sl.visibility.brackets;
@@ -5789,6 +5791,141 @@ function slBuildPassageDOM(slide, targetW, targetH){
   return frag;
 }
 
+/* ── Draw connectors fresh into a cloned dcanvas ──────────────────────────
+   Uses offsetTop/offsetLeft relative to the clone so positions are correct
+   even when some rows are hidden (their heights have collapsed). */
+function slDrawConnectorsIntoClone(cloneCanvas, visibleRids){
+  if(!DIAGRAM_DATA.connectors.length) return;
+
+  // Helper: get block position relative to cloneCanvas using offset chain
+  function blockRect(block, ancestor){
+    let top=0,left=0,cur=block;
+    while(cur&&cur!==ancestor){top+=cur.offsetTop;left+=cur.offsetLeft;cur=cur.offsetParent;}
+    return {top,left,width:block.offsetWidth,height:block.offsetHeight};
+  }
+
+  // Helper: compute connector point using clone-relative offsets
+  const CONN_INSET=6;
+  function clonePoint(block, fracX, fracY){
+    const r=blockRect(block,cloneCanvas);
+    let y=r.top+r.height*fracY;
+    if(fracY===0) y+=CONN_INSET;
+    else if(fracY===1) y-=CONN_INSET;
+    return {x:r.left+r.width*fracX, y};
+  }
+
+  // Build fresh SVG layers
+  const ns='http://www.w3.org/2000/svg';
+  const backSvg=document.createElementNS(ns,'svg');
+  backSvg.id='dconns-back-sl';
+  backSvg.setAttribute('preserveAspectRatio','none');
+  backSvg.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:0;';
+  cloneCanvas.insertBefore(backSvg, cloneCanvas.firstChild);
+
+  const frontSvg=document.createElementNS(ns,'svg');
+  frontSvg.id='dconns-sl';
+  frontSvg.setAttribute('preserveAspectRatio','none');
+  frontSvg.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:8;';
+  cloneCanvas.appendChild(frontSvg);
+
+  // Shared defs for markers (arrowheads etc.)
+  const defs=document.createElementNS(ns,'defs');
+  frontSvg.appendChild(defs);
+
+  // Track which markers we've already added
+  const addedMarkers=new Set();
+  function ensureMarker(svg, kind, color){
+    const mid=`${kind}-${color.replace('#','')}`;
+    if(addedMarkers.has(mid)) return `url(#${mid})`;
+    addedMarkers.add(mid);
+    const marker=document.createElementNS(ns,'marker');
+    marker.setAttribute('id',mid);
+    marker.setAttribute('markerUnits','strokeWidth');
+    if(kind==='arrow'){
+      marker.setAttribute('viewBox','0 0 10 10');
+      marker.setAttribute('refX','9'); marker.setAttribute('refY','5');
+      marker.setAttribute('markerWidth','6'); marker.setAttribute('markerHeight','6');
+      marker.setAttribute('orient','auto');
+      const path=document.createElementNS(ns,'path');
+      path.setAttribute('d','M0,0 L10,5 L0,10 Z');
+      path.setAttribute('fill',color);
+      marker.appendChild(path);
+    } else if(kind==='dot'){
+      marker.setAttribute('viewBox','0 0 10 10');
+      marker.setAttribute('refX','5'); marker.setAttribute('refY','5');
+      marker.setAttribute('markerWidth','5'); marker.setAttribute('markerHeight','5');
+      const circle=document.createElementNS(ns,'circle');
+      circle.setAttribute('cx','5');circle.setAttribute('cy','5');circle.setAttribute('r','4');
+      circle.setAttribute('fill',color);
+      marker.appendChild(circle);
+    }
+    defs.appendChild(marker);
+    return `url(#${mid})`;
+  }
+
+  // Compute trunk X for right-angle connectors
+  let trunkX=30;
+  const allBlocks=Array.from(cloneCanvas.querySelectorAll('.dblock'));
+  if(allBlocks.length){
+    const lefts=allBlocks.filter(b=>b.offsetParent!==null||b.offsetWidth>0)
+      .map(b=>blockRect(b,cloneCanvas).left);
+    if(lefts.length) trunkX=Math.max(0,Math.min(...lefts)-20);
+  }
+
+  DIAGRAM_DATA.connectors.forEach(cnx=>{
+    // Only draw if both endpoints are in the visible set
+    if(!visibleRids.includes(cnx.fromRid)||!visibleRids.includes(cnx.toRid)) return;
+    const fromBlock=cloneCanvas.querySelector(`.dblock[data-rid="${cnx.fromRid}"]`);
+    const toBlock  =cloneCanvas.querySelector(`.dblock[data-rid="${cnx.toRid}"]`);
+    if(!fromBlock||!toBlock) return;
+
+    const p1=clonePoint(fromBlock, cnx.fromX??0.5, cnx.fromY??0.5);
+    const p2=clonePoint(toBlock,   cnx.toX??0.5,   cnx.toY??0.5);
+
+    let d;
+    if(cnx.kind==='rightangle'){
+      p1.x=clonePoint(fromBlock,cnx.fromX??0,cnx.fromY??0.5).x;
+      p1.y=clonePoint(fromBlock,cnx.fromX??0,cnx.fromY??0.5).y;
+      p2.x=clonePoint(toBlock,  cnx.toX??0,  cnx.toY??0.5).x;
+      p2.y=clonePoint(toBlock,  cnx.toX??0,  cnx.toY??0.5).y;
+      d=`M${p1.x},${p1.y} H${trunkX} V${p2.y} H${p2.x}`;
+    } else {
+      // Curve connector — replicate _connectorPathD logic
+      const dx=p2.x-p1.x, dy=p2.y-p1.y;
+      const hookDist=Math.max(40,Math.abs(dy)*0.55);
+      const escape1=(cnx.fromY===0)?-1:1;
+      const escape2=(cnx.toY===0)?-1:1;
+      const c1x=p1.x+(Math.abs(dx)*0.22||20)*(IS_RTL?-1:1);
+      const c1y=p1.y+hookDist*escape1;
+      const c2x=p2.x-(Math.abs(dx)*0.22||20)*(IS_RTL?-1:1);
+      const c2y=p2.y+hookDist*escape2;
+      d=`M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+    }
+
+    const color=cnx.color||'#493548';
+    const weight=cnx.weight||1.5;
+    const dash=cnx.pattern==='dotted'?'4,4':'none';
+
+    const path=document.createElementNS(ns,'path');
+    path.setAttribute('d',d);
+    path.setAttribute('fill','none');
+    path.setAttribute('stroke',color);
+    path.setAttribute('stroke-width',weight);
+    path.setAttribute('stroke-dasharray',dash);
+    path.setAttribute('stroke-linecap','round');
+
+    const startCap=cnx.startCap||'none';
+    const endCap  =cnx.endCap  ||'arrow';
+    if(startCap==='arrow') path.setAttribute('marker-start', ensureMarker(frontSvg,startCap,color));
+    if(startCap==='dot')   path.setAttribute('marker-start', ensureMarker(frontSvg,startCap,color));
+    if(endCap==='arrow')   path.setAttribute('marker-end',   ensureMarker(frontSvg,endCap,color));
+    if(endCap==='dot')     path.setAttribute('marker-end',   ensureMarker(frontSvg,endCap,color));
+
+    const targetSvg=cnx.kind==='rightangle'?backSvg:frontSvg;
+    targetSvg.appendChild(path);
+  });
+}
+
 /* ── Render a slide into a target container ── */
 function slRenderSlideInto(slide, container, w, h){
   container.innerHTML='';
@@ -5824,25 +5961,27 @@ function slRenderSlideInto(slide, container, w, h){
         const v=slide.visibility;
         if(!v.indentation) rb.querySelectorAll('.cedit').forEach(c=>{c.style.paddingLeft='0';c.style.paddingRight='0';});
         if(!v.translation)  rb.querySelectorAll('.xcell.grow + .vdiv, .xcell.grow ~ .xcell.grow').forEach(e=>e.style.display='none');
-        if(!v.verseNums)    rb.querySelectorAll('.vin').forEach(e=>e.style.visibility='hidden');
-        // Comments as footnotes
+        // Verse numbers always shown — no toggle
+        // Comments as footnotes — use innerHTML+strip since innerText returns '' on hidden ancestors
         if(v.comments){
           const fns=[];
           slide.rowIds.forEach(rid=>{
             const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
             const cid=xrow?.dataset.cid; if(!cid) return;
             const cmtEl=document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`);
-            const txt=cmtEl?.innerText?.trim(); if(!txt) return;
+            const raw=cmtEl?.innerHTML||'';
+            const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
+            if(!txt) return;
             const lid=xrow.querySelector('.lid')?.textContent||'';
             fns.push({lid:lid!=='—'?lid:'',txt});
           });
           if(fns.length){
             const fnDiv=document.createElement('div');
-            fnDiv.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid rgba(73,53,72,.2);font-family:var(--ui);font-size:10px;color:#555;';
+            fnDiv.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid rgba(73,53,72,.2);font-family:var(--ui,sans-serif);font-size:10px;color:#555;';
             fns.forEach(fn=>{
               const row=document.createElement('div');
               row.style.cssText='margin-bottom:3px;';
-              row.innerHTML=`<b style="color:var(--active,#C8A84B)">${fn.lid}</b> ${fn.txt}`;
+              row.innerHTML=`<b style="color:#C8A84B;margin-right:4px">${fn.lid}</b>${fn.txt}`;
               fnDiv.appendChild(row);
             });
             rb.appendChild(fnDiv);
@@ -5857,12 +5996,17 @@ function slRenderSlideInto(slide, container, w, h){
           clone.querySelectorAll('.drow-pip-cell,.dbrk-pip').forEach(el=>el.remove());
           clone.style.background='transparent';
           const v=slide.visibility;
-          if(!v.connectors){clone.querySelectorAll('#dconns,#dconns-back').forEach(e=>e.style.display='none');}
+          // Remove stale cloned connectors — will re-draw fresh below
+          clone.querySelectorAll('#dconns,#dconns-back').forEach(e=>e.remove());
           if(!v.brackets)  {clone.querySelectorAll('#dbrk-svg').forEach(e=>e.style.display='none');}
-          if(!v.labels)    {clone.querySelectorAll('.dbl').forEach(e=>e.style.display='none');}
+          if(!v.labels)    {clone.querySelectorAll('.dlabel').forEach(e=>e.style.display='none');}
           if(!v.translation){clone.querySelectorAll('.dblock-trans').forEach(e=>e.style.display='none');}
-          if(!v.verseNums)  {clone.querySelectorAll('.dcell.dv').forEach(e=>e.style.visibility='hidden');}
+          // Verse numbers always shown
           inner.appendChild(clone);
+          // Re-draw connectors fresh into the clone after DOM insertion
+          if(v.connectors){
+            requestAnimationFrame(()=>slDrawConnectorsIntoClone(clone, slide.rowIds));
+          }
         }
       }
 
