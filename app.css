@@ -3222,3 +3222,15 @@ body.brk-active .dbrk-pip:hover {
 .brk-label-ce:focus {
   outline: none;
 }
+
+/* ════════════════════════════════════════
+   RTL DIAGRAM ROW — layout fix
+   Remove flex row-reverse so verse/line
+   columns stay left and pip stays right,
+   matching LTR layout exactly.
+   Text direction (RTL) is handled inside
+   .dblock and .dblock-trans only.
+════════════════════════════════════════ */
+.drow.rtl { flex-direction: row !important; }
+.drow.rtl .dcell { justify-content: flex-start !important; text-align: left !important; }
+.drow.rtl .dlane { align-items: flex-start !important; }
