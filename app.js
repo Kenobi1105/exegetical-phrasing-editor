@@ -594,15 +594,10 @@ function makeDiagramRowEl(row){
     lane.appendChild(transEl);
   }
 
-  if(IS_RTL){
-    dRow.appendChild(lane);
-    dRow.appendChild(lCell);
-    dRow.appendChild(vCell);
-  } else {
-    dRow.appendChild(vCell);
-    dRow.appendChild(lCell);
-    dRow.appendChild(lane);
-  }
+  // Always: verse | line | lane | spacer | pip — same in LTR and RTL
+  dRow.appendChild(vCell);
+  dRow.appendChild(lCell);
+  dRow.appendChild(lane);
 
   // Spacer pushes pip cell to fixed right column regardless of block indent
   const spacer = document.createElement('div');
