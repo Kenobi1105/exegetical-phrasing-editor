@@ -3234,3 +3234,22 @@ body.brk-active .dbrk-pip:hover {
 .drow.rtl { flex-direction: row !important; }
 .drow.rtl .dcell { justify-content: flex-start !important; text-align: left !important; }
 .drow.rtl .dlane { align-items: flex-start !important; }
+
+/* ════════════════════════════════════════
+   PIP + RTL LAYOUT FIX
+════════════════════════════════════════ */
+
+/* Pip cell: auto left margin pushes it flush to the right edge */
+.drow-pip-cell {
+  margin-left: auto !important;
+}
+
+/* Remove right canvas padding so pip sits flush against comment pane */
+#dcanvas-scroll {
+  padding-right: 0 !important;
+}
+
+/* RTL lane: blocks align to the right edge, indent pushes leftward */
+.drow.rtl .dlane {
+  align-items: flex-end !important;
+}

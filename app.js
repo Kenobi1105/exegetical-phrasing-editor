@@ -599,12 +599,7 @@ function makeDiagramRowEl(row){
   dRow.appendChild(lCell);
   dRow.appendChild(lane);
 
-  // Spacer pushes pip cell to fixed right column regardless of block indent
-  const spacer = document.createElement('div');
-  spacer.className = 'drow-spacer';
-  dRow.appendChild(spacer);
-
-  // Pip cell — sibling of lane, never a child of .dblock, so no bubbling to startBlockDrag
+  // Pip cell — margin-left:auto pushes it flush to the right edge
   const pipCell = document.createElement('div');
   pipCell.className = 'drow-pip-cell';
   const pipDot = document.createElement('div');
