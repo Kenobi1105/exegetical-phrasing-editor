@@ -247,13 +247,17 @@ function openEditor(){
   document.getElementById('app').style.display='flex';
   _applySessionLabels();
   document.getElementById('ch-t').style.display=IS_SINGLE?'none':'';
-  // Always open on Phrasing View — loadData()/restartSess() handle their own
-  // resets too, but this guards the paste/skip entry paths which don't call loadData().
+  // Always open on Phrasing View
   EDITOR_VIEW='phrasing';
   document.getElementById('tzone').style.display='';
   document.getElementById('dzone').style.display='none';
   document.getElementById('view-btn-phrasing')?.classList.add('active');
   document.getElementById('view-btn-diagram')?.classList.remove('active');
+  // Reset bracket state for new session
+  BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
+  if(typeof _brkCancelPending==='function') _brkCancelPending();
+  if(typeof _brkCloseEditPopup==='function') _brkCloseEditPopup();
+  document.getElementById('dbrk-svg')?.remove();
   autoSave();
   if(typeof _updateS12Pill==='function') _updateS12Pill();
   // Restore Bible Module pin state now that #app is visible
@@ -5167,7 +5171,7 @@ function _brkCancelPending(){
 function _brkCreate(startRid, endRid){
   const lane = _brkAssignLane(startRid, endRid);
   const id   = 'brk-'+(++BRK_CTR);
-  const brk  = {id, startRid, endRid, label:'', color:'#493548', thickness:2, lane, labelOffsetY:0};
+  const brk  = {id, startRid, endRid, label:'', color:'#493548', thickness:1, lane, labelOffsetY:0};
   BRACKETS.push(brk);
   rowPush({type:'brk-add', brk:{...brk}});
   refreshBrackets();
