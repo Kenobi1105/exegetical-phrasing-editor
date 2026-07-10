@@ -6235,6 +6235,8 @@ async function slExportPDF(){
 
 /* ── Hook slide ops into undo/redo ── */
 // Patched at the top of applyRowUndo / applyRowRedo
+
+document.addEventListener('DOMContentLoaded',()=>{
   // Restore saved colors
   try{
     const saved=JSON.parse(localStorage.getItem('exeg-colors')||'{}');
