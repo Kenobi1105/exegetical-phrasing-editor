@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607103300"/>
+<meta name="app-version" content="202607103500"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -204,6 +204,7 @@
         <div class="hm-row"><span class="hm-desc" data-i18n="help.restart">Restart session</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">R</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.clear">Clear all content</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">L</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.view-toggle">Toggle Phrasing / Diagram View</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">T</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.slides">Open Slides view (Alt+P)</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">P</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.zoom-reset">Reset diagram zoom to 100%</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">0</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.add-label">Add floating label (Diagram View)</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">L</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.conn-delete">Delete a selected connector</span><div class="hm-key"><span class="kbd">Backspace</span><span class="kbd">Delete</span> <span style="font-size:11px;color:var(--muted)" data-i18n="help.conn-delete.hint">in Diagram View</span></div></div>
@@ -295,6 +296,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="5" rx="1"/><rect x="13" y="9" width="7" height="5" rx="1"/><rect x="6" y="15" width="7" height="5" rx="1"/></svg>
           <span data-i18n="view.diagram">Diagram</span>
         </button>
+        <button class="vtbtn" id="view-btn-slides" title="Slides View (Alt+P)" onclick="setEditorView('slides')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
+          <span data-i18n="slides.title">Slides</span>
+        </button>
       </div>
       <div class="tsep" id="dzoom-sep" style="display:none"></div>
       <div class="tg" id="dzoom-grp" style="display:none">
@@ -377,6 +382,108 @@
             <svg id="dconns" preserveAspectRatio="none"></svg>
           </div>
         </div>
+      </div>
+
+      <!-- ══ SLIDES ZONE ══ -->
+      <div id="szone" style="display:none">
+        <!-- Left: slide thumbnail list -->
+        <div id="sl-list-panel">
+          <div id="sl-list-scroll">
+            <div id="sl-list"><!-- thumbnails injected by JS --></div>
+          </div>
+          <div id="sl-list-footer">
+            <button class="sl-add-btn" onclick="slAddBlank()" data-i18n="slides.add-blank">Add Blank Slide</button>
+            <button class="sl-add-btn sl-add-content-btn" onclick="slAddContent()" data-i18n="slides.add-content">Add Content Slide</button>
+          </div>
+        </div>
+        <!-- Center: slide canvas -->
+        <div id="sl-canvas-wrap">
+          <div id="sl-toolbar">
+            <button class="sl-tbtn" onclick="slAddTextBox()" title="Add Text Box">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="14" x2="13" y2="14"/></svg>
+              <span data-i18n="slides.add-textbox">Add Text Box</span>
+            </button>
+            <div class="sl-tsep"></div>
+            <button class="sl-tbtn" id="sl-present-btn" onclick="slStartPresent()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
+              <span data-i18n="slides.present">Present</span>
+            </button>
+            <button class="sl-tbtn" onclick="slExportPDF()">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+              <span data-i18n="slides.export-pdf">Export Slides PDF</span>
+            </button>
+          </div>
+          <div id="sl-canvas-outer">
+            <div id="sl-canvas">
+              <!-- 16:9 slide canvas — content injected by JS -->
+            </div>
+          </div>
+        </div>
+        <!-- Right: properties panel -->
+        <div id="sl-props-panel">
+          <div class="sl-prop-section">
+            <div class="sl-prop-label" data-i18n="view.diagram">View</div>
+            <div class="sl-view-toggle">
+              <button class="sl-view-btn active" id="sl-view-phrasing" onclick="slSetView('phrasing')" data-i18n="slides.view-phrasing">Phrasing</button>
+              <button class="sl-view-btn" id="sl-view-diagram" onclick="slSetView('diagram')" data-i18n="slides.view-diagram">Diagram</button>
+            </div>
+          </div>
+          <div class="sl-prop-section">
+            <div class="sl-prop-label">
+              <span data-i18n="col.verse">Rows</span>
+              <span class="sl-row-btns">
+                <button class="sl-micro-btn" onclick="slSelectAllRows()" data-i18n="slides.rows.all">All</button>
+                <button class="sl-micro-btn" onclick="slClearAllRows()" data-i18n="slides.rows.none">None</button>
+              </span>
+            </div>
+            <div id="sl-row-list"><!-- row checkboxes injected by JS --></div>
+          </div>
+          <div class="sl-prop-section">
+            <div class="sl-prop-label" data-i18n="slides.vis.indent">Visibility</div>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-indent"    onchange="slVisChange('indentation',   this.checked)" checked><span data-i18n="slides.vis.indent">Indentation</span></label>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-trans"     onchange="slVisChange('translation',   this.checked)" checked><span data-i18n="slides.vis.trans">Translation lines</span></label>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-verse"     onchange="slVisChange('verseNums',     this.checked)" checked><span data-i18n="slides.vis.verse">Verse numbers</span></label>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-comments"  onchange="slVisChange('comments',      this.checked)"><span data-i18n="slides.vis.comments">Comments</span></label>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-connectors"onchange="slVisChange('connectors',    this.checked)" checked><span data-i18n="slides.vis.connectors">Connectors</span></label>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-brackets"  onchange="slVisChange('brackets',      this.checked)" checked><span data-i18n="slides.vis.brackets">Brackets</span></label>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-labels"    onchange="slVisChange('labels',        this.checked)" checked><span data-i18n="slides.vis.labels">Labels</span></label>
+          </div>
+          <div class="sl-prop-section sl-notes-section">
+            <div class="sl-prop-label" data-i18n="slides.notes.ph">Speaker Notes</div>
+            <textarea id="sl-notes" data-i18n-ph="slides.notes.ph" placeholder="Speaker notes…" oninput="slNotesChange(this.value)"></textarea>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══ PRESENTER DASHBOARD (overlays szone during presentation) ══ -->
+      <div id="sl-presenter" style="display:none">
+        <div id="sl-pres-left">
+          <div id="sl-pres-preview"><!-- current slide rendered here --></div>
+        </div>
+        <div id="sl-pres-divider" onmousedown="slPresStartResize(event)"></div>
+        <div id="sl-pres-right">
+          <div class="sl-pres-notes-label" data-i18n="slides.notes.ph">Speaker Notes</div>
+          <div id="sl-pres-notes"></div>
+        </div>
+        <div id="sl-pres-bar">
+          <button class="sl-pres-btn" onclick="slPresNav(-1)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
+          <span id="sl-pres-counter">1 <span data-i18n="slides.slide-of">of</span> 1</span>
+          <button class="sl-pres-btn" onclick="slPresNav(1)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
+          </button>
+          <div class="sl-pres-sep"></div>
+          <button class="sl-pres-end-btn" onclick="slEndPresent()" data-i18n="slides.end-present">End Presentation</button>
+        </div>
+      </div>
+
+      <!-- Slide element right-click context menu -->
+      <div id="sl-ctx-menu" style="display:none;position:fixed;z-index:200;background:var(--sig);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.3);padding:4px;min-width:160px">
+        <button class="sl-ctx-item" onclick="slCtxAction('front')" data-i18n="slides.bring-front">Bring to Front</button>
+        <button class="sl-ctx-item" onclick="slCtxAction('back')"  data-i18n="slides.send-back">Send to Back</button>
+        <div class="sl-ctx-sep"></div>
+        <button class="sl-ctx-item sl-ctx-del" onclick="slCtxAction('delete')" data-i18n="slides.delete-el">Delete</button>
       </div>
       <div id="cmargin">
         <div id="mrsz" onmousedown="startMR(event)"></div>
