@@ -5643,6 +5643,73 @@ function slSelectSlide(idx){
   document.querySelectorAll('.sl-thumb').forEach((t,i)=>t.classList.toggle('active',i===idx));
 }
 
+/* ── Sync derived elements (floatlabels + commentboxes) from live data ──
+   Called on every Refresh. Keeps positions of existing elements,
+   adds new ones at defaults, removes stale ones. */
+function slSyncDerivedElements(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+
+  // ── Floating diagram labels → floatlabel elements ──
+  if(sl.view==='diagram'){
+    const existingLabels=sl.elements.filter(e=>e.type==='floatlabel');
+    const newLabels=[];
+    (DIAGRAM_DATA.labels||[]).forEach((lb,i)=>{
+      const existing=existingLabels.find(e=>e.sourceId===lb.id);
+      if(existing){
+        // Update text from live data; keep user-moved position
+        existing.html=lb.text||'';
+        newLabels.push(existing);
+      } else {
+        // New label — add at its diagram position
+        newLabels.push({
+          id:'el-'+(++SL_EL_CTR), type:'floatlabel', sourceId:lb.id,
+          x: parseFloat(lb.x)||5, y: parseFloat(lb.y)||5,
+          w:18, h:8,
+          html: lb.text||''
+        });
+      }
+    });
+    // Remove non-label and non-commentbox derived elements, keep user text boxes
+    sl.elements=sl.elements.filter(e=>e.type!=='floatlabel');
+    sl.elements.push(...newLabels);
+  } else {
+    // Clear floatlabels when in phrasing mode
+    sl.elements=sl.elements.filter(e=>e.type!=='floatlabel');
+  }
+
+  // ── Comment boxes → commentbox elements ──
+  const existingCmts=sl.elements.filter(e=>e.type==='commentbox');
+  const newCmts=[];
+  let cmtIdx=0;
+  sl.rowIds.forEach(rid=>{
+    const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+    const cid=xrow?.dataset.cid; if(!cid) return;
+    const raw=SL_CMT_CACHE[cid]
+      ||(document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`)?.innerHTML||'');
+    const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
+    if(!txt) return;
+    const lid=xrow.querySelector('.lid')?.textContent||'';
+    const labelStr=lid!=='—'?lid:'';
+    const existing=existingCmts.find(e=>e.sourceCid===cid);
+    if(existing){
+      existing.html=`<b style="color:#C8A84B">${labelStr}</b> ${txt}`;
+      newCmts.push(existing);
+    } else {
+      // Default position: stagger in bottom-right
+      const col=cmtIdx%2, row=Math.floor(cmtIdx/2);
+      newCmts.push({
+        id:'el-'+(++SL_EL_CTR), type:'commentbox', sourceCid:cid,
+        x: 55+col*20, y: 70+row*15,
+        w:38, h:12,
+        html:`<b style="color:#C8A84B">${labelStr}</b> ${txt}`
+      });
+    }
+    cmtIdx++;
+  });
+  sl.elements=sl.elements.filter(e=>e.type!=='commentbox');
+  sl.elements.push(...newCmts);
+}
+
 /* ── Refresh current slide canvas + thumbnail from live project data ── */
 function slRefreshSlide(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
@@ -5650,11 +5717,10 @@ function slRefreshSlide(){
   if(sl.view==='diagram'){
     const dc=document.getElementById('dcanvas');
     const hasBlocks=dc&&dc.querySelectorAll('.dblock').length>0;
-    if(!hasBlocks){
-      // Render diagram silently into live canvas first, then capture
-      renderDiagram();
-    }
+    if(!hasBlocks) renderDiagram();
   }
+  // Sync derived elements from live data
+  slSyncDerivedElements();
   slRenderActive();
   slRenderThumb(SL_ACTIVE_IDX);
 }
@@ -6035,7 +6101,8 @@ function slRenderSlideInto(slide, container, w, h){
           // Remove stale cloned connectors — will re-draw fresh below
           clone.querySelectorAll('#dconns,#dconns-back').forEach(e=>e.remove());
           if(!v.brackets)  {clone.querySelectorAll('#dbrk-svg').forEach(e=>e.style.display='none');}
-          if(!v.labels)    {clone.querySelectorAll('.dlabel').forEach(e=>e.style.display='none');}
+          // Always hide .dlabel — they're rendered as separate floatlabel elements
+          clone.querySelectorAll('.dlabel').forEach(e=>e.style.display='none');
           if(!v.translation){clone.querySelectorAll('.dblock-trans').forEach(e=>e.style.display='none');}
           // Verse numbers always shown
           inner.appendChild(clone);
@@ -6065,17 +6132,18 @@ function slRenderSlideInto(slide, container, w, h){
       passageEl.appendChild(msg);
     }
 
-    // Drag & resize in editor — passage content area behaves like PowerPoint element
+    // Drag in editor — passage area is draggable
     if(EDITOR_VIEW==='slides'){
       passageEl.style.cursor='move';
       passageEl.addEventListener('mousedown',ev=>{
         if(ev.target.closest('.sl-resize-handle')) return;
         ev.stopPropagation();
-        slSelectEl('__passage__');
-        // Drag using contentArea object directly
+        // Select without re-rendering — slSelectEl handles visual state
+        if(SL_SEL_EL_ID!=='__passage__') slSelectEl('__passage__');
+        const ca=slide.contentArea;
         const startX=ev.clientX,startY=ev.clientY;
-        const oldCA={...ca};
         const startCax=ca.x,startCay=ca.y;
+        const oldCA={...ca};
         const onMove=mv=>{
           const dx=(mv.clientX-startX)/w*100;
           const dy=(mv.clientY-startY)/h*100;
@@ -6096,116 +6164,72 @@ function slRenderSlideInto(slide, container, w, h){
         document.addEventListener('mousemove',onMove);
         document.addEventListener('mouseup',onUp);
       });
-      passageEl.addEventListener('click',ev=>{ev.stopPropagation();slSelectEl('__passage__');});
-
-      if(SL_SEL_EL_ID==='__passage__'){
-        passageEl.classList.add('selected');
-        // Resize handles for passage area
-        ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
-          const rh=document.createElement('div');
-          rh.className=`sl-resize-handle sl-rh-${dir}`;
-          rh.addEventListener('mousedown',ev=>{
-            ev.stopPropagation();
-            const startX=ev.clientX,startY=ev.clientY;
-            const oldCA={...ca};
-            const startEl={x:ca.x,y:ca.y,w:ca.w,h:ca.h};
-            const onMove=mv=>{
-              const dx=(mv.clientX-startX)/w*100;
-              const dy=(mv.clientY-startY)/h*100;
-              let {x,y,w:ew,h:eh}=startEl;
-              if(dir.includes('e'))  ew=Math.max(10,ew+dx);
-              if(dir.includes('s'))  eh=Math.max(10,eh+dy);
-              if(dir.includes('w')){ x=Math.min(x+ew-10,x+dx); ew=Math.max(10,ew-dx); }
-              if(dir.includes('n')){ y=Math.min(y+eh-10,y+dy); eh=Math.max(10,eh-dy); }
-              ca.x=x;ca.y=y;ca.w=ew;ca.h=eh;
-              passageEl.style.left=(ca.x/100*w)+'px'; passageEl.style.top=(ca.y/100*h)+'px';
-              passageEl.style.width=(ca.w/100*w)+'px'; passageEl.style.height=(ca.h/100*h)+'px';
-            };
-            const onUp=()=>{
-              document.removeEventListener('mousemove',onMove);
-              document.removeEventListener('mouseup',onUp);
-              _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
-              autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
-            };
-            document.addEventListener('mousemove',onMove);
-            document.addEventListener('mouseup',onUp);
-          });
-          passageEl.appendChild(rh);
-        });
-      }
+      passageEl.addEventListener('click',ev=>{ev.stopPropagation(); slSelectEl('__passage__');});
+      // Apply selection state without re-render
+      if(SL_SEL_EL_ID==='__passage__') passageEl.classList.add('selected');
     }
 
     container.appendChild(passageEl);
   }
 
-  // Text box elements
+  // All overlay elements: textbox, floatlabel, commentbox
   slide.elements.forEach(el=>{
-    if(el.type!=='textbox') return;
-    const div=document.createElement('div');
-    div.className='sl-el sl-el-textbox';
-    div.dataset.elId=el.id;
-    div.style.cssText=`left:${el.x/100*w}px;top:${el.y/100*h}px;width:${el.w/100*w}px;height:${el.h/100*h}px;position:absolute;`;
-
-    const inner=document.createElement('div');
-    inner.className='sl-el-textbox-inner';
-    // contentEditable starts as false — enabled on double-click only
-    inner.contentEditable='false';
-    inner.spellcheck=false;
-    inner.dataset.ph=t('slides.textbox.ph');
-    inner.style.fontSize=(el.fontSize||18)+'px';
-    inner.style.color=el.color||'#1F1E1E';
-    inner.style.textAlign=el.align||'left';
-    inner.style.cursor='default';
-    inner.innerHTML=el.html||'';
-
-    const commitText=()=>{
-      inner.contentEditable='false';
-      inner.style.cursor='default';
-      const old=el.html; const newHtml=inner.innerHTML;
-      if(newHtml!==old){
-        el.html=newHtml;
-        _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'html',oldVal:old,newVal:newHtml});
-        autoSave();
+    const isTextbox  = el.type==="textbox";
+    const isFloatLbl = el.type==="floatlabel";
+    const isCmtBox   = el.type==="commentbox";
+    if(!isTextbox && !isFloatLbl && !isCmtBox) return;
+    if(isFloatLbl && !slide.visibility.labels) return;
+    if(isCmtBox  && !slide.visibility.comments) return;
+    const div=document.createElement("div");
+    div.className="sl-el "+(isTextbox?"sl-el-textbox":"sl-el-overlay");
+    div.setAttribute("data-el-id", el.id);
+    div.style.cssText="left:"+(el.x/100*w)+"px;top:"+(el.y/100*h)+"px;width:"+(el.w/100*w)+"px;height:"+(el.h/100*h)+"px;position:absolute;box-sizing:border-box;";
+    if(isTextbox){
+      const inner=document.createElement("div");
+      inner.className="sl-el-textbox-inner";
+      inner.contentEditable="false"; inner.spellcheck=false;
+      inner.dataset.ph=t("slides.textbox.ph");
+      inner.style.fontSize=(el.fontSize||18)+"px";
+      inner.style.color=el.color||"#1F1E1E";
+      inner.style.textAlign=el.align||"left";
+      inner.style.cursor="default";
+      inner.innerHTML=el.html||"";
+      const commitText=()=>{
+        inner.contentEditable="false"; inner.style.cursor="default";
+        const old=el.html; const newHtml=inner.innerHTML;
+        if(newHtml!==old){ el.html=newHtml; _slPush({type:"sl-el-prop",slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:"html",oldVal:old,newVal:newHtml}); autoSave(); }
+        slRenderThumb(SL_ACTIVE_IDX);
+      };
+      inner.addEventListener("blur", commitText);
+      inner.addEventListener("keydown",ev=>{ if(ev.key==="Escape"){ev.preventDefault();inner.blur();} ev.stopPropagation(); });
+      div.appendChild(inner);
+      if(EDITOR_VIEW==="slides"){
+        div.addEventListener("mousedown",ev=>{
+          if(inner.contentEditable==="true") return;
+          ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h);
+        });
+        div.addEventListener("dblclick",ev=>{
+          ev.stopPropagation(); slSelectEl(el.id);
+          inner.contentEditable="true"; inner.style.cursor="text"; inner.focus();
+          const range=document.caretRangeFromPoint?.(ev.clientX,ev.clientY);
+          if(range){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
+        });
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
       }
-      slRenderThumb(SL_ACTIVE_IDX);
-    };
-    inner.addEventListener('blur', commitText);
-    inner.addEventListener('keydown',ev=>{
-      if(ev.key==='Escape'){ ev.preventDefault(); inner.blur(); }
-      ev.stopPropagation();
-    });
-    div.appendChild(inner);
-
-    if(EDITOR_VIEW==='slides'){
-      // Single click → select box and enable drag
-      div.addEventListener('mousedown',ev=>{
-        if(inner.contentEditable==='true') return; // already in edit mode
-        ev.stopPropagation();
-        slSelectEl(el.id);
-        slStartElDrag(ev, el, div, w, h);
-      });
-      // Double-click → enter text edit mode
-      div.addEventListener('dblclick',ev=>{
-        ev.stopPropagation();
-        slSelectEl(el.id);
-        inner.contentEditable='true';
-        inner.style.cursor='text';
-        inner.focus();
-        // Place caret at click position
-        const range=document.caretRangeFromPoint?.(ev.clientX,ev.clientY);
-        if(range){ const sel=window.getSelection(); sel.removeAllRanges(); sel.addRange(range); }
-      });
-      div.addEventListener('contextmenu',ev=>{ ev.preventDefault(); ev.stopPropagation(); SL_CTX_EL_ID=el.id; slShowCtxMenu(ev.clientX,ev.clientY); });
-    }
-
-    if(SL_SEL_EL_ID===el.id && EDITOR_VIEW==='slides'){
-      div.classList.add('selected');
-      ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
-        const rh=document.createElement('div');
-        rh.className=`sl-resize-handle sl-rh-${dir}`;
-        rh.addEventListener('mousedown',ev=>{ ev.stopPropagation(); slStartElResize(ev,el,div,dir,w,h); });
-        div.appendChild(rh);
-      });
+    } else {
+      div.style.background = isCmtBox ? "rgba(247,243,233,.95)" : "rgba(73,53,72,.06)";
+      div.style.border      = isCmtBox ? "1px solid rgba(73,53,72,.2)" : "1px solid rgba(73,53,72,.15)";
+      div.style.borderRadius="6px"; div.style.padding="4px 7px";
+      div.style.fontFamily="var(--ui,sans-serif)"; div.style.fontSize="11px";
+      div.style.color="#333"; div.style.overflow="hidden";
+      div.innerHTML=el.html||"";
+      if(EDITOR_VIEW==="slides"){
+        div.style.cursor="move";
+        div.addEventListener("mousedown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
+      }
     }
     container.appendChild(div);
   });
@@ -6218,9 +6242,74 @@ function slRenderSlideInto(slide, container, w, h){
   }
 }
 
-/* ── Element selection ── */
+/* ── Element selection — no re-render, just toggle visual state ── */
 function slSelectEl(id){
-  SL_SEL_EL_ID=id; slRenderActive();
+  if(SL_SEL_EL_ID===id) return; // already selected
+  SL_SEL_EL_ID=id;
+  const cv=document.getElementById('sl-canvas'); if(!cv) return;
+
+  // Remove selection from all elements
+  cv.querySelectorAll('.sl-el.selected').forEach(el=>{
+    el.classList.remove('selected');
+    el.querySelectorAll('.sl-resize-handle').forEach(rh=>rh.remove());
+  });
+
+  if(!id) return; // deselect only
+
+  // Find the target element div
+  const target = id==='__passage__'
+    ? cv.querySelector('.sl-el-passage')
+    : cv.querySelector(`.sl-el[data-el-id="${id}"]`);
+  if(!target) return;
+
+  target.classList.add('selected');
+
+  // Add resize handles
+  const slide=SL_DECK.slides[SL_ACTIVE_IDX]; if(!slide) return;
+  const cw=SL_CANVAS_W, ch=SL_CANVAS_H;
+
+  if(id==='__passage__'){
+    const ca=slide.contentArea;
+    ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
+      const rh=document.createElement('div');
+      rh.className=`sl-resize-handle sl-rh-${dir}`;
+      rh.addEventListener('mousedown',ev=>{
+        ev.stopPropagation();
+        const startX=ev.clientX,startY=ev.clientY;
+        const oldCA={...ca};
+        const startEl={x:ca.x,y:ca.y,w:ca.w,h:ca.h};
+        const onMove=mv=>{
+          const dx=(mv.clientX-startX)/cw*100;
+          const dy=(mv.clientY-startY)/ch*100;
+          let{x,y,w:ew,h:eh}=startEl;
+          if(dir.includes('e'))  ew=Math.max(10,ew+dx);
+          if(dir.includes('s'))  eh=Math.max(10,eh+dy);
+          if(dir.includes('w')){ x=Math.min(x+ew-10,x+dx); ew=Math.max(10,ew-dx); }
+          if(dir.includes('n')){ y=Math.min(y+eh-10,y+dy); eh=Math.max(10,eh-dy); }
+          ca.x=x;ca.y=y;ca.w=ew;ca.h=eh;
+          target.style.left=(ca.x/100*cw)+'px'; target.style.top=(ca.y/100*ch)+'px';
+          target.style.width=(ca.w/100*cw)+'px'; target.style.height=(ca.h/100*ch)+'px';
+        };
+        const onUp=()=>{
+          document.removeEventListener('mousemove',onMove);
+          document.removeEventListener('mouseup',onUp);
+          _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
+          autoSave(); slRenderThumb(SL_ACTIVE_IDX);
+        };
+        document.addEventListener('mousemove',onMove);
+        document.addEventListener('mouseup',onUp);
+      });
+      target.appendChild(rh);
+    });
+  } else {
+    const el=slide.elements.find(e=>e.id===id); if(!el) return;
+    ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
+      const rh=document.createElement('div');
+      rh.className=`sl-resize-handle sl-rh-${dir}`;
+      rh.addEventListener('mousedown',ev=>{ ev.stopPropagation(); slStartElResize(ev,el,target,dir,cw,ch); });
+      target.appendChild(rh);
+    });
+  }
 }
 
 /* ── Element drag ── */

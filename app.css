@@ -3735,3 +3735,15 @@ body.brk-active .dbrk-pip:hover {
   overflow: hidden;
   position: relative;
 }
+
+/* ── Slide overlay elements: floatlabel and commentbox ── */
+.sl-el-overlay {
+  cursor: move;
+  user-select: none;
+  line-height: 1.4;
+  word-break: break-word;
+}
+.sl-el-overlay.selected {
+  outline: 2px solid var(--active, #C8A84B);
+  outline-offset: 1px;
+}
