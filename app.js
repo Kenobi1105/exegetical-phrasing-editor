@@ -6740,6 +6740,49 @@ function _sanitizePasteHTML(rawHTML){
   return out.innerHTML;
 }
 
+/* ── Logos Private Use Area (PUA) character substitution ──────────────────
+   Logos uses font glyphs from Unicode's Private Use Area (U+E000–U+F8FF)
+   for discourse markers. These render as boxes without the Logos font.
+   We replace known codepoints with readable Unicode equivalents and flag
+   unknown PUA characters so they're visible rather than silent boxes.
+   Add new entries to _LOGOS_PUA_MAP as you encounter them. */
+const _LOGOS_PUA_MAP = {
+  0xE917: '👤',   // singular participant marker
+  0xE91F: '👥',   // group/plural participant marker
+};
+
+function _substitutePUAChars(el){
+  // Walk all text nodes inside el and replace PUA characters
+  const walker=document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  const nodes=[];
+  let node;
+  while((node=walker.nextNode())) nodes.push(node);
+  nodes.forEach(tn=>{
+    const text=tn.textContent;
+    let changed=false;
+    let result='';
+    for(let i=0;i<text.length;i++){
+      const cp=text.codePointAt(i);
+      // Skip low surrogate of a surrogate pair
+      if(cp>0xFFFF) i++;
+      if(cp>=0xE000&&cp<=0xF8FF){
+        changed=true;
+        const sub=_LOGOS_PUA_MAP[cp];
+        if(sub){
+          result+=sub;
+        } else {
+          // Unknown PUA — wrap as flagged placeholder
+          result+=`\uFFFD`; // will be handled after text replacement
+        }
+      } else {
+        result+=text[i];
+        if(cp>0xFFFF) result+=text[i+1]; // low surrogate
+      }
+    }
+    if(changed) tn.textContent=result;
+  });
+}
+
 /* Convert plain text to simple HTML (line breaks → <div>s) */
 function _plainToHTML(text){
   return text.split('\n').map(line=>`<div>${line||'<br>'}</div>`).join('');
@@ -6778,6 +6821,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     } else {
       pasteTA.innerHTML=sanitized;
     }
+    // Replace Logos PUA glyphs with readable substitutes
+    _substitutePUAChars(pasteTA);
   });
   renderS1Recent();
   const vEl=document.getElementById('s1-version-num');
