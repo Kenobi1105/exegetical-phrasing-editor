@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607104500"/>
+<meta name="app-version" content="202607104700"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -95,7 +95,10 @@
         <input type="text" id="s2-version-input" data-i18n-ph="s2.version.ph" placeholder="e.g. NIV, ESV, NA28 — leave blank for default" oninput="sessionVersionLabel=this.value.trim()"/>
       </div>
       <div class="s2-hint" data-i18n-html="s2.paste.tip"><b>Tip:</b> Lines starting with a verse number are detected automatically.</div>
-      <div id="paste-ta" contenteditable="true" spellcheck="false"></div>
+      <div class="paste-ta-row">
+        <div id="paste-ta" contenteditable="true" spellcheck="false"></div>
+        <button class="paste-clear-btn" onclick="document.getElementById('paste-ta').innerHTML='';document.getElementById('paste-ta').focus()" title="Clear">✕ Clear</button>
+      </div>
     </div>
     <!-- Bible picker panel -->
     <div id="s2-bible-panel">

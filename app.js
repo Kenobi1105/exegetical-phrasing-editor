@@ -6637,6 +6637,114 @@ async function slExportPDF(){
 /* ── Hook slide ops into undo/redo ── */
 // Patched at the top of applyRowUndo / applyRowRedo
 
+/* ════════════════════════════════════════
+   RICH PASTE SANITIZER (Screen 2)
+   Intercepts clipboard HTML, keeps inline
+   formatting (color, bold, italic, sup),
+   strips scripts, images, tables, classes.
+   Handles Logos and similar Bible software.
+════════════════════════════════════════ */
+
+/* Safe inline tags to keep intact */
+const _PASTE_KEEP_TAGS = new Set(['b','strong','i','em','u','s','strike','sup','sub','span','br','wbr']);
+/* Block tags to convert to <div> (for line-break detection) */
+const _PASTE_BLOCK_TAGS = new Set(['p','div','li','tr','td','th','h1','h2','h3','h4','h5','h6','blockquote','dd','dt']);
+/* Safe CSS properties to allow through on style= attributes */
+const _PASTE_SAFE_STYLES = new Set(['color','background-color','font-weight','font-style','text-decoration','font-size','vertical-align']);
+
+function _sanitizePasteHTML(rawHTML){
+  // Parse into a document fragment via DOMParser (safe — doesn't execute scripts)
+  const parser=new DOMParser();
+  const doc=parser.parseFromString(rawHTML,'text/html');
+  const body=doc.body;
+
+  // Logos-specific cleanup: remove verse reference spans (usually aria-label or data-ref attrs)
+  // and footnote markers before we process
+  body.querySelectorAll('[data-ref],[data-footnote],sup.footnote,sup.versenum.logos,a').forEach(el=>{
+    // Keep <a> text content but remove the link
+    if(el.tagName.toLowerCase()==='a'){
+      el.replaceWith(...el.childNodes);
+    } else {
+      el.remove();
+    }
+  });
+
+  function sanitizeNode(node){
+    if(node.nodeType===Node.TEXT_NODE) return node.cloneNode(true);
+    if(node.nodeType!==Node.ELEMENT_NODE) return null;
+
+    const tag=node.tagName.toLowerCase();
+
+    // Skip entirely: script, style, img, iframe, svg, head, meta, link, etc.
+    if(['script','style','img','iframe','svg','head','meta','link','button','input','select','textarea','form','object','embed'].includes(tag)){
+      return null;
+    }
+
+    let outTag=null;
+    if(_PASTE_KEEP_TAGS.has(tag)){
+      outTag=tag==='strong'?'b':tag==='em'?'i':tag;
+    } else if(_PASTE_BLOCK_TAGS.has(tag)){
+      outTag='div';
+    } else if(tag==='table'||tag==='tbody'||tag==='thead'||tag==='tfoot'){
+      outTag='div';
+    } else {
+      // Unknown tag — unwrap but keep children
+      outTag=null;
+    }
+
+    // Sanitize style attribute
+    let styleStr='';
+    const rawStyle=node.getAttribute?.('style')||'';
+    if(rawStyle){
+      const kept=[];
+      rawStyle.split(';').forEach(decl=>{
+        const [prop,...rest]=decl.split(':');
+        if(!prop) return;
+        const p=prop.trim().toLowerCase();
+        if(_PASTE_SAFE_STYLES.has(p)){
+          const v=rest.join(':').trim();
+          // Skip transparent/inherit colors that add no value
+          if(v&&v!=='transparent'&&v!=='inherit') kept.push(`${p}:${v}`);
+        }
+      });
+      if(kept.length) styleStr=kept.join(';');
+    }
+
+    // Process children recursively
+    const children=Array.from(node.childNodes).map(sanitizeNode).filter(Boolean);
+    if(!outTag){
+      // Unwrap — return a DocumentFragment-like array via a span
+      if(children.length===0) return null;
+      if(children.length===1) return children[0];
+      const wrap=document.createElement('span');
+      children.forEach(c=>wrap.appendChild(c));
+      return wrap;
+    }
+
+    const el=document.createElement(outTag);
+    if(styleStr) el.setAttribute('style',styleStr);
+    children.forEach(c=>el.appendChild(c));
+    return el;
+  }
+
+  const out=document.createElement('div');
+  Array.from(body.childNodes).forEach(node=>{
+    const sanitized=sanitizeNode(node);
+    if(sanitized) out.appendChild(sanitized);
+  });
+
+  // Flatten: if the result is a single wrapper div with no style, return its innerHTML
+  if(out.children.length===1&&out.children[0].tagName==='DIV'&&!out.children[0].getAttribute('style')){
+    return out.children[0].innerHTML;
+  }
+  return out.innerHTML;
+}
+
+/* Convert plain text to simple HTML (line breaks → <div>s) */
+function _plainToHTML(text){
+  return text.split('\n').map(line=>`<div>${line||'<br>'}</div>`).join('');
+}
+
 document.addEventListener('DOMContentLoaded',()=>{
   // Restore saved colors
   try{
@@ -6651,6 +6759,26 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);
   document.getElementById('cmargin')?.addEventListener('scroll', drawConns);
   window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); });
+  // Rich paste handler for Screen 2
+  const pasteTA=document.getElementById('paste-ta');
+  if(pasteTA) pasteTA.addEventListener('paste', ev=>{
+    ev.preventDefault();
+    const html=ev.clipboardData.getData('text/html');
+    const plain=ev.clipboardData.getData('text/plain');
+    const sanitized = html ? _sanitizePasteHTML(html) : _plainToHTML(plain);
+    // Insert at caret position or replace all if empty
+    const sel=window.getSelection();
+    if(sel&&sel.rangeCount){
+      const range=sel.getRangeAt(0);
+      range.deleteContents();
+      const frag=range.createContextualFragment(sanitized);
+      range.insertNode(frag);
+      range.collapse(false);
+      sel.removeAllRanges(); sel.addRange(range);
+    } else {
+      pasteTA.innerHTML=sanitized;
+    }
+  });
   renderS1Recent();
   const vEl=document.getElementById('s1-version-num');
   if(vEl){
