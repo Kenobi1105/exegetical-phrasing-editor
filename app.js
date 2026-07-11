@@ -6000,7 +6000,11 @@ function slDrawConnectorsIntoClone(cloneCanvas, visibleRids){
         const sign=dx!==0?Math.sign(dx):(IS_RTL?-1:1);
         horizPull=sign*MIN_HOOK_HORIZ_PULL;
       }
-      const fromY=cnx.fromY??0.5, toY=cnx.toY??0.5;
+      // Use stored fromY/toY if they're snapped edge values (0 or 1).
+      // If undefined/0.5 (midpoint default), infer from relative block positions
+      // so that top→bottom connectors get proper vertical hooks.
+      let fromY = (cnx.fromY===0||cnx.fromY===1) ? cnx.fromY : (dy>0 ? 1 : 0);
+      let toY   = (cnx.toY  ===0||cnx.toY  ===1) ? cnx.toY   : (dy>0 ? 0 : 1);
       let c1x,c1y;
       if(fromY===0)      { c1x=p1.x+horizPull; c1y=p1.y-hookDist; }
       else if(fromY===1) { c1x=p1.x+horizPull; c1y=p1.y+hookDist; }
@@ -6033,6 +6037,59 @@ function slDrawConnectorsIntoClone(cloneCanvas, visibleRids){
 
     const targetSvg=cnx.kind==='rightangle'?backSvg:frontSvg;
     targetSvg.appendChild(path);
+  });
+}
+
+/* ── Draw brackets fresh into a cloned dcanvas ── */
+function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
+  if(!BRACKETS.length) return;
+  cloneCanvas.querySelector('#dbrk-svg')?.remove();
+
+  const dsvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  dsvg.id='dbrk-svg';
+  dsvg.setAttribute('preserveAspectRatio','none');
+  dsvg.style.cssText='position:absolute;top:0;left:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:7;';
+  cloneCanvas.appendChild(dsvg);
+
+  function offsetRelTo(el, anc){ let t=0,cur=el; while(cur&&cur!==anc){t+=cur.offsetTop;cur=cur.offsetParent;} return t; }
+
+  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const rids=rows.map(r=>r.dataset.rid);
+
+  // Compute laneXMap same as _brkRenderDiagram but using clone offsets
+  const sorted=[...BRACKETS].sort((a,b)=>a.lane-b.lane);
+  const laneXMap={};
+  let prevLaneX=null, prevLabelW=0;
+  sorted.forEach(brk=>{
+    const si=rids.indexOf(String(brk.startRid)), ei=rids.indexOf(String(brk.endRid));
+    if(si<0||ei<0) return;
+    const lo=Math.min(si,ei),hi=Math.max(si,ei);
+    let maxRight=0;
+    rids.slice(lo,hi+1).forEach(rid=>{
+      const block=cloneCanvas.querySelector(`.dblock[data-rid="${rid}"]`);
+      if(!block) return;
+      let left=0,cur=block; while(cur&&cur!==cloneCanvas){left+=cur.offsetLeft;cur=cur.offsetParent;}
+      const right=left+block.offsetWidth;
+      if(right>maxRight) maxRight=right;
+    });
+    const baseX=maxRight+BRK_PIP_OFFSET+BRK_LANE_W*0.5;
+    let laneX=prevLaneX===null?baseX:Math.max(baseX,prevLaneX+(prevLabelW>0?prevLabelW+BRK_LABEL_GAP+20:BRK_LANE_W));
+    laneXMap[brk.lane]=laneX;
+    prevLaneX=laneX; prevLabelW=_brkMeasureLabelWidth(brk.label);
+  });
+
+  BRACKETS.forEach(brk=>{
+    if(!visibleRids.includes(brk.startRid)&&!visibleRids.includes(brk.endRid)) return;
+    const si=rids.indexOf(String(brk.startRid)),ei=rids.indexOf(String(brk.endRid));
+    if(si<0||ei<0) return;
+    const lo=Math.min(si,ei),hi=Math.max(si,ei);
+    const startDrow=cloneCanvas.querySelector(`.drow[data-rid="${rids[lo]}"]`);
+    const endDrow  =cloneCanvas.querySelector(`.drow[data-rid="${rids[hi]}"]`);
+    if(!startDrow||!endDrow) return;
+    const yStart=offsetRelTo(startDrow,cloneCanvas);
+    const yEnd  =offsetRelTo(endDrow,cloneCanvas)+endDrow.offsetHeight;
+    const laneX =laneXMap[brk.lane]??(100+(brk.lane-1)*BRK_LANE_W);
+    _brkDrawSVG(dsvg, brk, laneX, yStart, yEnd);
   });
 }
 
@@ -6107,21 +6164,18 @@ function slRenderSlideInto(slide, container, w, h){
           clone.querySelectorAll('.drow-pip-cell,.dbrk-pip').forEach(el=>el.remove());
           clone.style.background='transparent';
           const v=slide.visibility;
-          // Remove stale cloned connectors — will re-draw fresh below
-          clone.querySelectorAll('#dconns,#dconns-back').forEach(e=>e.remove());
-          if(!v.brackets)  {clone.querySelectorAll('#dbrk-svg').forEach(e=>e.style.display='none');}
-          // Always hide .dlabel — they're rendered as separate floatlabel elements
-          clone.querySelectorAll('.dlabel').forEach(e=>e.style.display='none');
+          // Remove all cloned SVG overlays — will re-draw fresh below
+          clone.querySelectorAll('#dconns,#dconns-back,#dbrk-svg').forEach(e=>e.remove());
           if(!v.translation){clone.querySelectorAll('.dblock-trans').forEach(e=>e.style.display='none');}
           // Verse numbers always shown
           inner.appendChild(clone);
-          // Re-draw connectors fresh into the clone after DOM insertion
-          if(v.connectors){
-            requestAnimationFrame(()=>{
-              if(!container.contains(passageEl)) return; // stale render
-              slDrawConnectorsIntoClone(clone, slide.rowIds);
-            });
-          }
+          // Re-draw connectors and brackets fresh after DOM insertion so positions
+          // reflect any hidden rows/translation lines
+          requestAnimationFrame(()=>{
+            if(!container.contains(passageEl)) return;
+            if(v.connectors) slDrawConnectorsIntoClone(clone, slide.rowIds);
+            if(v.brackets)   slDrawBracketsIntoClone(clone, slide.rowIds);
+          });
         }
       }
 
