@@ -138,13 +138,15 @@ function parsePasteIntoRows(div){
 
     // Get the inner HTML, but strip leading whitespace text nodes
     let html=el.innerHTML.trim();
-    // Detect verse number at the very start of plain text
+    // Detect verse number at the very start of plain text (after trimming leading whitespace)
     const m=trimmedText.match(/^(\d+)\s+/);
     if(m){
       currentVerse=m[1];
-      // Strip the verse number prefix from the HTML
-      // We do it on the plain text level: remove leading "N " from text
-      html=stripLeadingVerseFromHTML(el, m[0]);
+      // Calculate how many leading characters to strip:
+      // = leading whitespace before the number + the number itself + trailing space(s)
+      const leadingSpaces=plainText.length - plainText.trimStart().length;
+      const fullPrefix=leadingSpaces + m[0].length;
+      html=stripLeadingVerseFromHTML(el, fullPrefix);
     }
     parsed.push({verse:currentVerse, html});
   }
@@ -159,12 +161,12 @@ function parsePasteIntoRows(div){
   toast(parsed.length+' line'+(parsed.length!==1?'s':'')+' imported');
 }
 
-/* Remove the leading verse-number text (e.g. "1 ") from an element's HTML
-   while preserving all inline formatting on the rest of the content. */
-function stripLeadingVerseFromHTML(el, prefixText){
-  // Walk text nodes until we've consumed prefixText.length characters
+/* Remove the leading N characters from an element's HTML
+   while preserving all inline formatting on the rest of the content.
+   charCount = total characters to strip (leading spaces + verse number + space). */
+function stripLeadingVerseFromHTML(el, charCount){
   const clone=el.cloneNode(true);
-  let toStrip=prefixText.length;
+  let toStrip=charCount;
   function stripNode(node){
     if(toStrip<=0) return;
     if(node.nodeType===Node.TEXT_NODE){
