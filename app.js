@@ -5522,11 +5522,12 @@ function _slApplyUndo(op){
     else sl[op.prop]=op.oldVal;
     slRenderAll(); return true;
   }
-  if(op.type==='sl-add-el'){
-    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    sl.elements=sl.elements.filter(e=>e.id!==op.el.id);
-    if(SL_SEL_EL_ID===op.el.id) SL_SEL_EL_ID=null;
-    slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  if(op.type==='sl-move-slide'){
+    // Undo: move back from toIdx to fromIdx
+    const [moved]=SL_DECK.slides.splice(op.toIdx,1);
+    SL_DECK.slides.splice(op.fromIdx,0,moved);
+    SL_ACTIVE_IDX=op.fromIdx;
+    slRenderAll(); return true;
   }
   if(op.type==='sl-remove-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
@@ -5565,10 +5566,12 @@ function _slApplyRedo(op){
     else sl[op.prop]=op.newVal;
     slRenderAll(); return true;
   }
-  if(op.type==='sl-add-el'){
-    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    sl.elements.push({...op.el});
-    slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  if(op.type==='sl-move-slide'){
+    // Redo: move from fromIdx to toIdx again
+    const [moved]=SL_DECK.slides.splice(op.fromIdx,1);
+    SL_DECK.slides.splice(op.toIdx,0,moved);
+    SL_ACTIVE_IDX=op.toIdx;
+    slRenderAll(); return true;
   }
   if(op.type==='sl-remove-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
@@ -6496,6 +6499,7 @@ function slRenderThumbList(){
   SL_DECK.slides.forEach((slide,i)=>{
     const thumb=document.createElement('div');
     thumb.className='sl-thumb'+(i===SL_ACTIVE_IDX?' active':'');
+    thumb.dataset.slIdx=i;
     thumb.onclick=()=>slSelectSlide(i);
     const inner=document.createElement('div');
     inner.className='sl-thumb-inner';
@@ -6512,7 +6516,6 @@ function slRenderThumbList(){
       SL_CTX_EL_ID=null;
       const menu=document.getElementById('sl-ctx-menu');
       if(menu){
-        // Temporarily repurpose the ctx menu for slide actions
         menu.innerHTML=`
           <button class="sl-ctx-item" onclick="slDuplicateSlide(${i});slHideCtxMenu()">${t('slides.duplicate')}</button>
           <div class="sl-ctx-sep"></div>
@@ -6520,13 +6523,86 @@ function slRenderThumbList(){
         slShowCtxMenu(ev.clientX,ev.clientY);
       }
     };
+    // Drag-to-reorder handle on the thumbnail itself
+    thumb.addEventListener('mousedown', ev=>{
+      if(ev.target===dots||dots.contains(ev.target)) return; // let dots handle itself
+      if(ev.button!==0) return;
+      slStartThumbDrag(ev, i, thumb);
+    });
     thumb.appendChild(inner);
     thumb.appendChild(num);
     thumb.appendChild(dots);
     list.appendChild(thumb);
-    // Render thumbnail content
     slRenderThumbContent(i, inner);
   });
+}
+
+/* ── Drag-to-reorder slide thumbnails ── */
+function slStartThumbDrag(ev, fromIdx, thumbEl){
+  const list=document.getElementById('sl-list'); if(!list) return;
+  let dragStarted=false;
+  const startY=ev.clientY;
+
+  // Ghost: a semi-transparent clone that follows the mouse
+  let ghost=null;
+
+  const onMove=mv=>{
+    if(!dragStarted&&Math.abs(mv.clientY-startY)<4) return;
+    if(!dragStarted){
+      dragStarted=true;
+      // Create ghost
+      ghost=thumbEl.cloneNode(true);
+      ghost.style.cssText=`position:fixed;z-index:9999;width:${thumbEl.offsetWidth}px;opacity:.75;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.25);border-radius:6px;`;
+      document.body.appendChild(ghost);
+      thumbEl.style.opacity='0.3';
+    }
+    if(ghost){
+      const r=thumbEl.getBoundingClientRect();
+      ghost.style.left=r.left+'px';
+      ghost.style.top=(mv.clientY-thumbEl.offsetHeight/2)+'px';
+    }
+    // Highlight drop target
+    list.querySelectorAll('.sl-thumb').forEach(th=>{
+      th.classList.remove('sl-drag-over');
+      const r=th.getBoundingClientRect();
+      if(mv.clientY>=r.top&&mv.clientY<r.bottom&&parseInt(th.dataset.slIdx)!==fromIdx){
+        th.classList.add('sl-drag-over');
+      }
+    });
+  };
+
+  const onUp=mv=>{
+    document.removeEventListener('mousemove',onMove);
+    document.removeEventListener('mouseup',onUp);
+    if(ghost){ ghost.remove(); ghost=null; }
+    thumbEl.style.opacity='';
+    if(!dragStarted){ return; } // was just a click — handled by onclick
+
+    // Find drop target
+    let toIdx=fromIdx;
+    list.querySelectorAll('.sl-thumb').forEach(th=>{
+      th.classList.remove('sl-drag-over');
+      const r=th.getBoundingClientRect();
+      if(mv.clientY>=r.top&&mv.clientY<r.bottom){
+        toIdx=parseInt(th.dataset.slIdx);
+      }
+    });
+
+    if(toIdx!==fromIdx){
+      // Move slide in deck
+      const oldOrder=SL_DECK.slides.map((_,i)=>i);
+      const [moved]=SL_DECK.slides.splice(fromIdx,1);
+      SL_DECK.slides.splice(toIdx,0,moved);
+      // Update active index to follow the moved slide
+      SL_ACTIVE_IDX=toIdx;
+      _slPush({type:'sl-move-slide',fromIdx,toIdx});
+      autoSave();
+      slRenderAll();
+    }
+  };
+
+  document.addEventListener('mousemove',onMove);
+  document.addEventListener('mouseup',onUp);
 }
 
 function slRenderThumbContent(idx, container){

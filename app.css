@@ -3754,3 +3754,9 @@ body.brk-active .dbrk-pip:hover {
   outline: 2px solid var(--active, #C8A84B);
   outline-offset: 1px;
 }
+
+/* ── Slide thumbnail drag-to-reorder ── */
+.sl-thumb.sl-drag-over {
+  outline: 2px dashed var(--active, #C8A84B);
+  outline-offset: 2px;
+}
