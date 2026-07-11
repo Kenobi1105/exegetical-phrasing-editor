@@ -6749,6 +6749,8 @@ function _sanitizePasteHTML(rawHTML){
 const _LOGOS_PUA_MAP = {
   0xE917: '👤',   // singular participant marker
   0xE91F: '👥',   // group/plural participant marker
+  0xE91B: '💬',   // speech box / direct speech marker
+  0xE91A: '🕐',   // clock / temporal marker
 };
 
 function _substitutePUAChars(el){
