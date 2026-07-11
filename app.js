@@ -5987,21 +5987,28 @@ function slDrawConnectorsIntoClone(cloneCanvas, visibleRids){
 
     let d;
     if(cnx.kind==='rightangle'){
-      p1.x=clonePoint(fromBlock,cnx.fromX??0,cnx.fromY??0.5).x;
-      p1.y=clonePoint(fromBlock,cnx.fromX??0,cnx.fromY??0.5).y;
-      p2.x=clonePoint(toBlock,  cnx.toX??0,  cnx.toY??0.5).x;
-      p2.y=clonePoint(toBlock,  cnx.toX??0,  cnx.toY??0.5).y;
-      d=`M${p1.x},${p1.y} H${trunkX} V${p2.y} H${p2.x}`;
+      const rp1=clonePoint(fromBlock, cnx.fromX??0, cnx.fromY??0.5);
+      const rp2=clonePoint(toBlock,   cnx.toX??0,   cnx.toY??0.5);
+      d=`M${rp1.x},${rp1.y} H${trunkX} V${rp2.y} H${rp2.x}`;
     } else {
-      // Curve connector — replicate _connectorPathD logic
+      // Replicate _connectorPathD exactly — same hook/curve logic as live diagram
       const dx=p2.x-p1.x, dy=p2.y-p1.y;
-      const hookDist=Math.max(40,Math.abs(dy)*0.55);
-      const escape1=(cnx.fromY===0)?-1:1;
-      const escape2=(cnx.toY===0)?-1:1;
-      const c1x=p1.x+(Math.abs(dx)*0.22||20)*(IS_RTL?-1:1);
-      const c1y=p1.y+hookDist*escape1;
-      const c2x=p2.x-(Math.abs(dx)*0.22||20)*(IS_RTL?-1:1);
-      const c2y=p2.y+hookDist*escape2;
+      const hookDist=Math.max(30, Math.min(70, Math.abs(dy)*0.5));
+      const MIN_HOOK_HORIZ_PULL=26;
+      let horizPull=dx*0.3;
+      if(Math.abs(horizPull)<MIN_HOOK_HORIZ_PULL){
+        const sign=dx!==0?Math.sign(dx):(IS_RTL?-1:1);
+        horizPull=sign*MIN_HOOK_HORIZ_PULL;
+      }
+      const fromY=cnx.fromY??0.5, toY=cnx.toY??0.5;
+      let c1x,c1y;
+      if(fromY===0)      { c1x=p1.x+horizPull; c1y=p1.y-hookDist; }
+      else if(fromY===1) { c1x=p1.x+horizPull; c1y=p1.y+hookDist; }
+      else               { c1x=p1.x+dx*.55;    c1y=p1.y; }
+      let c2x,c2y;
+      if(toY===0)        { c2x=p2.x-horizPull; c2y=p2.y-hookDist; }
+      else if(toY===1)   { c2x=p2.x-horizPull; c2y=p2.y+hookDist; }
+      else               { c2x=p2.x-dx*.25;    c2y=p2.y; }
       d=`M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
     }
 
