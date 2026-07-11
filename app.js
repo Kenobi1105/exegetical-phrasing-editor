@@ -3171,8 +3171,17 @@ function restartSess(){
   EDITOR_VIEW='phrasing';
   document.getElementById('tzone').style.display='';
   document.getElementById('dzone').style.display='none';
+  document.getElementById('szone').style.display='none';
+  document.getElementById('sl-presenter').style.display='none';
   document.getElementById('view-btn-phrasing')?.classList.add('active');
   document.getElementById('view-btn-diagram')?.classList.remove('active');
+  document.getElementById('view-btn-slides')?.classList.remove('active');
+  const cmtBtnRS=document.getElementById('btn-cmt-pane');
+  if(cmtBtnRS) cmtBtnRS.disabled=false;
+  // Reset bracket and slide state
+  BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
+  if(typeof _brkCancelPending==='function') _brkCancelPending();
+  if(typeof slLoadDeck==='function') slLoadDeck({slides:[]});
   sessionVersionLabel='';
   const vsub=document.getElementById('version-sub');if(vsub)vsub.textContent='';
   const vsubI=document.getElementById('version-sub-input');if(vsubI)vsubI.value='';
