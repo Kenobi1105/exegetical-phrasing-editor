@@ -6499,29 +6499,59 @@ window.addEventListener('resize',()=>{
 function slStartPresent(){
   if(!SL_DECK.slides.length){ toast('No slides to present.'); return; }
   SL_PRES_IDX=SL_ACTIVE_IDX;
+
   // Open projector window
   SL_PROJ_WIN=window.open('','_blank','width=1280,height=720,menubar=no,toolbar=no,location=no,status=no');
   if(!SL_PROJ_WIN){ toast('Pop-up blocked. Please allow pop-ups for this site.'); return; }
-  // Write projector shell — include app.css so cloned row elements render correctly
+
+  // Inline the critical CSS variables so slide content renders even before
+  // app.css finishes loading in the projector window.
+  const rootStyles=getComputedStyle(document.documentElement);
+  const cssVars=['--sig','--ink','--bg','--ui','--serif','--accent','--active','--muted','--label','--alt','--rs','--r']
+    .map(v=>`${v}:${rootStyles.getPropertyValue(v).trim()}`).join(';');
   const cssHref=new URL('app.css', window.location.href).href;
+
   SL_PROJ_WIN.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Projector</title>
 <link rel="stylesheet" href="${cssHref}">
-<style>*{margin:0;padding:0;box-sizing:border-box;}html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}#sl-proj{width:100vw;height:100vh;position:relative;overflow:hidden;background:#fff;}</style>
+<style>
+:root{${cssVars}}
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
+#sl-proj{width:100vw;height:100vh;position:relative;overflow:hidden;background:#fff;}
+</style>
 </head><body><div id="sl-proj"></div>
 <script>
+  // Signal the opener as soon as this listener is live
+  if(window.opener) window.opener.postMessage({type:'sl-ready'},'*');
   window.addEventListener('message',function(ev){
-    if(ev.data&&ev.data.type==='sl-slide'){
+    if(!ev.data) return;
+    if(ev.data.type==='sl-slide'){
       document.getElementById('sl-proj').innerHTML=ev.data.html;
     }
   });
 <\/script></body></html>`);
   SL_PROJ_WIN.document.close();
+
   // Switch main window to presenter dashboard
   document.getElementById('szone').style.display='none';
   document.getElementById('sl-presenter').style.display='flex';
-  // Wait for projector's CSS to load before rendering first slide
-  setTimeout(()=>{ slPresUpdate(); }, 400);
+
+  // Listen for the projector's ready signal, then send first slide.
+  // Also set a 2s fallback in case postMessage is blocked by browser policy.
+  let _projReady=false;
+  const _onProjReady=(ev)=>{
+    if(ev.source!==SL_PROJ_WIN||ev.data?.type!=='sl-ready') return;
+    if(_projReady) return;
+    _projReady=true;
+    window.removeEventListener('message',_onProjReady);
+    slPresUpdate();
+  };
+  window.addEventListener('message',_onProjReady);
+  setTimeout(()=>{
+    if(!_projReady){ _projReady=true; window.removeEventListener('message',_onProjReady); slPresUpdate(); }
+  }, 2000);
+
   // Arrow key nav
   document.addEventListener('keydown',slPresKeydown);
 }
