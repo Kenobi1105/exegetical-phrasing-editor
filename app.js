@@ -428,7 +428,7 @@ function setEditorView(view){
   const cmtBtn=document.getElementById('btn-cmt-pane');
   if(cmtBtn) cmtBtn.disabled=isSlides;
   if(isDiagram) renderDiagram();
-  if(isSlides) setTimeout(()=>{ if(SL_DECK.slides.length===0){slRenderAll();}else{slRenderAll(); slRefreshSlide();} }, 80);
+  if(isSlides) setTimeout(()=>slRenderAll(), 80);
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
 }
 
@@ -6110,14 +6110,19 @@ function slRenderSlideInto(slide, container, w, h){
           inner.appendChild(clone);
           // Re-draw connectors fresh into the clone after DOM insertion
           if(v.connectors){
-            requestAnimationFrame(()=>slDrawConnectorsIntoClone(clone, slide.rowIds));
+            requestAnimationFrame(()=>{
+              if(!container.contains(passageEl)) return; // stale render
+              slDrawConnectorsIntoClone(clone, slide.rowIds);
+            });
           }
         }
       }
 
       passageEl.appendChild(inner);
-      // Scale-to-fit after insertion
+      container.appendChild(passageEl);
+      // Scale-to-fit after insertion — bail if container was replaced by a newer render
       requestAnimationFrame(()=>{
+        if(!container.contains(passageEl)) return; // stale — newer render already cleared
         const naturalW=inner.scrollWidth||inner.offsetWidth||400;
         const naturalH=inner.scrollHeight||inner.offsetHeight||200;
         const areaW=parseFloat(passageEl.style.width);
@@ -6466,13 +6471,21 @@ function slRenderThumb(idx){
   slRenderThumbContent(idx, inner);
 }
 
-/* ── Active slide canvas render ── */
+/* ── Active slide canvas render (debounced against re-entrant calls) ── */
+let _slRenderActiveId = 0;
 function slRenderActive(){
   slSizeCanvas();
   const cv=document.getElementById('sl-canvas'); if(!cv) return;
   const slide=SL_DECK.slides[SL_ACTIVE_IDX];
   if(!slide){ cv.innerHTML=''; return; }
+  // Cancel any pending rAF render and clear the container immediately
+  // so stale rAF callbacks from a previous render operate on detached nodes
+  const myId=++_slRenderActiveId;
+  cv.innerHTML='';
   slRenderSlideInto(slide, cv, SL_CANVAS_W, SL_CANVAS_H);
+  // After this render, if a newer render has started, its rAFs are the ones
+  // that matter — old rAF callbacks will find their inner/clone detached (noop).
+  void myId; // reference to prevent linter warnings
 }
 
 /* ── Full re-render (thumbnails + panel + active canvas) ── */
