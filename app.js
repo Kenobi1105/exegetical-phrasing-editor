@@ -5727,14 +5727,18 @@ function slSyncDerivedElements(){
 }
 
 /* ── Refresh current slide canvas + thumbnail from live project data ── */
+let _slLastRefreshTime = 0;
 function slRefreshSlide(){
+  // Guard: ignore calls within 100ms of the last one (prevents double-fire
+  // from event bubbling or rapid successive triggers)
+  const now = Date.now();
+  if(now - _slLastRefreshTime < 100){ return; }
+  _slLastRefreshTime = now;
+
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  // If diagram mode, ensure #dcanvas is populated before cloning
-  if(sl.view==='diagram'){
-    const dc=document.getElementById('dcanvas');
-    const hasBlocks=dc&&dc.querySelectorAll('.dblock').length>0;
-    if(!hasBlocks) renderDiagram();
-  }
+  // Always re-render diagram for slide diagram mode so stale dcanvas
+  // content from a previous session is never cloned into the slide
+  if(sl.view==='diagram') renderDiagram();
   // Sync derived elements from live data
   slSyncDerivedElements();
   slRenderActive();
@@ -6109,11 +6113,6 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
 
 /* ── Render a slide into a target container ── */
 function slRenderSlideInto(slide, container, w, h){
-  // DEBUG: log every call targeting #sl-canvas
-  if(container.id==='sl-canvas'){
-    console.warn('slRenderSlideInto called on #sl-canvas');
-    console.trace();
-  }
   container.innerHTML='';
   container.style.width=w+'px';
   container.style.height=h+'px';
