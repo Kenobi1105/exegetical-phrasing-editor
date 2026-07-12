@@ -5729,16 +5729,10 @@ function slSyncDerivedElements(){
 /* ── Refresh current slide canvas + thumbnail from live project data ── */
 let _slLastRefreshTime = 0;
 function slRefreshSlide(){
-  // Guard: ignore calls within 100ms of the last one (prevents double-fire
-  // from event bubbling or rapid successive triggers)
-  const now = Date.now();
-  if(now - _slLastRefreshTime < 100){ return; }
-  _slLastRefreshTime = now;
-
+  const now=Date.now();
+  if(now-_slLastRefreshTime<100){ return; }
+  _slLastRefreshTime=now;
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  // Always re-render diagram for slide diagram mode so stale dcanvas
-  // content from a previous session is never cloned into the slide
-  if(sl.view==='diagram') renderDiagram();
   // Sync derived elements from live data
   slSyncDerivedElements();
   slRenderActive();
@@ -6175,26 +6169,76 @@ function slRenderSlideInto(slide, container, w, h){
         }
         inner.appendChild(rb);
       } else {
-        const dc=document.getElementById('dcanvas');
-        if(dc){
-          const clone=dc.cloneNode(true);
-          clone.querySelectorAll('.drow').forEach(drow=>{if(!slide.rowIds.includes(drow.dataset.rid))drow.style.display='none';});
-          clone.querySelectorAll('.drow-pip-cell,.dbrk-pip').forEach(el=>el.remove());
-          clone.style.background='transparent';
-          const v=slide.visibility;
-          // Remove all cloned SVG overlays — will re-draw fresh below
-          clone.querySelectorAll('#dconns,#dconns-back,#dbrk-svg').forEach(e=>e.remove());
-          if(!v.translation){clone.querySelectorAll('.dblock-trans').forEach(e=>e.style.display='none');}
-          // Verse numbers always shown
-          inner.appendChild(clone);
-          // Re-draw connectors and brackets fresh after DOM insertion so positions
-          // reflect any hidden rows/translation lines
-          requestAnimationFrame(()=>{
-            if(!container.contains(passageEl)) return;
-            if(v.connectors) slDrawConnectorsIntoClone(clone, slide.rowIds);
-            if(v.brackets)   slDrawBracketsIntoClone(clone, slide.rowIds);
-          });
-        }
+        // Build diagram content directly from row data — never clone #dcanvas
+        // which may have stale content, wrong zoom, or all-row layout
+        const diagWrap=document.createElement('div');
+        diagWrap.style.cssText='position:relative;background:transparent;display:inline-block;min-width:300px;';
+        const v=slide.visibility;
+
+        slide.rowIds.forEach(rid=>{
+          const xrow=document.querySelectorAll('.xrow[data-rid="'+rid+'"]')[0];
+          if(!xrow) return;
+          const dRow=document.createElement('div');
+          dRow.className='drow'+(IS_RTL?' rtl':'');
+          dRow.dataset.rid=rid;
+          dRow.style.cssText='display:flex;align-items:flex-start;margin-bottom:10px;';
+
+          // Verse cell
+          const verse=xrow.querySelector('.vin')?.value||'';
+          const vCell=document.createElement('div');
+          vCell.className='dcell dv';
+          vCell.style.cssText='width:60px;min-width:60px;font-family:var(--ui,sans-serif);font-size:11px;color:#A89F90;padding-top:6px;flex-shrink:0;';
+          vCell.textContent=verse;
+
+          // Line ID cell
+          const lidEl=xrow.querySelector('.lid');
+          const lCell=document.createElement('div');
+          lCell.className='dcell dl';
+          lCell.style.cssText='width:52px;min-width:52px;font-family:var(--ui,sans-serif);font-size:11px;color:#C8A84B;font-weight:700;padding-top:6px;flex-shrink:0;';
+          lCell.textContent=lidEl?lidEl.textContent:'';
+
+          // Lane + block
+          const origCedit=xrow.querySelector('#oc-'+rid+' .cedit');
+          const indent=parseInt(origCedit?.dataset.indent||'0');
+          const origHTML=origCedit?origCedit.innerHTML:'';
+          const lane=document.createElement('div');
+          lane.className='dlane';
+          lane.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column;align-items:'+(IS_RTL?'flex-end':'flex-start')+';';
+
+          const block=document.createElement('div');
+          block.className='dblock';
+          block.dataset.rid=rid;
+          block.style.cssText='display:inline-block;border:1.5px solid rgba(73,53,72,.22);border-radius:6px;padding:5px 10px;font-family:var(--serif,serif);font-size:13px;max-width:520px;'+(IS_RTL?'margin-right:'+(indent*32)+'px;direction:rtl;text-align:right;':'margin-left:'+(indent*32)+'px;');
+          block.innerHTML=origHTML;
+          lane.appendChild(block);
+
+          // Translation line
+          if(v.translation){
+            const transCedit=xrow.querySelector('#tc-'+rid+' .cedit');
+            const transHTML=transCedit?transCedit.innerHTML:'';
+            if(transHTML&&transHTML.trim()){
+              const transDiv=document.createElement('div');
+              transDiv.className='dblock-trans';
+              transDiv.style.cssText='font-family:var(--ui,sans-serif);font-size:11px;color:var(--muted,#9A8F82);font-style:italic;padding:2px 10px 0;'+(IS_RTL?'margin-right:'+(indent*32)+'px;':'margin-left:'+(indent*32)+'px;');
+              transDiv.innerHTML=transHTML;
+              lane.appendChild(transDiv);
+            }
+          }
+
+          dRow.appendChild(vCell);
+          dRow.appendChild(lCell);
+          dRow.appendChild(lane);
+          diagWrap.appendChild(dRow);
+        });
+
+        inner.appendChild(diagWrap);
+
+        // Re-draw connectors and brackets after DOM insertion
+        requestAnimationFrame(()=>{
+          if(!container.contains(passageEl)) return;
+          if(v.connectors) slDrawConnectorsIntoClone(diagWrap, slide.rowIds);
+          if(v.brackets)   slDrawBracketsIntoClone(diagWrap, slide.rowIds);
+        });
       }
 
       passageEl.appendChild(inner);
