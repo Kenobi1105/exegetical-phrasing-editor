@@ -4898,24 +4898,60 @@ function _brkComputeX(startRid, endRid, lane){
 }
 
 /* ── Lane assignment ── */
+/* ════════════════════════════════════════
+   BRACKET LANE ASSIGNMENT — Stage 2
+   Containment-aware nesting:
+   • Inner brackets (fully contained by another) get lower lane numbers
+     (closer to blocks — left side)
+   • Outer brackets get higher lane numbers (further right)
+   • Partial overlaps get different lanes side-by-side (Stage 1 behaviour)
+   
+   Algorithm:
+   1. Build span indices [lo,hi] for every bracket
+   2. Sort by span size: narrowest first → these are innermost, get lane 1
+   3. Assign lanes greedily: bracket gets lowest lane with no conflict
+      among already-assigned brackets in that lane
+   4. Store result back into brk.lane; caller re-renders
+════════════════════════════════════════ */
+
+function _brkReassignAllLanes(){
+  if(!BRACKETS.length) return;
+  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const rids=rows.map(r=>r.dataset.rid);
+
+  // Build spans
+  const spans=BRACKETS.map(brk=>{
+    const si=rids.indexOf(String(brk.startRid));
+    const ei=rids.indexOf(String(brk.endRid));
+    if(si<0||ei<0) return {brk,lo:0,hi:0,size:0};
+    const lo=Math.min(si,ei), hi=Math.max(si,ei);
+    return {brk, lo, hi, size: hi-lo};
+  });
+
+  // Sort: narrowest span first (innermost → lane 1 = closest to blocks)
+  spans.sort((a,b)=>a.size-b.size);
+
+  // Greedy lane assignment: find the lowest lane with no conflicting bracket
+  const laneOccupants={}; // lane → [{lo,hi}]
+  spans.forEach(({brk,lo,hi})=>{
+    for(let lane=1;lane<=20;lane++){
+      const occupants=laneOccupants[lane]||[];
+      const conflict=occupants.some(o=>!(hi<o.lo||lo>o.hi));
+      if(!conflict){
+        brk.lane=lane;
+        laneOccupants[lane]=[...(laneOccupants[lane]||[]),{lo,hi}];
+        return;
+      }
+    }
+    brk.lane=1; // fallback
+  });
+}
+
+/* ── Assign lane for a single new bracket (called at creation time),
+   then immediately re-assign all lanes for nesting correctness ── */
 function _brkAssignLane(startRid, endRid){
-  const rows = Array.from(document.querySelectorAll('.xrow'));
-  const rids = rows.map(r=>r.dataset.rid);
-  const si   = rids.indexOf(String(startRid));
-  const ei   = rids.indexOf(String(endRid));
-  if(si<0||ei<0) return 1;
-  const lo = Math.min(si,ei), hi = Math.max(si,ei);
-  for(let lane=1; lane<=20; lane++){
-    const conflict = BRACKETS.some(b=>{
-      if(b.lane!==lane) return false;
-      const bi=rids.indexOf(String(b.startRid));
-      const bj=rids.indexOf(String(b.endRid));
-      if(bi<0||bj<0) return false;
-      const blo=Math.min(bi,bj), bhi=Math.max(bi,bj);
-      return !(hi<blo || lo>bhi);
-    });
-    if(!conflict) return lane;
-  }
+  // Return a temporary lane of 1; _brkReassignAllLanes will correct it
+  // after the bracket is pushed to BRACKETS
   return 1;
 }
 
@@ -4954,10 +4990,10 @@ function _brkCancelPending(){
 
 /* ── Create bracket, push to undo stack ── */
 function _brkCreate(startRid, endRid){
-  const lane = _brkAssignLane(startRid, endRid);
   const id   = 'brk-'+(++BRK_CTR);
-  const brk  = {id, startRid, endRid, label:'', color:'#493548', thickness:1, lane, labelOffsetY:0};
+  const brk  = {id, startRid, endRid, label:'', color:'#493548', thickness:1, lane:1, labelOffsetY:0};
   BRACKETS.push(brk);
+  _brkReassignAllLanes(); // re-sort all lanes with nesting awareness
   rowPush({type:'brk-add', brk:{...brk}});
   refreshBrackets();
   autoSave();
@@ -5283,8 +5319,8 @@ function _brkStartSerifDrag(ev, brkId, which){
     currentRid = targetRid;
     if(which==='start') brk.startRid = targetRid;
     else                brk.endRid   = targetRid;
-    // Re-assign lane in case containment changed
-    brk.lane = _brkAssignLane(brk.startRid, brk.endRid);
+    // Re-assign all lanes so nesting stays correct after span change
+    _brkReassignAllLanes();
     refreshBrackets();
   };
 
@@ -5374,6 +5410,7 @@ function brkDeleteCurrent(){
   BRACKETS=BRACKETS.filter(b=>b.id!==SELECTED_BRK_ID);
   SELECTED_BRK_ID=null;
   _brkCloseEditPopup();
+  _brkReassignAllLanes();
   refreshBrackets(); autoSave();
 }
 
@@ -5388,8 +5425,8 @@ function loadBracketData(arr){
     if(!isNaN(n)&&n>=BRK_CTR) BRK_CTR=n+1;
   });
   SELECTED_BRK_ID=null;
-  // Defer one frame so diagram rows are in the DOM before measuring
-  requestAnimationFrame(()=>refreshBrackets());
+  // Re-assign all lanes with nesting awareness after loading
+  requestAnimationFrame(()=>{ _brkReassignAllLanes(); refreshBrackets(); });
 }
 
 /* ── Undo/redo handlers — wired into applyRowUndo / applyRowRedo ── */
@@ -5397,11 +5434,11 @@ function _brkApplyUndo(op){
   if(op.type==='brk-add'){
     BRACKETS=BRACKETS.filter(b=>b.id!==op.brk.id);
     if(SELECTED_BRK_ID===op.brk.id){ SELECTED_BRK_ID=null; _brkCloseEditPopup(); }
-    refreshBrackets(); return true;
+    _brkReassignAllLanes(); refreshBrackets(); return true;
   }
   if(op.type==='brk-remove'){
     if(!BRACKETS.find(b=>b.id===op.brk.id)) BRACKETS.push({...op.brk});
-    refreshBrackets(); return true;
+    _brkReassignAllLanes(); refreshBrackets(); return true;
   }
   if(op.type==='brk-style'){
     const brk=BRACKETS.find(b=>b.id===op.id);
@@ -5409,7 +5446,7 @@ function _brkApplyUndo(op){
       brk[op.prop]=op.oldVal;
       // Re-assign lane if span changed
       if(op.prop==='startRid'||op.prop==='endRid')
-        brk.lane=_brkAssignLane(brk.startRid, brk.endRid);
+        _brkReassignAllLanes();
       refreshBrackets();
     } return true;
   }
@@ -5423,14 +5460,14 @@ function _brkApplyRedo(op){
   if(op.type==='brk-remove'){
     BRACKETS=BRACKETS.filter(b=>b.id!==op.brk.id);
     if(SELECTED_BRK_ID===op.brk.id){ SELECTED_BRK_ID=null; _brkCloseEditPopup(); }
-    refreshBrackets(); return true;
+    _brkReassignAllLanes(); refreshBrackets(); return true;
   }
   if(op.type==='brk-style'){
     const brk=BRACKETS.find(b=>b.id===op.id);
     if(brk){
       brk[op.prop]=op.newVal;
       if(op.prop==='startRid'||op.prop==='endRid')
-        brk.lane=_brkAssignLane(brk.startRid, brk.endRid);
+        _brkReassignAllLanes();
       refreshBrackets();
     } return true;
   }
