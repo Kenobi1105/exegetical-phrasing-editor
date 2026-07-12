@@ -6109,6 +6109,11 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
 
 /* ── Render a slide into a target container ── */
 function slRenderSlideInto(slide, container, w, h){
+  // DEBUG: log every call targeting #sl-canvas
+  if(container.id==='sl-canvas'){
+    console.warn('slRenderSlideInto called on #sl-canvas');
+    console.trace();
+  }
   container.innerHTML='';
   container.style.width=w+'px';
   container.style.height=h+'px';
