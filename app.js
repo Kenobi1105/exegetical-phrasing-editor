@@ -6619,21 +6619,23 @@ function slRenderThumb(idx){
   slRenderThumbContent(idx, inner);
 }
 
-/* ── Active slide canvas render (debounced against re-entrant calls) ── */
-let _slRenderActiveId = 0;
+/* ── Active slide canvas render — hard-debounced to prevent triple-render
+   in diagram mode where renderDiagram() + rAF timing can stack calls ── */
+let _slRenderPending = false;
+let _slRenderTimer   = null;
 function slRenderActive(){
+  // Clear any queued render and re-queue — ensures only the latest fires
+  clearTimeout(_slRenderTimer);
+  _slRenderTimer = setTimeout(_slDoRender, 0);
+}
+function _slDoRender(){
+  _slRenderTimer = null;
   slSizeCanvas();
   const cv=document.getElementById('sl-canvas'); if(!cv) return;
   const slide=SL_DECK.slides[SL_ACTIVE_IDX];
   if(!slide){ cv.innerHTML=''; return; }
-  // Cancel any pending rAF render and clear the container immediately
-  // so stale rAF callbacks from a previous render operate on detached nodes
-  const myId=++_slRenderActiveId;
-  cv.innerHTML='';
+  cv.innerHTML=''; // clear before each render
   slRenderSlideInto(slide, cv, SL_CANVAS_W, SL_CANVAS_H);
-  // After this render, if a newer render has started, its rAFs are the ones
-  // that matter — old rAF callbacks will find their inner/clone detached (noop).
-  void myId; // reference to prevent linter warnings
 }
 
 /* ── Full re-render (thumbnails + panel + active canvas) ── */
