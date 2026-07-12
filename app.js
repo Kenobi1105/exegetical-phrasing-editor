@@ -5498,7 +5498,9 @@ function slLoadDeck(data){
   SL_DECK = { slides: Array.isArray(data?.slides) ? data.slides.map(s=>({...s, elements:(s.elements||[]).map(e=>({...e}))})) : [] };
   SL_DECK.slides.forEach(s=>{ s.id=s.id||'sl-'+(++SL_SLIDE_CTR); (s.elements||[]).forEach(e=>{ e.id=e.id||'el-'+(++SL_EL_CTR); }); });
   SL_ACTIVE_IDX = 0; SL_SEL_EL_ID = null;
-  if(EDITOR_VIEW==='slides') slRenderAll();
+  // Do NOT call slRenderAll here — setEditorView and explicit refresh calls handle rendering.
+  // Calling slRenderAll from slLoadDeck causes triple-render when combined with
+  // the setEditorView setTimeout and the autoSave cycle.
 }
 
 /* ── Undo/redo for deck ops ── */
