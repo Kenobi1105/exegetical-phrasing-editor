@@ -5524,6 +5524,8 @@ let SL_PRES_IDX   = 0;                // current slide index in presenter mode
 let SL_CANVAS_W   = 960;              // computed canvas width in px
 let SL_CANVAS_H   = 540;              // computed canvas height in px (16:9)
 let SL_CMT_CACHE  = {};               // {cid: rawHTML} — comment cache for slide rendering (DOM may be hidden)
+const SL_RENDER_W = 960;              // canonical render width — same for editor, presenter, projector
+const SL_RENDER_H = 540;             // canonical render height (16:9)
 
 const SL_RATIO    = 16/9;
 
@@ -6891,55 +6893,67 @@ function slPresUpdate(){
   if(counter) counter.innerHTML=`${SL_PRES_IDX+1} <span>${t('slides.slide-of')}</span> ${SL_DECK.slides.length}`;
   const notes=document.getElementById('sl-pres-notes');
   if(notes) notes.textContent=slide.notes||'';
-  const preview=document.getElementById('sl-pres-preview'); if(!preview) return;
 
-  // Render into an off-screen div at fixed 800×450 (16:9).
-  // Inject via innerHTML + CSS scale-up, same pattern as the projector.
-  // This avoids offsetWidth=0 timing issues and ensures consistent block layout.
-  const PW=800, PH=450;
-  const tmp=document.createElement('div');
-  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${PW}px;height:${PH}px;overflow:visible;`;
-  document.body.appendChild(tmp);
-  slRenderSlideInto(slide, tmp, PW, PH);
-
-  requestAnimationFrame(()=>{
-    requestAnimationFrame(()=>{
-      const html=tmp.innerHTML;
-      document.body.removeChild(tmp);
-      preview.innerHTML=`<div style="position:absolute;top:0;left:0;width:${PW}px;height:${PH}px;transform-origin:top left;background:#fff;">${html}</div>`;
-      // Scale the inner div to fit the preview container
-      const scaleX=(preview.offsetWidth||PW)/PW;
-      const scaleY=(preview.offsetHeight||PH)/PH;
-      const scale=Math.min(scaleX,scaleY);
-      const inner=preview.firstElementChild;
-      if(inner) inner.style.transform=`scale(${scale})`;
-    });
+  // Render once, inject into both preview and projector
+  _slRenderToHTML(slide, html=>{
+    // Presenter preview
+    const preview=document.getElementById('sl-pres-preview');
+    if(preview){
+      const inject=()=>{
+        const pw=preview.offsetWidth||preview.clientWidth||640;
+        const ph=preview.offsetHeight||preview.clientHeight||(pw/SL_RATIO);
+        if(pw>0) _slInjectScaled(preview, html, pw, ph);
+        else setTimeout(()=>{
+          const pw2=preview.offsetWidth||640;
+          const ph2=preview.offsetHeight||(pw2/SL_RATIO);
+          _slInjectScaled(preview, html, pw2, ph2);
+        }, 100);
+      };
+      inject();
+    }
+    // Projector
+    if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
+      SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:SL_RENDER_W,ph:SL_RENDER_H},'*');
+    }
   });
-
-  slSendToProjector(slide);
 }
 
-function slSendToProjector(slide){
-  if(!SL_PROJ_WIN||SL_PROJ_WIN.closed) return;
-  // Render at 960×540 (half of 1920×1080) — keeps pixel coordinates small so
-  // they don't overflow the projector window's viewport before CSS scaling.
-  // The projector window scales up to fill 100vw×100vh via CSS transform.
-  const PW=960,PH=540;
+/* ── Shared slide render at canonical 960×540 ─────────────────────────────
+   All presentation surfaces (slide editor, presenter preview, projector)
+   render at this fixed size so block layout, connector paths, and SVG
+   coordinates are identical everywhere. Display containers CSS-scale the
+   result up or down to fit their available space. */
+
+/* ── Render slide into an off-screen div, return {html} via callback ── */
+function _slRenderToHTML(slide, cb){
   const tmp=document.createElement('div');
-  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${PW}px;height:${PH}px;overflow:visible;`;
+  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${SL_RENDER_W}px;height:${SL_RENDER_H}px;overflow:visible;background:#fff;`;
   document.body.appendChild(tmp);
-  slRenderSlideInto(slide,tmp,PW,PH);
-  // Double-rAF: first lets slRenderSlideInto's rAF (scale+connectors) fire,
-  // second captures the fully-rendered HTML.
+  slRenderSlideInto(slide, tmp, SL_RENDER_W, SL_RENDER_H);
+  // Double-rAF: lets slRenderSlideInto's own rAF (scale+connectors) complete first
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       const html=tmp.innerHTML;
       document.body.removeChild(tmp);
-      if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
-        SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:PW,ph:PH},'*');
-      }
+      cb(html);
     });
   });
+}
+
+/* ── Inject rendered HTML into a display container with CSS scale-to-fit ── */
+function _slInjectScaled(container, html, containerW, containerH){
+  container.innerHTML='';
+  const wrap=document.createElement('div');
+  wrap.style.cssText=`position:absolute;top:0;left:0;width:${SL_RENDER_W}px;height:${SL_RENDER_H}px;transform-origin:top left;background:#fff;overflow:visible;`;
+  wrap.innerHTML=html;
+  container.appendChild(wrap);
+  const scaleX=containerW/SL_RENDER_W;
+  const scaleY=containerH/SL_RENDER_H;
+  const scale=Math.min(scaleX,scaleY);
+  wrap.style.transform=`scale(${scale})`;
+  // Centre if aspect ratios differ
+  wrap.style.left=Math.round((containerW-SL_RENDER_W*scale)/2)+'px';
+  wrap.style.top =Math.round((containerH-SL_RENDER_H*scale)/2)+'px';
 }
 
 /* ── Presenter divider resize ── */
