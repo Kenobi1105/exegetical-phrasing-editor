@@ -6218,11 +6218,10 @@ function slRenderSlideInto(slide, container, w, h){
 
         const diagWrap=document.createElement('div');
         _slDiagWrap=diagWrap; // store for rAF access
-        // Set diagWrap to the same width as the live #dcanvas so that block text
-        // reflows identically — connector X fractions then hit the same words as
-        // in Diagram View (Option B: render at natural width, scale uniformly)
-        const dcWidth = dc ? (dc.scrollWidth || dc.offsetWidth || 900) : 900;
-        diagWrap.style.cssText=`position:relative;background:transparent;width:${dcWidth}px;`;
+        // Use a fixed natural width matching typical diagram canvas width.
+        // dc.scrollWidth returns 0 when #dzone is display:none (Slides View hides it),
+        // which makes all block offsets 0 and breaks connector path calculations.
+        diagWrap.style.cssText='position:relative;background:transparent;width:900px;';
         const v=slide.visibility;
 
         slide.rowIds.forEach(rid=>{
