@@ -3912,3 +3912,28 @@ body.brk-active .dbrk-pip:hover {
   aspect-ratio: 16/9 !important;
   overflow: visible !important;
 }
+
+/* ════════════════════════════════════════
+   PRESENTER PREVIEW — JS-controlled size
+   Dimensions set explicitly by slPresUpdate
+   so no CSS aspect-ratio or width:auto
+   conflicts. Just position and overflow.
+════════════════════════════════════════ */
+#sl-pres-preview {
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  aspect-ratio: unset !important;
+  position: relative !important;
+  overflow: hidden !important;
+  flex-shrink: 0 !important;
+}
+#sl-pres-left {
+  padding: 16px !important;
+  padding-bottom: 72px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex-direction: column !important;
+}

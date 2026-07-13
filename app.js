@@ -6894,18 +6894,24 @@ function slPresUpdate(){
   const notes=document.getElementById('sl-pres-notes');
   if(notes) notes.textContent=slide.notes||'';
 
-  // Render once, inject into both preview and projector
+  // Compute available space in the left column (subtract bar height + padding)
+  const left=document.getElementById('sl-pres-left');
+  const preview=document.getElementById('sl-pres-preview');
+  const BAR_H=72; // nav bar + gap
+  const PAD=16;
+  const colW=(left?.offsetWidth||700)-PAD*2;
+  const colH=(left?.offsetHeight||500)-BAR_H-PAD*2;
+  // Fit 16:9 into the available column space
+  let previewW=colW, previewH=Math.round(colW/SL_RATIO);
+  if(previewH>colH){ previewH=colH; previewW=Math.round(colH*SL_RATIO); }
+  // Set preview to explicit pixel dimensions
+  if(preview){
+    preview.style.width =previewW+'px';
+    preview.style.height=previewH+'px';
+  }
+
   _slRenderToHTML(slide, html=>{
-    // Presenter preview — measure the left column to get reliable dimensions
-    const preview=document.getElementById('sl-pres-preview');
-    if(preview){
-      const left=document.getElementById('sl-pres-left');
-      // Use the column width; height = width/ratio (16:9)
-      const pw=(left?.offsetWidth||preview.offsetWidth||640)-32; // subtract padding
-      const ph=Math.round(pw/SL_RATIO);
-      _slInjectScaled(preview, html, pw, ph);
-    }
-    // Projector
+    if(preview) _slInjectScaled(preview, html, previewW, previewH);
     if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
       SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:SL_RENDER_W,ph:SL_RENDER_H},'*');
     }
@@ -6937,6 +6943,8 @@ function _slRenderToHTML(slide, cb){
 /* ── Inject rendered HTML into a display container with CSS scale-to-fit ── */
 function _slInjectScaled(container, html, containerW, containerH){
   container.innerHTML='';
+  container.style.position='relative';
+  container.style.overflow='hidden';
   const wrap=document.createElement('div');
   wrap.style.cssText=`position:absolute;top:0;left:0;width:${SL_RENDER_W}px;height:${SL_RENDER_H}px;transform-origin:top left;background:#fff;overflow:visible;`;
   wrap.innerHTML=html;
@@ -6945,7 +6953,7 @@ function _slInjectScaled(container, html, containerW, containerH){
   const scaleY=containerH/SL_RENDER_H;
   const scale=Math.min(scaleX,scaleY);
   wrap.style.transform=`scale(${scale})`;
-  // Centre if aspect ratios differ
+  // Centre within container
   wrap.style.left=Math.round((containerW-SL_RENDER_W*scale)/2)+'px';
   wrap.style.top =Math.round((containerH-SL_RENDER_H*scale)/2)+'px';
 }
