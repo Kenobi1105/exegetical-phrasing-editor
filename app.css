@@ -3889,3 +3889,26 @@ body.brk-active .dbrk-pip:hover {
 #sl-pres-right {
   padding-bottom: 72px !important;
 }
+
+/* ════════════════════════════════════════
+   PRESENTER PREVIEW — definitive fix
+   Use explicit dimensions derived from
+   the left column, not from the preview
+   itself (which is empty at measure time).
+════════════════════════════════════════ */
+#sl-pres-left {
+  padding: 16px !important;
+  padding-bottom: 72px !important;
+  align-items: stretch !important;
+  justify-content: center !important;
+  flex-direction: column !important;
+}
+#sl-pres-preview {
+  /* Fill width, let aspect-ratio determine height */
+  width: 100% !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: none !important;
+  aspect-ratio: 16/9 !important;
+  overflow: visible !important;
+}

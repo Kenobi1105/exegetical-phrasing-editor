@@ -6896,20 +6896,14 @@ function slPresUpdate(){
 
   // Render once, inject into both preview and projector
   _slRenderToHTML(slide, html=>{
-    // Presenter preview
+    // Presenter preview — measure the left column to get reliable dimensions
     const preview=document.getElementById('sl-pres-preview');
     if(preview){
-      const inject=()=>{
-        const pw=preview.offsetWidth||preview.clientWidth||640;
-        const ph=preview.offsetHeight||preview.clientHeight||(pw/SL_RATIO);
-        if(pw>0) _slInjectScaled(preview, html, pw, ph);
-        else setTimeout(()=>{
-          const pw2=preview.offsetWidth||640;
-          const ph2=preview.offsetHeight||(pw2/SL_RATIO);
-          _slInjectScaled(preview, html, pw2, ph2);
-        }, 100);
-      };
-      inject();
+      const left=document.getElementById('sl-pres-left');
+      // Use the column width; height = width/ratio (16:9)
+      const pw=(left?.offsetWidth||preview.offsetWidth||640)-32; // subtract padding
+      const ph=Math.round(pw/SL_RATIO);
+      _slInjectScaled(preview, html, pw, ph);
     }
     // Projector
     if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
