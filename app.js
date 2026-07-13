@@ -6164,6 +6164,7 @@ function slRenderSlideInto(slide, container, w, h){
       // Build content inner frame
       const inner=document.createElement('div');
       inner.style.cssText='position:absolute;top:0;left:0;transform-origin:top left;';
+      let _slDiagWrap=null; // holds diagWrap ref for use in the rAF below
 
       if(slide.view==='phrasing'){
         const rb=document.createElement('div');
@@ -6216,6 +6217,7 @@ function slRenderSlideInto(slide, container, w, h){
         if(!hasBlocks) renderDiagram();
 
         const diagWrap=document.createElement('div');
+        _slDiagWrap=diagWrap; // store for rAF access
         // Set diagWrap to the same width as the live #dcanvas so that block text
         // reflows identically — connector X fractions then hit the same words as
         // in Diagram View (Option B: render at natural width, scale uniformly)
@@ -6301,12 +6303,10 @@ function slRenderSlideInto(slide, container, w, h){
         if(!container.contains(passageEl)) return; // stale render
 
         // For diagram mode: draw connectors and brackets at natural block dimensions
-        if(slide.view==='diagram'){
-          const diagWrapEl=inner.querySelector('[style*="position:relative"]');
-          if(diagWrapEl){
-            if(slide.visibility.connectors) slDrawConnectorsIntoClone(diagWrapEl, slide.rowIds);
-            if(slide.visibility.brackets)   slDrawBracketsIntoClone(diagWrapEl, slide.rowIds);
-          }
+        if(slide.view==='diagram' && _slDiagWrap){
+          const v=slide.visibility;
+          if(v.connectors) slDrawConnectorsIntoClone(_slDiagWrap, slide.rowIds);
+          if(v.brackets)   slDrawBracketsIntoClone(_slDiagWrap, slide.rowIds);
         }
 
         // Scale inner to fit passage area
