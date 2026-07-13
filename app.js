@@ -6892,9 +6892,30 @@ function slPresUpdate(){
   const notes=document.getElementById('sl-pres-notes');
   if(notes) notes.textContent=slide.notes||'';
   const preview=document.getElementById('sl-pres-preview'); if(!preview) return;
-  const pw=preview.offsetWidth||640;
-  const ph=preview.offsetHeight||(pw/SL_RATIO);
-  slRenderSlideInto(slide,preview,pw,ph);
+
+  // Render into an off-screen div at fixed 800×450 (16:9).
+  // Inject via innerHTML + CSS scale-up, same pattern as the projector.
+  // This avoids offsetWidth=0 timing issues and ensures consistent block layout.
+  const PW=800, PH=450;
+  const tmp=document.createElement('div');
+  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${PW}px;height:${PH}px;overflow:visible;`;
+  document.body.appendChild(tmp);
+  slRenderSlideInto(slide, tmp, PW, PH);
+
+  requestAnimationFrame(()=>{
+    requestAnimationFrame(()=>{
+      const html=tmp.innerHTML;
+      document.body.removeChild(tmp);
+      preview.innerHTML=`<div style="position:absolute;top:0;left:0;width:${PW}px;height:${PH}px;transform-origin:top left;background:#fff;">${html}</div>`;
+      // Scale the inner div to fit the preview container
+      const scaleX=(preview.offsetWidth||PW)/PW;
+      const scaleY=(preview.offsetHeight||PH)/PH;
+      const scale=Math.min(scaleX,scaleY);
+      const inner=preview.firstElementChild;
+      if(inner) inner.style.transform=`scale(${scale})`;
+    });
+  });
+
   slSendToProjector(slide);
 }
 
