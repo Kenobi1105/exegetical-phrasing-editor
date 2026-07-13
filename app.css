@@ -3860,3 +3860,11 @@ body.brk-active .dbrk-pip:hover {
   flex-shrink: 0;
 }
 #sw-pill:hover { background: #5a4060; }
+
+/* ── Presenter preview: constrain height so it never overflows the left column ── */
+#sl-pres-preview {
+  width: auto !important;
+  max-width: 100% !important;
+  max-height: calc(100% - 48px) !important; /* leave room for nav bar */
+  aspect-ratio: 16/9 !important;
+}

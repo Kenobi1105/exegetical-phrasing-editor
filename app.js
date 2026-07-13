@@ -385,6 +385,10 @@ function addEmptyRow(afterEl){
    adds no new data of its own yet.
 ════════════════════════════════════════ */
 function setEditorView(view){
+  // If presenting, end the presentation first before switching views
+  if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
+    slEndPresent();
+  }
   if(view!==EDITOR_VIEW){
     EDITOR_VIEW=view;
     autoSave();
@@ -6820,6 +6824,11 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
   document.getElementById('szone').style.display='none';
   document.getElementById('sl-presenter').style.display='flex';
 
+  // Instruct user to fullscreen the projector window
+  setTimeout(()=>{
+    toast('Projector window opened. Click it and press F11 to go fullscreen.');
+  }, 600);
+
   // Listen for the projector's ready signal, then send first slide.
   // Also set a 2s fallback in case postMessage is blocked by browser policy.
   let _projReady=false;
@@ -6862,18 +6871,20 @@ function slPresKeydown(ev){
 
 function slPresUpdate(){
   const slide=SL_DECK.slides[SL_PRES_IDX]; if(!slide) return;
-  // Update counter
   const counter=document.getElementById('sl-pres-counter');
   if(counter) counter.innerHTML=`${SL_PRES_IDX+1} <span>${t('slides.slide-of')}</span> ${SL_DECK.slides.length}`;
-  // Update notes
   const notes=document.getElementById('sl-pres-notes');
   if(notes) notes.textContent=slide.notes||'';
-  // Update preview
   const preview=document.getElementById('sl-pres-preview'); if(!preview) return;
-  const pr=preview.getBoundingClientRect();
-  const pw=pr.width||640, ph=pw/SL_RATIO;
-  slRenderSlideInto(slide,preview,pw,ph);
-  // Send to projector
+  // Size the preview to fill the container while maintaining 16:9.
+  // Use clientWidth/clientHeight to get true available space (not getBoundingClientRect
+  // which can be 0 if the element just became visible).
+  const pw=preview.clientWidth||preview.offsetWidth||640;
+  const ph=preview.clientHeight||preview.offsetHeight||(pw/SL_RATIO);
+  // Fit within both dimensions
+  const fitW=Math.min(pw, ph*SL_RATIO);
+  const fitH=fitW/SL_RATIO;
+  slRenderSlideInto(slide,preview,Math.round(fitW),Math.round(fitH));
   slSendToProjector(slide);
 }
 
