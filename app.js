@@ -5688,11 +5688,12 @@ function slDuplicateSlide(idx){
   SL_ACTIVE_IDX=newIdx; slRenderAll(); autoSave();
 }
 
-/* ── Select slide — re-renders canvas from fresh data ── */
+/* ── Select slide — deselects any selected element, re-renders canvas ── */
 function slSelectSlide(idx){
-  SL_SEL_EL_ID=null; SL_ACTIVE_IDX=idx;
+  SL_SEL_EL_ID=null; // always deselect elements when switching slides
+  SL_ACTIVE_IDX=idx;
   slUpdatePropsPanel();
-  slRefreshSlide(); // re-render from live data on selection
+  slRefreshSlide();
   document.querySelectorAll('.sl-thumb').forEach((t,i)=>t.classList.toggle('active',i===idx));
 }
 
@@ -6206,15 +6207,29 @@ function slRenderSlideInto(slide, container, w, h){
         }
         inner.appendChild(rb);
       } else {
-        // Build diagram content directly from row data — never clone #dcanvas
-        // which may have stale content, wrong zoom, or all-row layout
+        // Build diagram content by cloning actual .dblock elements from the live
+        // diagram rows — this preserves exact block dimensions (padding, font-size,
+        // border) so connector Y positions match the live diagram precisely.
+        // We must first ensure #dcanvas is populated with current rows.
+        const dc=document.getElementById('dcanvas');
+        const hasBlocks=dc&&dc.querySelectorAll('.dblock').length>0;
+        if(!hasBlocks) renderDiagram();
+
         const diagWrap=document.createElement('div');
-        diagWrap.style.cssText='position:relative;background:transparent;display:inline-block;min-width:300px;';
+        // Set diagWrap to the same width as the live #dcanvas so that block text
+        // reflows identically — connector X fractions then hit the same words as
+        // in Diagram View (Option B: render at natural width, scale uniformly)
+        const dcWidth = dc ? (dc.scrollWidth || dc.offsetWidth || 900) : 900;
+        diagWrap.style.cssText=`position:relative;background:transparent;width:${dcWidth}px;`;
         const v=slide.visibility;
 
         slide.rowIds.forEach(rid=>{
-          const xrow=document.querySelectorAll('.xrow[data-rid="'+rid+'"]')[0];
+          const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
           if(!xrow) return;
+
+          // Clone the live .drow from #dcanvas so block dimensions match exactly
+          const liveDrow=dc.querySelector(`.drow[data-rid="${rid}"]`);
+
           const dRow=document.createElement('div');
           dRow.className='drow'+(IS_RTL?' rtl':'');
           dRow.dataset.rid=rid;
@@ -6234,32 +6249,39 @@ function slRenderSlideInto(slide, container, w, h){
           lCell.style.cssText='width:52px;min-width:52px;font-family:var(--ui,sans-serif);font-size:11px;color:#C8A84B;font-weight:700;padding-top:6px;flex-shrink:0;';
           lCell.textContent=lidEl?lidEl.textContent:'';
 
-          // Lane + block
-          const origCedit=xrow.querySelector('#oc-'+rid+' .cedit');
-          const indent=parseInt(origCedit?.dataset.indent||'0');
-          const origHTML=origCedit?origCedit.innerHTML:'';
           const lane=document.createElement('div');
           lane.className='dlane';
           lane.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column;align-items:'+(IS_RTL?'flex-end':'flex-start')+';';
 
-          const block=document.createElement('div');
-          block.className='dblock';
-          block.dataset.rid=rid;
-          block.style.cssText='display:inline-block;border:1.5px solid rgba(73,53,72,.22);border-radius:6px;padding:5px 10px;font-family:var(--serif,serif);font-size:13px;max-width:520px;'+(IS_RTL?'margin-right:'+(indent*32)+'px;direction:rtl;text-align:right;':'margin-left:'+(indent*32)+'px;');
-          block.innerHTML=origHTML;
-          lane.appendChild(block);
-
-          // Translation line
-          if(v.translation){
-            const transCedit=xrow.querySelector('#tc-'+rid+' .cedit');
-            const transHTML=transCedit?transCedit.innerHTML:'';
-            if(transHTML&&transHTML.trim()){
-              const transDiv=document.createElement('div');
-              transDiv.className='dblock-trans';
-              transDiv.style.cssText='font-family:var(--ui,sans-serif);font-size:11px;color:var(--muted,#9A8F82);font-style:italic;padding:2px 10px 0;'+(IS_RTL?'margin-right:'+(indent*32)+'px;':'margin-left:'+(indent*32)+'px;');
-              transDiv.innerHTML=transHTML;
-              lane.appendChild(transDiv);
+          if(liveDrow){
+            // Use the actual .dblock clone from live diagram — preserves exact metrics
+            const liveBlock=liveDrow.querySelector('.dblock');
+            if(liveBlock){
+              const block=liveBlock.cloneNode(true);
+              // Remove interactive elements (pip cells handled separately)
+              block.querySelectorAll('.drow-pip-cell,.dbrk-pip,button').forEach(el=>el.remove());
+              // Remove any zoom transform that might have been applied
+              block.style.zoom='';
+              lane.appendChild(block);
             }
+            // Translation line
+            if(v.translation){
+              const liveTrans=liveDrow.querySelector('.dblock-trans');
+              if(liveTrans){
+                const trans=liveTrans.cloneNode(true);
+                lane.appendChild(trans);
+              }
+            }
+          } else {
+            // Fallback if live drow not found: build from xrow data
+            const origCedit=xrow.querySelector('#oc-'+rid+' .cedit');
+            const indent=parseInt(origCedit?.dataset.indent||'0');
+            const block=document.createElement('div');
+            block.className='dblock';
+            block.dataset.rid=rid;
+            block.style.cssText='display:inline-block;border:1.5px solid rgba(73,53,72,.22);border-radius:6px;padding:5px 10px;font-family:var(--serif,serif);font-size:13px;max-width:520px;'+(IS_RTL?'margin-right:'+(indent*32)+'px;direction:rtl;text-align:right;':'margin-left:'+(indent*32)+'px;');
+            block.innerHTML=origCedit?origCedit.innerHTML:'';
+            lane.appendChild(block);
           }
 
           dRow.appendChild(vCell);
@@ -6269,20 +6291,25 @@ function slRenderSlideInto(slide, container, w, h){
         });
 
         inner.appendChild(diagWrap);
-
-        // Re-draw connectors and brackets after DOM insertion
-        requestAnimationFrame(()=>{
-          if(!container.contains(passageEl)) return;
-          if(v.connectors) slDrawConnectorsIntoClone(diagWrap, slide.rowIds);
-          if(v.brackets)   slDrawBracketsIntoClone(diagWrap, slide.rowIds);
-        });
       }
 
       passageEl.appendChild(inner);
       container.appendChild(passageEl);
-      // Scale-to-fit after insertion — bail if container was replaced by a newer render
+      // Single rAF: draw connectors/brackets at natural size, then apply uniform scale.
+      // Both happen in one frame so SVG paths and blocks share the same layout pass.
       requestAnimationFrame(()=>{
-        if(!container.contains(passageEl)) return; // stale — newer render already cleared
+        if(!container.contains(passageEl)) return; // stale render
+
+        // For diagram mode: draw connectors and brackets at natural block dimensions
+        if(slide.view==='diagram'){
+          const diagWrapEl=inner.querySelector('[style*="position:relative"]');
+          if(diagWrapEl){
+            if(slide.visibility.connectors) slDrawConnectorsIntoClone(diagWrapEl, slide.rowIds);
+            if(slide.visibility.brackets)   slDrawBracketsIntoClone(diagWrapEl, slide.rowIds);
+          }
+        }
+
+        // Scale inner to fit passage area
         const naturalW=inner.scrollWidth||inner.offsetWidth||400;
         const naturalH=inner.scrollHeight||inner.offsetHeight||200;
         const areaW=parseFloat(passageEl.style.width);
@@ -6571,10 +6598,19 @@ function slCtxAction(action){
 document.addEventListener('mousedown',ev=>{ if(!ev.target.closest('#sl-ctx-menu')) slHideCtxMenu(); });
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Delete'||ev.key==='Backspace'){
-    if(EDITOR_VIEW==='slides'&&SL_SEL_EL_ID&&!['input','textarea'].includes(ev.target.tagName?.toLowerCase())){
+    if(EDITOR_VIEW==='slides'){
       const tag=ev.target.tagName?.toLowerCase();
       const ce=ev.target.contentEditable==='true';
-      if(!ce&&tag!=='input'&&tag!=='textarea'){ slCtxAction('delete'); ev.preventDefault(); }
+      // If typing in an input, textarea, or contenteditable — don't intercept
+      if(ce||tag==='input'||tag==='textarea') return;
+      if(SL_SEL_EL_ID){
+        // Delete selected element on the slide canvas
+        slCtxAction('delete'); ev.preventDefault();
+      } else {
+        // No element selected — delete the active slide itself
+        ev.preventDefault();
+        slDeleteSlide(SL_ACTIVE_IDX);
+      }
     }
   }
 });
