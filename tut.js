@@ -171,8 +171,102 @@ en: {
       `
     },
     {
+      id: 'brackets',
+      heading: 'Part 9: Bracket Annotations',
+      content: `
+        <p>Brackets let you annotate structural relationships — chiasm, parallelism, inclusio, discourse units — directly on the Diagram View canvas. Each bracket is a vertical line with serifs that spans one or more rows, with an optional text label.</p>
+        <h3>Switching to Diagram View</h3>
+        <p>Brackets only appear in <strong>Diagram View</strong>. Click the <strong>Diagram</strong> button in the toolbar (or press <kbd>Alt+T</kbd>) to switch. Your rows will be rendered as indented blocks with connectors.</p>
+        <h3>Creating a Bracket</h3>
+        <ol>
+          <li>Hold <kbd>Shift</kbd>. A small circular pip dot appears on the right edge of each row block.</li>
+          <li>While still holding <kbd>Shift</kbd>, click the pip on the <strong>first row</strong> of the span you want to bracket. The status bar shows <em>"Bracket started — Shift+click another row handle to complete."</em></li>
+          <li>Click the pip on the <strong>last row</strong> of the span. The bracket is drawn immediately.</li>
+        </ol>
+        <p>Press <kbd>Escape</kbd> at any point to cancel the pending bracket.</p>
+        <h3>Label Editing</h3>
+        <p>Every bracket has a text label zone to its right. When a bracket is first created the label shows faint placeholder text. Click directly on it — a text cursor appears and you can type immediately, just like editing any other text in the editor. Press <kbd>Enter</kbd> or click elsewhere to confirm. The label width adjusts automatically.</p>
+        <h3>Editing Color, Thickness and Deleting</h3>
+        <p>Click on the bracket's vertical line (or its label) to select it — a gold outline appears and an edit popup opens. From the popup you can:</p>
+        <ul>
+          <li>Change the <strong>color</strong> using the color picker</li>
+          <li>Set the <strong>thickness</strong> to thin, medium, or thick</li>
+          <li><strong>Delete</strong> the bracket with the trash button</li>
+        </ul>
+        <h3>Resizing the Span</h3>
+        <p>To change which rows a bracket spans, drag either <strong>serif</strong> (the horizontal bar at the top or bottom of the bracket line). Dragging snaps to the nearest row. The bracket resizes live as you drag.</p>
+        <h3>Repositioning the Label</h3>
+        <p>Drag the label text <strong>up or down</strong> to reposition it along the bracket's vertical span. The small tick mark moves with it. The label is clamped inside the bracket's top and bottom serifs.</p>
+        <h3>Nested Brackets</h3>
+        <p>You can create multiple brackets. The editor automatically assigns lanes: inner brackets (whose span is fully contained within another) are placed <strong>closer to the blocks</strong>, while outer brackets step further right. This gives a natural chiasm or concentric structure appearance without any manual adjustment.</p>
+        <h3>Undo / Redo</h3>
+        <p>All bracket operations — create, delete, resize, recolor, relabel, reposition — are fully undoable with <kbd>Ctrl+Z</kbd> and redoable with <kbd>Ctrl+Y</kbd>.</p>
+        <h3>Saving</h3>
+        <p>Bracket data is saved automatically with your project. It appears in JSON exports and in all PDF diagram exports.</p>
+      `
+    },
+    {
+      id: 'slides',
+      heading: 'Part 10: Slides & Presenter Mode',
+      content: `
+        <p>The Slides system lets you build a presentation deck from your exegetical work — selecting specific rows, toggling visibility of elements, adding text boxes, and presenting to a class via a projector window.</p>
+        <h3>Opening the Slides View</h3>
+        <p>Click <strong>Slides</strong> in the toolbar (or press <kbd>Alt+P</kbd>). The interface has three columns: a <strong>slide thumbnail list</strong> on the left, a <strong>16:9 slide canvas</strong> in the center, and a <strong>properties panel</strong> on the right.</p>
+        <h3>Adding Slides</h3>
+        <ul>
+          <li><strong>Add Blank Slide</strong> — creates an empty white slide with no passage content.</li>
+          <li><strong>Add Content Slide</strong> — creates a slide pre-loaded with all rows from the current session.</li>
+        </ul>
+        <p>Click any thumbnail to select it. Drag thumbnails to reorder them. Click the <strong>⋯</strong> button on a thumbnail to duplicate or delete it.</p>
+        <h3>Choosing Rows</h3>
+        <p>In the right panel under <strong>Verse</strong>, check the rows you want to appear on this slide. Only those rows will be shown — you can show a single verse, a sub-section, or the whole passage. Click <strong>All</strong> or <strong>None</strong> to select or clear all at once.</p>
+        <h3>View Mode</h3>
+        <p>Each slide can show its passage in either <strong>Phrasing</strong> mode (the table layout with indentation) or <strong>Diagram</strong> mode (the block-and-connector layout). Toggle between them using the Phrasing / Diagram buttons in the right panel.</p>
+        <h3>Visibility Toggles</h3>
+        <p>Under <strong>Elements</strong> in the right panel, check or uncheck what appears on this slide:</p>
+        <ul>
+          <li><strong>Indentation</strong> — show or hide the indent levels of blocks</li>
+          <li><strong>Translation lines</strong> — show or hide the translation row beneath each block</li>
+          <li><strong>Comments</strong> — show comment text as floating boxes on the slide</li>
+          <li><strong>Connectors</strong> — show or hide the SVG connector lines (Diagram mode)</li>
+          <li><strong>Brackets</strong> — show or hide bracket annotations (Diagram mode)</li>
+          <li><strong>Labels</strong> — show or hide floating diagram labels (Diagram mode)</li>
+        </ul>
+        <h3>Refreshing the Slide</h3>
+        <p>The slide canvas does not update live while you change settings — this prevents lag. Click <strong>Refresh</strong> in the toolbar to apply your current row selection, view mode, and visibility settings to the canvas. The slide also refreshes automatically when you click its thumbnail.</p>
+        <h3>Text Boxes</h3>
+        <p>Click <strong>Add Text Box</strong> in the toolbar to place a text box on the slide. Then:</p>
+        <ul>
+          <li><strong>Single-click</strong> a text box to select it (gold outline + resize handles appear)</li>
+          <li><strong>Drag</strong> a selected text box to move it</li>
+          <li><strong>Drag the corner or edge handles</strong> to resize it</li>
+          <li><strong>Double-click</strong> to enter text editing mode — type directly, press <kbd>Escape</kbd> to finish</li>
+          <li><strong>Right-click</strong> for options: Bring to Front, Send to Back, Delete</li>
+        </ul>
+        <h3>Floating Labels and Comment Boxes</h3>
+        <p>When you check <strong>Labels</strong> or <strong>Comments</strong> in the Elements panel and click Refresh, diagram floating labels and comment text appear as independent draggable boxes on the slide. Move them anywhere by dragging. Their positions are remembered per slide.</p>
+        <h3>Speaker Notes</h3>
+        <p>Type your personal speaking notes in the <strong>Speaker Notes</strong> area at the bottom of the right panel. Notes are only visible to you in the presenter dashboard — they never appear on the projector screen.</p>
+        <h3>Presenter Mode</h3>
+        <p>Click the <strong>Present</strong> button to launch a separate projector window. The main screen switches to the <strong>presenter dashboard</strong>:</p>
+        <ul>
+          <li><strong>Left</strong> — live preview of the current slide</li>
+          <li><strong>Right</strong> — your speaker notes (drag the divider to resize)</li>
+          <li><strong>Bottom bar</strong> — ◀ Previous | Slide N of M | Next ▶ | End Presentation</li>
+        </ul>
+        <p>Use the <kbd>←</kbd> / <kbd>→</kbd> arrow keys or the on-screen buttons to advance slides. The projector window updates instantly on each advance. Press <kbd>Escape</kbd> or click <strong>End Presentation</strong> to return to the slide editor.</p>
+        <p>Drag the projector window to your external display and press <kbd>F11</kbd> to fullscreen it before presenting.</p>
+        <h3>Export Slides as PDF</h3>
+        <p>Click <strong>Export Slides PDF</strong> in the toolbar. Each slide is rendered at full resolution and saved as one landscape page per slide. Speaker notes are not included in the PDF.</p>
+        <h3>Undo / Redo</h3>
+        <p>All slide operations — adding, deleting, reordering slides; moving and resizing text boxes; changing visibility — are fully undoable with <kbd>Ctrl+Z</kbd> and redoable with <kbd>Ctrl+Y</kbd>.</p>
+        <h3>Saving</h3>
+        <p>The slide deck is saved automatically as part of your project JSON. It is included in all project exports and loads back when you reopen the project.</p>
+      `
+    },
+    {
       id: 'updates',
-      heading: 'Part 9: Updates',
+      heading: 'Part 11: Updates',
       content: `
         <p>When an update is deployed while you have the app open, a banner slides up from the bottom: <em>"A new version is available."</em></p>
         <ul>
@@ -350,8 +444,102 @@ zh: {
       `
     },
     {
+      id: 'brackets',
+      heading: '第九部分：括号标注',
+      content: `
+        <p>括号功能让您直接在图解视图中标注结构关系——交叉配列、平行结构、首尾呼应、话语单元等。每个括号是一条带短横线（衬线）的竖线，跨越一行或多行，并可附加文字标注。</p>
+        <h3>切换至图解视图</h3>
+        <p>括号仅在<strong>图解视图</strong>中可用。点击工具栏中的<strong>图解</strong>按钮（或按<kbd>Alt+T</kbd>）进行切换。您的行内容将以缩进方块和连接线的形式呈现。</p>
+        <h3>创建括号</h3>
+        <ol>
+          <li>按住<kbd>Shift</kbd>键。每个行方块右侧将出现一个圆形标记点（pip）。</li>
+          <li>按住<kbd>Shift</kbd>的同时，点击要标注跨度的<strong>第一行</strong>标记点。状态栏显示<em>"括号已开始——请 Shift+点击另一行标记以完成。"</em></li>
+          <li>再点击跨度<strong>最后一行</strong>的标记点，括号立即绘制完成。</li>
+        </ol>
+        <p>随时可按<kbd>Escape</kbd>取消待创建的括号。</p>
+        <h3>编辑标注文字</h3>
+        <p>每个括号右侧有文字标注区。括号创建后标注区显示淡色占位文字，点击即可直接输入，与编辑器中其他文字操作相同。按<kbd>Enter</kbd>或点击其他位置确认。标注宽度自动调整。</p>
+        <h3>修改颜色、粗细及删除</h3>
+        <p>点击括号竖线（或其标注文字）进行选择——出现金色边框，并弹出编辑面板，可进行以下操作：</p>
+        <ul>
+          <li>通过拾色器更改<strong>颜色</strong></li>
+          <li>将<strong>粗细</strong>设为细、中或粗</li>
+          <li>点击删除图标<strong>删除</strong>括号</li>
+        </ul>
+        <h3>调整跨度</h3>
+        <p>拖动括号顶端或底端的<strong>衬线</strong>（横线），即可更改括号所跨的行范围。拖动时自动吸附至最近行，实时显示调整效果。</p>
+        <h3>重新定位标注</h3>
+        <p>将标注文字<strong>上下拖动</strong>，可沿括号竖线重新定位。小刻度线随之移动。标注被限制在括号顶端和底端衬线范围内。</p>
+        <h3>嵌套括号</h3>
+        <p>可创建多个括号。编辑器自动分配泳道：跨度完全被另一括号包含的内层括号将<strong>靠近方块</strong>放置，外层括号则依次向右排列，自然呈现交叉配列或同心结构，无需手动调整。</p>
+        <h3>撤销与重做</h3>
+        <p>所有括号操作——创建、删除、调整跨度、更改颜色、编辑标注、重新定位——均可通过<kbd>Ctrl+Z</kbd>撤销，<kbd>Ctrl+Y</kbd>重做。</p>
+        <h3>保存</h3>
+        <p>括号数据随项目自动保存，包含在JSON导出文件中，并出现在所有图解PDF导出中。</p>
+      `
+    },
+    {
+      id: 'slides',
+      heading: '第十部分：幻灯片与演示模式',
+      content: `
+        <p>幻灯片功能让您将经文分析工作制作为演示文稿——选取特定行、控制元素的显示与隐藏、添加文本框，并通过投影窗口向课堂投影展示。</p>
+        <h3>进入幻灯片视图</h3>
+        <p>点击工具栏中的<strong>幻灯片</strong>按钮（或按<kbd>Alt+P</kbd>）。界面分为三列：左侧<strong>幻灯片缩略图列表</strong>、中央<strong>16:9幻灯片画布</strong>，以及右侧<strong>属性面板</strong>。</p>
+        <h3>添加幻灯片</h3>
+        <ul>
+          <li><strong>添加空白幻灯片</strong>——创建不含经文内容的空白白色幻灯片。</li>
+          <li><strong>添加内容幻灯片</strong>——创建预载当前会话所有行的幻灯片。</li>
+        </ul>
+        <p>点击缩略图选中幻灯片；拖动缩略图可重新排序；点击缩略图上的<strong>⋯</strong>按钮可复制或删除。</p>
+        <h3>选择行</h3>
+        <p>在右侧面板的<strong>节</strong>区域勾选要显示在本张幻灯片上的行——可以是单节经文、段落片段或整段经文。点击<strong>全选</strong>或<strong>全不选</strong>批量操作。</p>
+        <h3>视图模式</h3>
+        <p>每张幻灯片可选择以<strong>分析视图</strong>（带缩进的表格布局）或<strong>图解视图</strong>（方块与连接线布局）显示经文。在右侧面板中切换。</p>
+        <h3>元素可见性</h3>
+        <p>在右侧面板<strong>元素</strong>区域勾选或取消需要显示的内容：</p>
+        <ul>
+          <li><strong>缩进</strong>——显示或隐藏方块的缩进层级</li>
+          <li><strong>译文行</strong>——显示或隐藏每个方块下方的译文行</li>
+          <li><strong>注释</strong>——将批注文字以浮动框形式显示在幻灯片上</li>
+          <li><strong>连接线</strong>——显示或隐藏SVG连接线（图解模式）</li>
+          <li><strong>括号</strong>——显示或隐藏括号标注（图解模式）</li>
+          <li><strong>标注</strong>——显示或隐藏浮动图解标签（图解模式）</li>
+        </ul>
+        <h3>刷新幻灯片</h3>
+        <p>更改设置后，幻灯片画布不会实时更新（以避免卡顿）。点击工具栏中的<strong>刷新</strong>将当前行选择、视图模式和可见性设置应用到画布。点击缩略图时幻灯片也会自动刷新。</p>
+        <h3>文本框</h3>
+        <p>点击工具栏中的<strong>添加文本框</strong>，在幻灯片上放置文本框。操作方式：</p>
+        <ul>
+          <li><strong>单击</strong>文本框进行选中（出现金色边框和调整手柄）</li>
+          <li><strong>拖动</strong>已选中的文本框以移动位置</li>
+          <li><strong>拖动角部或边缘手柄</strong>以调整大小</li>
+          <li><strong>双击</strong>进入文字编辑模式，直接输入内容，按<kbd>Escape</kbd>完成</li>
+          <li><strong>右键点击</strong>查看选项：置于顶层、置于底层、删除</li>
+        </ul>
+        <h3>浮动标签与批注框</h3>
+        <p>在元素面板勾选<strong>标注</strong>或<strong>注释</strong>后点击刷新，图解浮动标签和批注文字将作为独立可拖动框出现在幻灯片上。可自由拖动至任意位置，位置信息按幻灯片保存。</p>
+        <h3>讲员备注</h3>
+        <p>在右侧面板底部的<strong>讲员备注</strong>区域输入个人演讲备注。备注仅在演示者控制台中可见，不会显示在投影屏幕上。</p>
+        <h3>演示模式</h3>
+        <p>点击<strong>开始演示</strong>按钮，启动独立的投影窗口。主屏幕切换为<strong>演示者控制台</strong>：</p>
+        <ul>
+          <li><strong>左侧</strong>——当前幻灯片的实时预览</li>
+          <li><strong>右侧</strong>——您的讲员备注（拖动分隔线可调整宽度）</li>
+          <li><strong>底部栏</strong>——◀ 上一页 | 第N页/共M页 | 下一页 ▶ | 结束演示</li>
+        </ul>
+        <p>使用<kbd>←</kbd>/<kbd>→</kbd>方向键或屏幕按钮翻页。投影窗口即时更新。按<kbd>Escape</kbd>或点击<strong>结束演示</strong>返回幻灯片编辑器。</p>
+        <p>演示前请将投影窗口拖至外部显示器，并按<kbd>F11</kbd>全屏显示。</p>
+        <h3>导出幻灯片PDF</h3>
+        <p>点击工具栏中的<strong>导出幻灯片PDF</strong>。每张幻灯片以全分辨率渲染，每页对应一张横向幻灯片。讲员备注不包含在PDF中。</p>
+        <h3>撤销与重做</h3>
+        <p>所有幻灯片操作——添加、删除、重排幻灯片；移动和调整文本框；更改可见性——均可通过<kbd>Ctrl+Z</kbd>撤销，<kbd>Ctrl+Y</kbd>重做。</p>
+        <h3>保存</h3>
+        <p>幻灯片组随项目自动保存为JSON文件的一部分，包含在所有项目导出中，重新打开项目时自动恢复。</p>
+      `
+    },
+    {
       id: 'updates',
-      heading: '第九部分：更新',
+      heading: '第十一部分：更新',
       content: `
         <p>当应用在您使用期间发布更新时，屏幕底部将滑出一个提示横幅：<em>"新版本已就绪。"</em></p>
         <ul>
