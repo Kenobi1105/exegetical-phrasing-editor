@@ -6833,7 +6833,7 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
   window.addEventListener('message',_onProjReady);
   setTimeout(()=>{
     if(!_projReady){ _projReady=true; window.removeEventListener('message',_onProjReady); slPresUpdate(); }
-  }, 2000);
+  }, 3000);
 
   // Arrow key nav
   document.addEventListener('keydown',slPresKeydown);
@@ -6879,18 +6879,21 @@ function slPresUpdate(){
 
 function slSendToProjector(slide){
   if(!SL_PROJ_WIN||SL_PROJ_WIN.closed) return;
-  // Build a self-contained HTML string for the projector
-  // We clone the slide at 1920×1080
   const PW=1920,PH=1080;
   const tmp=document.createElement('div');
   tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${PW}px;height:${PH}px;`;
   document.body.appendChild(tmp);
   slRenderSlideInto(slide,tmp,PW,PH);
-  // Give one frame for requestAnimationFrame scale to run
+  // Double-rAF: first frame lets slRenderSlideInto's own rAF (scale + connectors) fire.
+  // Second frame captures the fully-rendered HTML after that rAF has completed.
   requestAnimationFrame(()=>{
-    const html=tmp.innerHTML;
-    document.body.removeChild(tmp);
-    SL_PROJ_WIN.postMessage({type:'sl-slide',html},'*');
+    requestAnimationFrame(()=>{
+      const html=tmp.innerHTML;
+      document.body.removeChild(tmp);
+      if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
+        SL_PROJ_WIN.postMessage({type:'sl-slide',html},'*');
+      }
+    });
   });
 }
 
