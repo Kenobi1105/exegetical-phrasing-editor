@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607111900"/>
+<meta name="app-version" content="202607112100"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -786,12 +786,103 @@
     </div>
   </div>
 </div>
+<!-- ══ SERVICE WORKER UPDATE BANNER ══ -->
+<div id="sw-banner" style="display:none">
+  <span id="sw-banner-msg" data-i18n="sw.banner">A new version is available.</span>
+  <span id="sw-banner-warning" data-i18n="sw.warning" style="display:none"></span>
+  <div id="sw-banner-btns">
+    <button id="sw-update-btn" onclick="swDoUpdate()" data-i18n="sw.update-btn">Update</button>
+    <button id="sw-dismiss-btn" onclick="swDismiss()" data-i18n="sw.dismiss">✕</button>
+  </div>
+</div>
+<!-- Collapsed pill shown after dismissing the banner -->
+<div id="sw-pill" onclick="swExpandBanner()" style="display:none" data-i18n="sw.pill">Update available</div>
+
 <div id="toast"></div>
 
 <script src="lang.js"></script>
 <script src="tut.js"></script>
 <script src="app.js"></script>
 <script src="bible.js"></script>
+<script>
+/* ── Service Worker registration + update detection ── */
+if('serviceWorker' in navigator){
+  navigator.serviceWorker.register('./sw.js').then(reg=>{
+    // A waiting SW means a new version installed while the page was open
+    if(reg.waiting){ swShowBanner(); }
+
+    // New SW finished installing → it's now waiting
+    reg.addEventListener('updatefound', ()=>{
+      const newWorker = reg.installing;
+      if(!newWorker) return;
+      newWorker.addEventListener('statechange', ()=>{
+        if(newWorker.state==='installed' && navigator.serviceWorker.controller){
+          // New SW is waiting, old SW still in control → show banner
+          swShowBanner();
+        }
+      });
+    });
+
+    // Detect fresh load where new SW already activated (no old controller)
+    if(!navigator.serviceWorker.controller){
+      // App loaded fresh with latest SW — show brief toast
+      setTimeout(()=>{ if(typeof toast==='function') toast(typeof t==='function'?t('sw.fresh-toast'):"You're on the latest version."); }, 1200);
+    }
+  }).catch(err=>console.warn('[SW] Registration failed:', err));
+
+  // When SW sends controllerchange (after skipWaiting), reload the page
+  navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    sessionStorage.setItem('sw-just-updated','1');
+    window.location.reload();
+  });
+}
+
+function swShowBanner(){
+  const banner = document.getElementById('sw-banner');
+  const pill   = document.getElementById('sw-pill');
+  if(pill) pill.style.display='none';
+  if(banner){
+    banner.style.display='flex';
+    banner.classList.add('sw-banner-in');
+    // Apply i18n if available
+    if(typeof applyLang==='function') applyLang();
+  }
+}
+
+function swDoUpdate(){
+  navigator.serviceWorker.getRegistration().then(reg=>{
+    if(reg && reg.waiting){
+      reg.waiting.postMessage({type:'SKIP_WAITING'});
+      // controllerchange listener above will reload the page
+      // Show updating state immediately
+      const btn=document.getElementById('sw-update-btn');
+      if(btn){ btn.textContent='Updating…'; btn.disabled=true; }
+    } else {
+      // No waiting worker — just reload to get fresh files
+      window.location.reload();
+    }
+  });
+}
+
+function swDismiss(){
+  const banner = document.getElementById('sw-banner');
+  const pill   = document.getElementById('sw-pill');
+  if(banner){
+    banner.classList.remove('sw-banner-in');
+    banner.classList.add('sw-banner-out');
+    setTimeout(()=>{ banner.style.display='none'; banner.classList.remove('sw-banner-out'); }, 300);
+  }
+  if(pill) pill.style.display='flex';
+}
+
+function swExpandBanner(){
+  const pill=document.getElementById('sw-pill');
+  if(pill) pill.style.display='none';
+  swShowBanner();
+  // Show the warning note since they dismissed once
+  const warn=document.getElementById('sw-banner-warning');
+  if(warn) warn.style.display='block';
+}
 </script>
 </body>
 </html>

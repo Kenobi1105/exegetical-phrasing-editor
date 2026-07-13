@@ -3760,3 +3760,103 @@ body.brk-active .dbrk-pip:hover {
   outline: 2px dashed var(--active, #C8A84B);
   outline-offset: 2px;
 }
+
+/* ════════════════════════════════════════
+   SERVICE WORKER UPDATE BANNER + PILL
+════════════════════════════════════════ */
+#sw-banner {
+  position: fixed;
+  bottom: 0; left: 0; right: 0;
+  z-index: 9999;
+  background: var(--sig, #493548);
+  color: var(--label, #F7F3E9);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  font-family: var(--ui, sans-serif);
+  font-size: 13px;
+  box-shadow: 0 -4px 20px rgba(0,0,0,.2);
+  transform: translateY(100%);
+  transition: transform .3s ease;
+}
+#sw-banner.sw-banner-in  { transform: translateY(0); }
+#sw-banner.sw-banner-out { transform: translateY(100%); }
+
+#sw-banner-msg { flex: 1; font-weight: 600; }
+
+#sw-banner-warning {
+  flex: 1;
+  font-size: 11px;
+  color: rgba(247,243,233,.6);
+  font-style: italic;
+}
+
+#sw-banner-btns {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+#sw-update-btn {
+  height: 30px;
+  padding: 0 16px;
+  border-radius: 99px;
+  border: none;
+  background: var(--active, #C8A84B);
+  color: #fff;
+  font-family: var(--ui, sans-serif);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background .12s;
+}
+#sw-update-btn:hover { background: #b8940d; }
+#sw-update-btn:disabled { opacity: .6; cursor: not-allowed; }
+
+#sw-dismiss-btn {
+  height: 30px;
+  width: 30px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(247,243,233,.3);
+  background: transparent;
+  color: rgba(247,243,233,.7);
+  font-size: 14px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all .12s;
+}
+#sw-dismiss-btn:hover {
+  background: rgba(247,243,233,.1);
+  color: var(--label, #F7F3E9);
+}
+
+/* Collapsed pill shown after dismissing */
+#sw-pill {
+  position: fixed;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9998;
+  background: var(--sig, #493548);
+  color: var(--label, #F7F3E9);
+  font-family: var(--ui, sans-serif);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 5px 14px;
+  border-radius: 99px;
+  cursor: pointer;
+  box-shadow: 0 2px 12px rgba(0,0,0,.2);
+  display: none;
+  align-items: center;
+  gap: 6px;
+  transition: background .12s;
+}
+#sw-pill::before {
+  content: '';
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: var(--active, #C8A84B);
+  flex-shrink: 0;
+}
+#sw-pill:hover { background: #5a4060; }

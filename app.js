@@ -7112,6 +7112,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     const v=document.querySelector('meta[name="app-version"]')?.content||'';
     if(v) vEl.textContent=v;
   }
+  // Show "Updated" toast if page just reloaded after a SW update
+  if(sessionStorage.getItem('sw-just-updated')){
+    sessionStorage.removeItem('sw-just-updated');
+    setTimeout(()=>toast(t('sw.updated-toast')), 800);
+  }
 });
 
 /* ── Modules hamburger menu ── */

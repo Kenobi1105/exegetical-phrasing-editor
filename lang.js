@@ -316,6 +316,15 @@ const LANGS = {
     'slides.add-textbox':   'Add Text Box',
     'slides.delete-el':     'Delete',
     'help.slides':          'Open Slides view (Alt+P)',
+
+    /* ── Service worker update banner ── */
+    'sw.banner':            'A new version is available.',
+    'sw.update-btn':        'Update',
+    'sw.dismiss':           '✕',
+    'sw.warning':           'You are on an older version. It is recommended to update.',
+    'sw.pill':              'Update available',
+    'sw.updated-toast':     'Updated to the latest version.',
+    'sw.fresh-toast':       "You're on the latest version.",
   },
 
   zh: {
@@ -628,6 +637,15 @@ const LANGS = {
     'slides.add-textbox':   '添加文本框',
     'slides.delete-el':     '删除',
     'help.slides':          '打开幻灯片视图（Alt+P）',
+
+    /* ── Service worker update banner ── */
+    'sw.banner':            '新版本已就绪。',
+    'sw.update-btn':        '更新',
+    'sw.dismiss':           '✕',
+    'sw.warning':           '您正在使用旧版本，建议立即更新。',
+    'sw.pill':              '有可用更新',
+    'sw.updated-toast':     '已更新到最新版本。',
+    'sw.fresh-toast':       '您正在使用最新版本。',
   }
 };
 
