@@ -6894,26 +6894,26 @@ function slPresUpdate(){
   const notes=document.getElementById('sl-pres-notes');
   if(notes) notes.textContent=slide.notes||'';
 
-  // Compute available space in the left column (subtract bar height + padding)
-  const left=document.getElementById('sl-pres-left');
-  const preview=document.getElementById('sl-pres-preview');
-  const BAR_H=72; // nav bar + gap
-  const PAD=16;
-  const colW=(left?.offsetWidth||700)-PAD*2;
-  const colH=(left?.offsetHeight||500)-BAR_H-PAD*2;
-  // Fit 16:9 into the available column space
-  let previewW=colW, previewH=Math.round(colW/SL_RATIO);
-  if(previewH>colH){ previewH=colH; previewW=Math.round(colH*SL_RATIO); }
-  // Set preview to explicit pixel dimensions
-  if(preview){
-    preview.style.width =previewW+'px';
-    preview.style.height=previewH+'px';
-  }
+  // Start the render immediately (uses live SL_CANVAS_W/H)
+  _slRenderToHTML(slide, (html)=>{
+    // By the time the double-rAF callback fires, the presenter layout is done
+    const left=document.getElementById('sl-pres-left');
+    const preview=document.getElementById('sl-pres-preview');
+    const BAR_H=72, PAD=16;
+    let colW=(left?.offsetWidth||700)-PAD*2;
+    let colH=(left?.offsetHeight||500)-BAR_H-PAD*2;
+    // Guard against zero (layout not ready) — use sensible minimum
+    if(colW<=0) colW=600; if(colH<=0) colH=337;
+    let previewW=colW, previewH=Math.round(colW/SL_RATIO);
+    if(previewH>colH){ previewH=colH; previewW=Math.round(colH*SL_RATIO); }
 
-  _slRenderToHTML(slide, html=>{
-    if(preview) _slInjectScaled(preview, html, previewW, previewH);
+    if(preview){
+      preview.style.width =previewW+'px';
+      preview.style.height=previewH+'px';
+      _slInjectScaled(preview, html, previewW, previewH, _slLastRenderW, _slLastRenderH);
+    }
     if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
-      SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:SL_RENDER_W,ph:SL_RENDER_H},'*');
+      SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:_slLastRenderW,ph:_slLastRenderH},'*');
     }
   });
 }
@@ -6924,38 +6924,44 @@ function slPresUpdate(){
    coordinates are identical everywhere. Display containers CSS-scale the
    result up or down to fit their available space. */
 
-/* ── Render slide into an off-screen div, return {html} via callback ── */
+/* ── Render slide to HTML string, using the live canvas dimensions ──────────
+   Renders at SL_CANVAS_W × SL_CANVAS_H (same as the slides editor) so the
+   baked scale transform inside the HTML matches what the editor shows.
+   The presenter and projector then CSS-scale this HTML up/down to fit. */
 function _slRenderToHTML(slide, cb){
+  // Use the live canvas size (matches slides editor), fallback to 960×540
+  const W=SL_CANVAS_W||960, H=SL_CANVAS_H||540;
   const tmp=document.createElement('div');
-  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${SL_RENDER_W}px;height:${SL_RENDER_H}px;overflow:visible;background:#fff;`;
+  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${W}px;height:${H}px;overflow:visible;background:#fff;`;
   document.body.appendChild(tmp);
-  slRenderSlideInto(slide, tmp, SL_RENDER_W, SL_RENDER_H);
-  // Double-rAF: lets slRenderSlideInto's own rAF (scale+connectors) complete first
+  slRenderSlideInto(slide, tmp, W, H);
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       const html=tmp.innerHTML;
+      // Store the render dimensions so recipients can scale correctly
+      _slLastRenderW=W; _slLastRenderH=H;
       document.body.removeChild(tmp);
       cb(html);
     });
   });
 }
+let _slLastRenderW=960, _slLastRenderH=540;
 
 /* ── Inject rendered HTML into a display container with CSS scale-to-fit ── */
-function _slInjectScaled(container, html, containerW, containerH){
+function _slInjectScaled(container, html, containerW, containerH, renderW, renderH){
+  const rW=renderW||_slLastRenderW||960;
+  const rH=renderH||_slLastRenderH||540;
   container.innerHTML='';
   container.style.position='relative';
   container.style.overflow='hidden';
   const wrap=document.createElement('div');
-  wrap.style.cssText=`position:absolute;top:0;left:0;width:${SL_RENDER_W}px;height:${SL_RENDER_H}px;transform-origin:top left;background:#fff;overflow:visible;`;
+  wrap.style.cssText=`position:absolute;top:0;left:0;width:${rW}px;height:${rH}px;transform-origin:top left;background:#fff;overflow:visible;`;
   wrap.innerHTML=html;
   container.appendChild(wrap);
-  const scaleX=containerW/SL_RENDER_W;
-  const scaleY=containerH/SL_RENDER_H;
-  const scale=Math.min(scaleX,scaleY);
+  const scale=Math.min(containerW/rW, containerH/rH);
   wrap.style.transform=`scale(${scale})`;
-  // Centre within container
-  wrap.style.left=Math.round((containerW-SL_RENDER_W*scale)/2)+'px';
-  wrap.style.top =Math.round((containerH-SL_RENDER_H*scale)/2)+'px';
+  wrap.style.left=Math.round((containerW-rW*scale)/2)+'px';
+  wrap.style.top =Math.round((containerH-rH*scale)/2)+'px';
 }
 
 /* ── Presenter divider resize ── */
