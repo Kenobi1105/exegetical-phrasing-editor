@@ -3868,3 +3868,24 @@ body.brk-active .dbrk-pip:hover {
   max-height: calc(100% - 48px) !important; /* leave room for nav bar */
   aspect-ratio: 16/9 !important;
 }
+
+/* ════════════════════════════════════════
+   PRESENTER LAYOUT — fix preview sizing
+════════════════════════════════════════ */
+/* Left column: no padding — bar is absolutely positioned at bottom */
+#sl-pres-left {
+  padding: 16px 16px 72px !important; /* 72px = bar height + gap */
+}
+/* Preview: fill the column, maintain 16:9, never overflow */
+#sl-pres-preview {
+  width: auto !important;
+  height: auto !important;
+  max-width: 100% !important;
+  max-height: 100% !important;
+  aspect-ratio: 16/9 !important;
+  flex-shrink: 0 !important;
+}
+/* Right column: match bar height bottom padding */
+#sl-pres-right {
+  padding-bottom: 72px !important;
+}

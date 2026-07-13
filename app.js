@@ -6162,7 +6162,7 @@ function slRenderSlideInto(slide, container, w, h){
     passageEl.className='sl-el sl-el-passage';
     passageEl.dataset.elType='passage';
     const ca=slide.contentArea;
-    passageEl.style.cssText=`left:${ca.x/100*w}px;top:${ca.y/100*h}px;width:${ca.w/100*w}px;height:${ca.h/100*h}px;overflow:hidden;background:transparent;position:absolute;`;
+    passageEl.style.cssText=`left:${ca.x/100*w}px;top:${ca.y/100*h}px;width:${ca.w/100*w}px;height:${ca.h/100*h}px;overflow:visible;background:transparent;position:absolute;`;
 
     if(slide.rowIds.length>0){
       // Build content inner frame
@@ -6805,18 +6805,34 @@ function slStartPresent(){
 :root{${cssVars}}
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
-#sl-proj{width:100vw;height:100vh;position:relative;overflow:hidden;background:#fff;}
+#sl-proj-wrap{
+  position:absolute;top:0;left:0;
+  transform-origin:top left;
+  /* transform set by JS based on pw/ph vs viewport */
+}
+#sl-proj{position:relative;overflow:visible;background:#fff;}
 </style>
-</head><body><div id="sl-proj"></div>
+</head><body>
+<div id="sl-proj-wrap"><div id="sl-proj"></div></div>
 <script>
-  // Signal the opener as soon as this listener is live
-  if(window.opener) window.opener.postMessage({type:'sl-ready'},'*');
   window.addEventListener('message',function(ev){
     if(!ev.data) return;
     if(ev.data.type==='sl-slide'){
       document.getElementById('sl-proj').innerHTML=ev.data.html;
+      // Scale the rendered content (pw×ph) up to fill the viewport
+      var pw=ev.data.pw||960, ph=ev.data.ph||540;
+      var scaleX=window.innerWidth/pw, scaleY=window.innerHeight/ph;
+      var scale=Math.min(scaleX,scaleY);
+      var wrap=document.getElementById('sl-proj-wrap');
+      wrap.style.width=pw+'px';
+      wrap.style.height=ph+'px';
+      wrap.style.transform='scale('+scale+')';
+      // Center if scale isn't perfectly filling both axes
+      wrap.style.left=Math.round((window.innerWidth-pw*scale)/2)+'px';
+      wrap.style.top=Math.round((window.innerHeight-ph*scale)/2)+'px';
     }
   });
+  if(window.opener) window.opener.postMessage({type:'sl-ready'},'*');
 <\/script></body></html>`);
   SL_PROJ_WIN.document.close();
 
@@ -6876,33 +6892,30 @@ function slPresUpdate(){
   const notes=document.getElementById('sl-pres-notes');
   if(notes) notes.textContent=slide.notes||'';
   const preview=document.getElementById('sl-pres-preview'); if(!preview) return;
-  // Size the preview to fill the container while maintaining 16:9.
-  // Use clientWidth/clientHeight to get true available space (not getBoundingClientRect
-  // which can be 0 if the element just became visible).
-  const pw=preview.clientWidth||preview.offsetWidth||640;
-  const ph=preview.clientHeight||preview.offsetHeight||(pw/SL_RATIO);
-  // Fit within both dimensions
-  const fitW=Math.min(pw, ph*SL_RATIO);
-  const fitH=fitW/SL_RATIO;
-  slRenderSlideInto(slide,preview,Math.round(fitW),Math.round(fitH));
+  const pw=preview.offsetWidth||640;
+  const ph=preview.offsetHeight||(pw/SL_RATIO);
+  slRenderSlideInto(slide,preview,pw,ph);
   slSendToProjector(slide);
 }
 
 function slSendToProjector(slide){
   if(!SL_PROJ_WIN||SL_PROJ_WIN.closed) return;
-  const PW=1920,PH=1080;
+  // Render at 960×540 (half of 1920×1080) — keeps pixel coordinates small so
+  // they don't overflow the projector window's viewport before CSS scaling.
+  // The projector window scales up to fill 100vw×100vh via CSS transform.
+  const PW=960,PH=540;
   const tmp=document.createElement('div');
-  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${PW}px;height:${PH}px;`;
+  tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${PW}px;height:${PH}px;overflow:visible;`;
   document.body.appendChild(tmp);
   slRenderSlideInto(slide,tmp,PW,PH);
-  // Double-rAF: first frame lets slRenderSlideInto's own rAF (scale + connectors) fire.
-  // Second frame captures the fully-rendered HTML after that rAF has completed.
+  // Double-rAF: first lets slRenderSlideInto's rAF (scale+connectors) fire,
+  // second captures the fully-rendered HTML.
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       const html=tmp.innerHTML;
       document.body.removeChild(tmp);
       if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
-        SL_PROJ_WIN.postMessage({type:'sl-slide',html},'*');
+        SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:PW,ph:PH},'*');
       }
     });
   });
