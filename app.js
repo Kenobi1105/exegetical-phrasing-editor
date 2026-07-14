@@ -6799,9 +6799,18 @@ function slStartPresent(){
   const cssVars=['--sig','--ink','--bg','--ui','--serif','--accent','--active','--muted','--label','--alt','--rs','--r']
     .map(v=>`${v}:${rootStyles.getPropertyValue(v).trim()}`).join(';');
   const cssHref=new URL('app.css', window.location.href).href;
+  // Mirror the Google Fonts link from the main document so Gentium Plus is
+  // available in the projector window. Without this, text falls back to Times
+  // New Roman, which has different glyph metrics — making emoji and Unicode
+  // symbols (👤 ‹+› ↔) look disproportionately large relative to the text.
+  const gFontsHref=Array.from(document.querySelectorAll('link[rel="stylesheet"]'))
+    .find(l=>l.href.includes('fonts.googleapis.com'))?.href||'';
 
   SL_PROJ_WIN.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>Projector</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+${gFontsHref?`<link rel="stylesheet" href="${gFontsHref}"/>`:''}
 <link rel="stylesheet" href="${cssHref}">
 <style>
 :root{${cssVars}}
@@ -6834,7 +6843,15 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
       wrap.style.top=Math.round((window.innerHeight-ph*scale)/2)+'px';
     }
   });
-  if(window.opener) window.opener.postMessage({type:'sl-ready'},'*');
+  // Wait for fonts to finish loading before signalling ready, so the main
+  // window doesn't inject slide HTML before Gentium Plus is available.
+  // This prevents a mismatch between the inner passage scale (computed in
+  // the main window with Gentium Plus metrics) and the projector layout.
+  // document.fonts.ready always resolves, even offline — the 3-second
+  // fallback in the main window guards against it taking too long.
+  document.fonts.ready.then(function(){
+    if(window.opener) window.opener.postMessage({type:'sl-ready'},'*');
+  });
 <\/script></body></html>`);
   SL_PROJ_WIN.document.close();
 
