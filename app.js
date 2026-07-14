@@ -6946,18 +6946,16 @@ function slPresUpdate(){
    result up or down to fit their available space. */
 
 /* ── Render slide to HTML string at canonical 960×540 ───────────────────────
-   Uses a COPY of the slide with contentArea forced to 100%×100% so the passage
-   content fills the entire canvas. inner scale = min(960/900,540/?,1) ≈ 1.0,
-   so NO scale transform is baked into the HTML — the display container handles
-   all scaling via a single CSS transform. */
+   Renders at fixed 960×540 so block layout, connector paths, and SVG
+   coordinates are identical in every surface (presenter preview, projector).
+   The slide's real contentArea is preserved so the projector honours the
+   position and size the user set in the Slides editor. */
 function _slRenderToHTML(slide, cb){
   const W=960, H=540;
-  // Clone slide with full-canvas content area so no inner scale is baked in
-  const slideForRender={...slide, contentArea:{x:0,y:0,w:100,h:100}};
   const tmp=document.createElement('div');
   tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${W}px;height:${H}px;overflow:visible;background:#fff;`;
   document.body.appendChild(tmp);
-  slRenderSlideInto(slideForRender, tmp, W, H);
+  slRenderSlideInto(slide, tmp, W, H);
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       const html=tmp.innerHTML;

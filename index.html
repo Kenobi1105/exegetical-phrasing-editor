@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607114500"/>
+<meta name="app-version" content="202607141200"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -789,13 +789,22 @@
 <!-- ══ SERVICE WORKER UPDATE BANNER ══ -->
 <div id="sw-banner" style="display:none">
   <span id="sw-banner-msg" data-i18n="sw.banner">A new version is available.</span>
-  <span id="sw-banner-warning" data-i18n="sw.warning" style="display:none"></span>
   <div id="sw-banner-btns">
     <button id="sw-update-btn" onclick="swDoUpdate()" data-i18n="sw.update-btn">Update</button>
     <button id="sw-dismiss-btn" onclick="swDismiss()" data-i18n="sw.dismiss">✕</button>
   </div>
 </div>
-<!-- Collapsed pill shown after dismissing the banner -->
+<!-- Warning modal shown when banner is dismissed -->
+<div id="sw-warn-modal" style="display:none" role="dialog" aria-modal="true">
+  <div id="sw-warn-box">
+    <p id="sw-warn-text" data-i18n="sw.warning">You are on an older version. It is recommended to update.</p>
+    <div id="sw-warn-btns">
+      <button id="sw-warn-update-btn" onclick="swDoUpdate()" data-i18n="sw.update-btn">Update</button>
+      <button id="sw-warn-close-btn" onclick="swWarnClose()" data-i18n="sw.warn-close">Not now</button>
+    </div>
+  </div>
+</div>
+<!-- Collapsed pill shown after dismissing the banner — persists across all screens -->
 <div id="sw-pill" onclick="swExpandBanner()" style="display:none" data-i18n="sw.pill">Update available</div>
 
 <div id="toast"></div>
@@ -854,9 +863,11 @@ function swDoUpdate(){
     if(reg && reg.waiting){
       reg.waiting.postMessage({type:'SKIP_WAITING'});
       // controllerchange listener above will reload the page
-      // Show updating state immediately
-      const btn=document.getElementById('sw-update-btn');
-      if(btn){ btn.textContent='Updating…'; btn.disabled=true; }
+      // Show updating state immediately on all update buttons
+      ['sw-update-btn','sw-warn-update-btn'].forEach(id=>{
+        const btn=document.getElementById(id);
+        if(btn){ btn.textContent=typeof t==='function'?t('sw.updating'):'Updating…'; btn.disabled=true; }
+      });
     } else {
       // No waiting worker — just reload to get fresh files
       window.location.reload();
@@ -865,23 +876,33 @@ function swDoUpdate(){
 }
 
 function swDismiss(){
+  // Slide the banner out
   const banner = document.getElementById('sw-banner');
-  const pill   = document.getElementById('sw-pill');
   if(banner){
     banner.classList.remove('sw-banner-in');
     banner.classList.add('sw-banner-out');
     setTimeout(()=>{ banner.style.display='none'; banner.classList.remove('sw-banner-out'); }, 300);
   }
+  // Show warning modal briefly, then collapse to pill
+  const modal = document.getElementById('sw-warn-modal');
+  if(modal) modal.style.display='flex';
+}
+
+function swWarnClose(){
+  // Close the warning modal and leave the persistent pill visible
+  const modal = document.getElementById('sw-warn-modal');
+  if(modal) modal.style.display='none';
+  const pill = document.getElementById('sw-pill');
   if(pill) pill.style.display='flex';
 }
 
 function swExpandBanner(){
-  const pill=document.getElementById('sw-pill');
-  if(pill) pill.style.display='none';
+  // Pill clicked — hide pill, hide modal if open, show banner again
+  const pill  = document.getElementById('sw-pill');
+  const modal = document.getElementById('sw-warn-modal');
+  if(pill)  pill.style.display='none';
+  if(modal) modal.style.display='none';
   swShowBanner();
-  // Show the warning note since they dismissed once
-  const warn=document.getElementById('sw-banner-warning');
-  if(warn) warn.style.display='block';
 }
 </script>
 </body>
