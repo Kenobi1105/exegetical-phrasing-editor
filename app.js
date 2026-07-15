@@ -6325,9 +6325,28 @@ function slRenderSlideInto(slide, container, w, h){
           if(v.brackets)   slDrawBracketsIntoClone(_slDiagWrap, slide.rowIds);
         }
 
-        // Scale inner to fit passage area
-        const naturalW=inner.scrollWidth||inner.offsetWidth||400;
-        const naturalH=inner.scrollHeight||inner.offsetHeight||200;
+        // Scale inner to fit passage area.
+        // scrollWidth/scrollHeight only measure non-absolutely-positioned content,
+        // so bracket SVG labels (position:absolute inside the SVG) are excluded.
+        // After drawing brackets, measure the SVG's actual bounding box and use
+        // its right/bottom extent as a floor for naturalW/naturalH so the scale
+        // shrinks enough to fit bracket labels without clipping.
+        let naturalW=inner.scrollWidth||inner.offsetWidth||400;
+        let naturalH=inner.scrollHeight||inner.offsetHeight||200;
+        if(slide.view==='diagram' && _slDiagWrap){
+          const dsvg=_slDiagWrap.querySelector('#dbrk-svg');
+          if(dsvg){
+            try{
+              const bb=dsvg.getBBox();
+              // bb.x is offset from SVG origin; bb.x+bb.width is the rightmost pixel
+              // of any bracket line or label foreignObject within the SVG
+              if(bb && bb.width>0){
+                naturalW=Math.max(naturalW, bb.x+bb.width);
+                naturalH=Math.max(naturalH, bb.y+bb.height);
+              }
+            }catch(e){/* getBBox() can throw if SVG not yet in layout; ignore */}
+          }
+        }
         const areaW=parseFloat(passageEl.style.width);
         const areaH=parseFloat(passageEl.style.height);
         const scale=Math.min(areaW/Math.max(naturalW,1), areaH/Math.max(naturalH,1), 1);
