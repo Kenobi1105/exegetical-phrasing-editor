@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607141200"/>
+<meta name="app-version" content="202607151000"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -646,23 +646,44 @@
 
 <!-- ══ EXPORT POPUP ══ -->
 <div id="export-popup">
-  <button id="export-pdf-btn" onclick="doExportPDF();closeExportPopup()" data-i18n="export.pdf">Export as PDF</button>
-  <button id="export-diag-pdf-btn" onclick="openDiagPdfModal();closeExportPopup()" data-i18n="export.diag-pdf" style="display:none">Export Diagram as PDF</button>
-  <button onclick="doExportJSON();closeExportPopup()" data-i18n="export.json">Export as JSON</button>
+  <button id="export-pdf-btn"        onclick="doExportPDF();closeExportPopup()"           data-i18n="export.pdf"        style="display:none">Export as PDF</button>
+  <button id="export-diag-pdf-btn"   onclick="openDiagPdfModal();closeExportPopup()"      data-i18n="export.diag-pdf"   style="display:none">Export Diagram as PDF</button>
+  <button id="export-slides-pdf-btn" onclick="slExportPDF();closeExportPopup()"           data-i18n="slides.export-pdf" style="display:none">Export Slides PDF</button>
+  <button                            onclick="doExportJSON();closeExportPopup()"           data-i18n="export.json">Export as JSON</button>
 </div>
 
 <!-- ══ DIAGRAM PDF PAGE-SIZE PICKER MODAL ══ -->
 <div id="diag-pdf-modal" class="screen hidden">
   <div class="mcard diag-pdf-mcard">
-    <h3 class="diag-pdf-title" data-i18n="export.pdf.pagesize">Choose page size</h3>
-    <div class="diag-pdf-grid">
-      <button class="diag-pdf-btn" onclick="exportDiagramPDF('a4','portrait')" data-i18n="export.pdf.a4p">A4 Portrait</button>
-      <button class="diag-pdf-btn" onclick="exportDiagramPDF('a4','landscape')" data-i18n="export.pdf.a4l">A4 Landscape</button>
-      <button class="diag-pdf-btn" onclick="exportDiagramPDF('letter','portrait')" data-i18n="export.pdf.ltp">Letter Portrait</button>
-      <button class="diag-pdf-btn" onclick="exportDiagramPDF('letter','landscape')" data-i18n="export.pdf.ltl">Letter Landscape</button>
+    <!-- Header -->
+    <div class="diag-pdf-header">
+      <h3 class="diag-pdf-title" data-i18n="export.pdf.title">Export Diagram as PDF</h3>
+      <button class="diag-pdf-close" onclick="closeDiagPdfModal()" aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
     </div>
+    <!-- Fields -->
+    <div class="diag-pdf-fields">
+      <div class="diag-pdf-field">
+        <label class="diag-pdf-label" for="diag-pdf-size" data-i18n="export.pdf.size-label">Page Size</label>
+        <select id="diag-pdf-size" class="diag-pdf-select">
+          <option value="a3"     data-i18n="export.pdf.a3">A3</option>
+          <option value="a4" selected data-i18n="export.pdf.a4">A4</option>
+          <option value="letter" data-i18n="export.pdf.letter">Letter</option>
+        </select>
+      </div>
+      <div class="diag-pdf-field">
+        <label class="diag-pdf-label" for="diag-pdf-orient" data-i18n="export.pdf.orient-label">Orientation</label>
+        <select id="diag-pdf-orient" class="diag-pdf-select">
+          <option value="landscape" selected data-i18n="export.pdf.landscape">Landscape</option>
+          <option value="portrait"  data-i18n="export.pdf.portrait">Portrait</option>
+        </select>
+      </div>
+    </div>
+    <!-- Footer -->
     <div class="diag-pdf-footer">
       <button class="diag-pdf-cancel" onclick="closeDiagPdfModal()" data-i18n="export.pdf.cancel">Cancel</button>
+      <button class="diag-pdf-export-btn" onclick="exportDiagramPDFFromModal()" data-i18n="export.pdf.export-btn">Export PDF</button>
     </div>
   </div>
 </div>

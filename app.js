@@ -417,10 +417,13 @@ function setEditorView(view){
   document.getElementById('dlabel-sep')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-label')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-cmt')?.style.setProperty('display',isDiagram?'':'none');
-  const diagPdfBtn=document.getElementById('export-diag-pdf-btn');
-  if(diagPdfBtn) diagPdfBtn.style.display=isDiagram?'':'none';
-  const phrasePdfBtn=document.getElementById('export-pdf-btn');
-  if(phrasePdfBtn) phrasePdfBtn.style.display=isDiagram?'none':'';
+  // Show exactly one PDF export option in the popup depending on active view
+  const phrasePdfBtn =document.getElementById('export-pdf-btn');
+  const diagPdfBtn   =document.getElementById('export-diag-pdf-btn');
+  const slidesPdfBtn =document.getElementById('export-slides-pdf-btn');
+  if(phrasePdfBtn)  phrasePdfBtn.style.display  =(!isDiagram&&!isSlides)?'':'none';
+  if(diagPdfBtn)    diagPdfBtn.style.display     =isDiagram              ?'':'none';
+  if(slidesPdfBtn)  slidesPdfBtn.style.display   =isSlides               ?'':'none';
   if(!isDiagram){
     SELECTED_DIAG_RID=null;
     document.querySelectorAll('#dcanvas .dblock.selected').forEach(b=>b.classList.remove('selected'));
@@ -4164,6 +4167,13 @@ function closeDiagPdfModal(){
   document.getElementById('diag-pdf-modal').classList.add('hidden');
 }
 
+/* Reads the Size and Orientation dropdowns from the modal and calls exportDiagramPDF */
+function exportDiagramPDFFromModal(){
+  const format     =(document.getElementById('diag-pdf-size')?.value    ||'a4');
+  const orientation=(document.getElementById('diag-pdf-orient')?.value  ||'landscape');
+  exportDiagramPDF(format, orientation);
+}
+
 async function exportDiagramPDF(format, orientation){
   closeDiagPdfModal();
   const canvas=document.getElementById('dcanvas');
@@ -4188,8 +4198,9 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   if(!jsPDF) return null;
 
   const PAGE_SIZES={
-    a4:     {portrait:[595.28,841.89], landscape:[841.89,595.28]},
-    letter: {portrait:[612,792],       landscape:[792,612]}
+    a3:     {portrait:[841.89,1190.55], landscape:[1190.55,841.89]},
+    a4:     {portrait:[595.28,841.89],  landscape:[841.89,595.28]},
+    letter: {portrait:[612,792],        landscape:[792,612]}
   };
   const [pW,pH]=PAGE_SIZES[format]?.[orientation]||PAGE_SIZES.a4.landscape;
   const MAR=28, usableW=pW-MAR*2;
@@ -7007,34 +7018,77 @@ async function slExportPDF(){
   if(!SL_DECK.slides.length){ toast('No slides to export.'); return; }
   const {jsPDF}=window.jspdf;
   if(!jsPDF){ toast('PDF library not loaded.'); return; }
-  showProgress(0,'Exporting slides…');
-  const PW=1920,PH=1080;
+
+  /* Canonical slide render size — same as _slRenderToHTML uses for the
+     projector and presenter, so the PDF is pixel-identical to what you see
+     on screen. We capture at 2× device pixel ratio for crisp output. */
+  const RW=960, RH=540;
+  const SCALE=2; // html2canvas device pixel ratio → 1920×1080 pixel canvas
+
+  /* PDF page: A4 landscape (matches 16:9 aspect closely) */
   const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
-  const [pW,pH]=[841.89,595.28];
-  const MAR=0; // full bleed for slides
+  const pW=841.89, pH=595.28; // A4 landscape in pt
+
+  /* Off-screen host div — sized at the render dimensions so html2canvas
+     measures the content at exactly the right scale */
+  const host=document.createElement('div');
+  host.style.cssText=`position:fixed;left:-99999px;top:0;width:${RW}px;height:${RH}px;overflow:hidden;background:#fff;pointer-events:none;`;
+  document.body.appendChild(host);
+
+  showProgress(0,typeof t==='function'?t('export.pdf.generating'):'Generating PDF…');
+
   for(let i=0;i<SL_DECK.slides.length;i++){
-    showProgress(Math.round(i/SL_DECK.slides.length*90),'Slide '+(i+1)+' of '+SL_DECK.slides.length+'…');
+    showProgress(
+      Math.round((i/SL_DECK.slides.length)*90),
+      (typeof t==='function'?t('slides.slide'):'Slide')+' '+(i+1)+' of '+SL_DECK.slides.length+'…'
+    );
     const slide=SL_DECK.slides[i];
-    const tmp=document.createElement('div');
-    tmp.style.cssText=`position:fixed;left:-99999px;top:0;width:${PW}px;height:${PH}px;background:#fff;overflow:hidden;`;
-    document.body.appendChild(tmp);
-    slRenderSlideInto(slide,tmp,PW,PH);
-    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+    /* Use the same render-to-HTML pipeline as the projector/presenter.
+       This guarantees the PDF matches what the slide canvas shows exactly:
+       correct contentArea position, inner passage scale, connectors, brackets. */
+    const html=await new Promise(resolve=>{
+      _slRenderToHTML(slide,(h)=>resolve(h));
+    });
+
+    /* Inject the HTML string into the host div via _slInjectScaled so the
+       960×540 content is placed at 1:1 — no CSS scaling — for the capture. */
+    host.innerHTML='';
+    const wrap=document.createElement('div');
+    wrap.style.cssText=`position:absolute;top:0;left:0;width:${RW}px;height:${RH}px;background:#fff;overflow:hidden;`;
+    wrap.innerHTML=html;
+    host.appendChild(wrap);
+
+    /* Wait one rAF after DOM injection so the browser has laid out the content */
+    await new Promise(r=>requestAnimationFrame(r));
+
     let cap=null;
     try{
-      cap=await html2canvas(tmp,{scale:1,backgroundColor:'#ffffff',logging:false,width:PW,height:PH,windowWidth:PW,windowHeight:PH});
-    }catch(e){console.warn('Slide capture error',e);}
-    document.body.removeChild(tmp);
+      cap=await html2canvas(host,{
+        scale:          SCALE,
+        useCORS:        true,
+        allowTaint:     false,
+        backgroundColor:'#ffffff',
+        logging:        false,
+        width:          RW,
+        height:         RH,
+        windowWidth:    RW,
+        windowHeight:   RH,
+      });
+    }catch(e){ console.warn('[slExportPDF] Capture error slide '+(i+1),e); }
+
     if(cap){
       if(i>0) doc.addPage();
-      doc.addImage(cap.toDataURL('image/jpeg',0.92),'JPEG',0,0,pW,pH);
+      doc.addImage(cap.toDataURL('image/jpeg',0.93),'JPEG',0,0,pW,pH);
     }
   }
-  showProgress(96,'Saving…');
+
+  document.body.removeChild(host);
+  showProgress(96,typeof t==='function'?t('export.saving'):'Saving…');
   const ref=(document.getElementById('refin')?.value||'Slides').trim();
   doc.save(ref+' Slides.pdf');
   hideProgress();
-  toast('Slides exported.');
+  toast(typeof t==='function'?t('export.slides.done'):'Slides exported.');
 }
 
 /* ── Hook slide ops into undo/redo ── */

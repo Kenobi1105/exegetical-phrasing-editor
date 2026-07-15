@@ -3080,14 +3080,61 @@ sup.bfn:hover { opacity: .7; }
 }
 .dlabel-grip:hover{background:rgba(73,53,72,.12);}
 
-.diag-pdf-btn:hover{background:rgba(73,53,72,.07);border-color:var(--sig)}
-.diag-pdf-footer{display:flex;justify-content:flex-end}
-.diag-pdf-cancel{
-  height:36px;padding:0 20px;border-radius:99px;
-  border:1.5px solid rgba(73,53,72,.2);background:transparent;
-  font-family:var(--ui);font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;
+/* ════════════════════════════════════════
+   DIAGRAM PDF EXPORT MODAL — dropdown style
+════════════════════════════════════════ */
+.diag-pdf-mcard{
+  width:320px;padding:28px 28px 22px;
+  display:flex;flex-direction:column;gap:20px;
 }
-.diag-pdf-cancel:hover{color:var(--sig)}
+.diag-pdf-header{
+  display:flex;align-items:center;justify-content:space-between;
+}
+.diag-pdf-title{
+  font-family:var(--ui);font-size:15px;font-weight:700;
+  color:var(--ink);letter-spacing:-.2px;
+}
+.diag-pdf-close{
+  width:28px;height:28px;border-radius:50%;border:none;
+  background:transparent;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--muted);transition:background .12s,color .12s;flex-shrink:0;
+}
+.diag-pdf-close:hover{background:var(--alt);color:var(--ink);}
+.diag-pdf-fields{display:flex;flex-direction:column;gap:12px;}
+.diag-pdf-field{display:flex;flex-direction:column;gap:5px;}
+.diag-pdf-label{
+  font-family:var(--ui);font-size:10px;font-weight:700;
+  letter-spacing:.07em;text-transform:uppercase;color:var(--muted);
+}
+.diag-pdf-select{
+  height:36px;padding:0 10px;
+  border-radius:var(--rs);border:1.5px solid rgba(73,53,72,.18);
+  background:var(--surface);font-family:var(--ui);font-size:13px;
+  color:var(--ink);cursor:pointer;appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23A89F90' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;background-position:right 10px center;
+  padding-right:28px;transition:border-color .12s;
+}
+.diag-pdf-select:focus{outline:none;border-color:var(--sig);}
+.diag-pdf-footer{
+  display:flex;align-items:center;justify-content:flex-end;gap:8px;
+  padding-top:4px;
+}
+.diag-pdf-cancel{
+  height:34px;padding:0 16px;border-radius:99px;
+  border:1.5px solid rgba(73,53,72,.2);background:transparent;
+  font-family:var(--ui);font-size:12px;font-weight:600;
+  color:var(--muted);cursor:pointer;transition:all .12s;
+}
+.diag-pdf-cancel:hover{border-color:var(--sig);color:var(--sig);}
+.diag-pdf-export-btn{
+  height:34px;padding:0 18px;border-radius:99px;border:none;
+  background:var(--sig);color:#fff;
+  font-family:var(--ui);font-size:12px;font-weight:700;
+  cursor:pointer;transition:background .12s;
+}
+.diag-pdf-export-btn:hover{background:#3a2839;}
 
 
 /* ════════════════════════════════════════
