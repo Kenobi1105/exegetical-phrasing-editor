@@ -2,6 +2,7 @@
    STATE
 ════════════════════════════════════════ */
 let SESS='', LANG='', IS_RTL=false, IS_SINGLE=false;
+let sessionVersionLabel='';
 let hlColor='#F0D08F';
 let activeEl=null, savedRange=null;
 let RC=0, CC=0;
@@ -4394,11 +4395,11 @@ document.addEventListener('click',()=>closeExportPopup());
 function buildFilename(r){
   let s=r.replace(/[–—]/g,'-').replace(/\s+/g,' ').trim();
   const m=s.match(/^(.+?)\s+(\d+)(?:[:\.](\d+)(?:\s*-\s*(\d+))?)?/);
-  if(!m) return s.replace(/[^\w ]/g,'_')+' Phrasing';
+  if(!m) return s.replace(/[^\w ]/g,'_');
   const book=m[1].trim(),chap=m[2],vS=m[3],vE=m[4];
-  if(vS&&vE) return `${book} ${chap}_${vS}-${vE} Phrasing`;
-  if(vS)     return `${book} ${chap}_${vS} Phrasing`;
-  return `${book} ${chap} Phrasing`;
+  if(vS&&vE) return `${book} ${chap}_${vS}-${vE}`;
+  if(vS)     return `${book} ${chap}_${vS}`;
+  return `${book} ${chap}`;
 }
 
 function buildDiagramFilename(r){
