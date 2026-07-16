@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607170900"/>
+<meta name="app-version" content="202607171200"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -670,6 +670,7 @@
           <option value="a3"     data-i18n="export.pdf.a3">A3</option>
           <option value="a4" selected data-i18n="export.pdf.a4">A4</option>
           <option value="letter" data-i18n="export.pdf.letter">Letter</option>
+          <option value="long"   data-i18n="export.pdf.long">Long (8.5" × 13")</option>
         </select>
       </div>
       <div class="diag-pdf-field">
@@ -860,8 +861,11 @@ if('serviceWorker' in navigator){
     }
   }).catch(err=>console.warn('[SW] Registration failed:', err));
 
-  // When SW sends controllerchange (after skipWaiting), reload the page
+  // Only reload when the user explicitly pressed Update — not when the browser
+  // naturally activates a new SW (e.g. after all tabs close and reopen).
+  var _swUserRequestedUpdate = false;
   navigator.serviceWorker.addEventListener('controllerchange', ()=>{
+    if(!_swUserRequestedUpdate) return;
     sessionStorage.setItem('sw-just-updated','1');
     window.location.reload();
   });
@@ -882,6 +886,7 @@ function swShowBanner(){
 function swDoUpdate(){
   navigator.serviceWorker.getRegistration().then(reg=>{
     if(reg && reg.waiting){
+      _swUserRequestedUpdate = true; // allow controllerchange to reload
       reg.waiting.postMessage({type:'SKIP_WAITING'});
       // controllerchange listener above will reload the page
       // Show updating state immediately on all update buttons

@@ -4201,7 +4201,8 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   const PAGE_SIZES={
     a3:     {portrait:[841.89,1190.55], landscape:[1190.55,841.89]},
     a4:     {portrait:[595.28,841.89],  landscape:[841.89,595.28]},
-    letter: {portrait:[612,792],        landscape:[792,612]}
+    letter: {portrait:[612,792],        landscape:[792,612]},
+    long:   {portrait:[612,936],        landscape:[936,612]}
   };
   const [pW,pH]=PAGE_SIZES[format]?.[orientation]||PAGE_SIZES.a4.landscape;
   const MAR=28, usableW=pW-MAR*2;
@@ -6470,7 +6471,10 @@ function slRenderSlideInto(slide, container, w, h){
       // the browser default — causing text to appear stretched or mis-sized in the PDF.
       const resolvedUiFont=getComputedStyle(document.documentElement).getPropertyValue('--ui').trim()||'sans-serif';
       div.style.fontFamily=resolvedUiFont; div.style.fontSize="11px";
-      div.style.color="#333"; div.style.overflow="hidden";
+      div.style.color="#333";
+      // Do NOT set overflow:hidden here. Resize handles are positioned at -4px
+      // outside the div boundary — overflow:hidden would clip and hide them.
+      // The slide canvas (container) has overflow:hidden to clip at slide edges.
       div.innerHTML=el.html||"";
       if(EDITOR_VIEW==="slides"){
         div.style.cursor="move";
@@ -7145,7 +7149,14 @@ async function slExportPDF(){
 
     if(cap){
       if(i>0) doc.addPage();
-      doc.addImage(cap.toDataURL('image/jpeg',0.93),'JPEG',0,0,pW,pH);
+      // Fit the 16:9 slide canvas into the PDF page without distortion.
+      // A4 landscape is ~1.41:1, not 16:9 — forcing the image to fill the whole
+      // page would stretch everything horizontally. Instead, scale to fit inside
+      // the page and centre with white margins (letterbox/pillarbox).
+      const ratio=Math.min(pW/RW, pH/RH);
+      const imgW=RW*ratio, imgH=RH*ratio;
+      const xOff=(pW-imgW)/2, yOff=(pH-imgH)/2;
+      doc.addImage(cap.toDataURL('image/jpeg',0.93),'JPEG',xOff,yOff,imgW,imgH);
     }
   }
 
