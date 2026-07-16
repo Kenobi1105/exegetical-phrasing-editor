@@ -6185,14 +6185,7 @@ function slRenderSlideInto(slide, container, w, h){
 
       if(slide.view==='phrasing'){
         const rb=document.createElement('div');
-        // Explicit width so .xrow flex children (especially .xcell.grow with flex:1)
-        // wrap at the same width as the passage area, not at their unconstrained
-        // max-content width. Without this, inner.scrollWidth is the full text-line
-        // length of the longest Greek row (potentially 2000px+), which forces a
-        // heavy inner scale → passage content appears tiny while overlay elements
-        // (comment cards, text boxes), which live outside `inner`, stay full-size.
-        const passageW=passageEl.style.width; // e.g. "902.4px"
-        rb.style.cssText=`background:transparent;width:${passageW};`;
+        rb.style.cssText='background:transparent;';
         slide.rowIds.forEach(rid=>{
           const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
           if(!xrow) return;
@@ -6321,22 +6314,20 @@ function slRenderSlideInto(slide, container, w, h){
       passageEl.appendChild(inner);
       container.appendChild(passageEl);
 
-      // rAF: draw connectors/brackets, then apply scale uniformly.
-      // TWO behaviours depending on render context:
+      // rAF: draw connectors/brackets, then scale passage content to fit the bounding box.
       //
-      // EDITOR (EDITOR_VIEW='slides'):
-      //   No inner scale. Content renders at natural size; the user sees exactly
-      //   what they placed. If content overflows the canvas it is clipped by
-      //   container.overflow:hidden — the same as any slide tool.
+      // The passage bounding box (passageEl) is the user-defined content area.
+      // Content that is naturally larger than the box is scaled DOWN to fit inside it
+      // uniformly (scale ≤ 1, transform-origin: top left).
+      // This applies in ALL render contexts — editor, projector, presenter, PDF —
+      // so the bounding box always contains the content regardless of how much text
+      // there is.
       //
-      // EXPORT / PROJECTOR / PRESENTER (EDITOR_VIEW≠'slides'):
-      //   Compute a uniform scale s = min(canvasW/naturalW, canvasH/naturalH, 1)
-      //   that fits the passage content into the 960×540 canvas without clipping.
-      //   Apply s to `inner` via transform:scale(s).
-      //   Apply the SAME s to every overlay element's left/top/width/height so that
-      //   comment cards and text boxes shrink by the same factor as the passage text.
-      //   Without this, inner (passage) shrinks but overlays (siblings of inner in
-      //   container) stay full-size, making them appear disproportionately large.
+      // Overlay elements (comment cards, text boxes) are positioned at % of the FULL
+      // canvas (w×h) and are siblings of passageEl in container — they are NOT children
+      // of inner, so they are not affected by the inner scale. This is intentional:
+      // overlays are canvas-level elements that the user places freely, independent of
+      // the passage content area. They remain at their declared canvas positions.
       requestAnimationFrame(()=>{
         if(!container.contains(passageEl)) return; // stale render
 
@@ -6347,46 +6338,34 @@ function slRenderSlideInto(slide, container, w, h){
           if(v.brackets)   slDrawBracketsIntoClone(_slDiagWrap, slide.rowIds);
         }
 
-        if(EDITOR_VIEW!=='slides'){
-          // Measure natural content size
-          let naturalW=inner.scrollWidth||inner.offsetWidth||400;
-          let naturalH=inner.scrollHeight||inner.offsetHeight||200;
+        // Measure natural content size (before any scale)
+        let naturalW=inner.scrollWidth||inner.offsetWidth||400;
+        let naturalH=inner.scrollHeight||inner.offsetHeight||200;
 
-          // For diagram view: extend naturalW/H to include bracket SVG labels,
-          // which are position:absolute and thus excluded from scrollWidth.
-          if(slide.view==='diagram' && _slDiagWrap){
-            const dsvg=_slDiagWrap.querySelector('#dbrk-svg');
-            if(dsvg){
-              try{
-                const bb=dsvg.getBBox();
-                if(bb&&bb.width>0){
-                  naturalW=Math.max(naturalW, bb.x+bb.width);
-                  naturalH=Math.max(naturalH, bb.y+bb.height);
-                }
-              }catch(e){ /* getBBox() unavailable — fall back to scrollWidth */ }
-            }
+        // For diagram view: bracket SVG labels are position:absolute inside the SVG
+        // and therefore excluded from scrollWidth. Extend naturalW/H via getBBox().
+        if(slide.view==='diagram' && _slDiagWrap){
+          const dsvg=_slDiagWrap.querySelector('#dbrk-svg');
+          if(dsvg){
+            try{
+              const bb=dsvg.getBBox();
+              if(bb&&bb.width>0){
+                naturalW=Math.max(naturalW, bb.x+bb.width);
+                naturalH=Math.max(naturalH, bb.y+bb.height);
+              }
+            }catch(e){ /* getBBox() unavailable — fall back to scrollWidth */ }
           }
-
-          const s=Math.min(w/Math.max(naturalW,1), h/Math.max(naturalH,1), 1);
-
-          // Scale passage content
-          inner.style.transform=`scale(${s})`;
-          inner.style.transformOrigin='top left';
-          inner.style.width=naturalW+'px';
-          inner.style.height=naturalH+'px';
-
-          // Scale every overlay (commentbox, textbox, floatlabel) by the same s
-          // so they remain proportional to the scaled passage content.
-          container.querySelectorAll('.sl-el[data-el-id]').forEach(div=>{
-            const elId=div.getAttribute('data-el-id');
-            const el=slide.elements.find(e=>e.id===elId);
-            if(!el) return;
-            div.style.left  =(el.x/100*w*s)+'px';
-            div.style.top   =(el.y/100*h*s)+'px';
-            div.style.width =(el.w/100*w*s)+'px';
-            div.style.height=(el.h/100*h*s)+'px';
-          });
         }
+
+        // Scale to fit the bounding box (passageEl declared size), never scale up.
+        const areaW=parseFloat(passageEl.style.width)  || w;
+        const areaH=parseFloat(passageEl.style.height) || h;
+        const s=Math.min(areaW/Math.max(naturalW,1), areaH/Math.max(naturalH,1), 1);
+
+        inner.style.transform=`scale(${s})`;
+        inner.style.transformOrigin='top left';
+        inner.style.width=naturalW+'px';
+        inner.style.height=naturalH+'px';
       });
     } else if(EDITOR_VIEW==='slides'){
       const msg=document.createElement('div');
