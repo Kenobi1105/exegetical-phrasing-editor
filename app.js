@@ -6369,32 +6369,23 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         inner.style.width=naturalW+'px';
         inner.style.height=naturalH+'px';
 
-        // In export/presenter/projector renders, rescale overlay elements
-        // (comment boxes, float labels, text boxes) by the same factor s and
-        // from the same origin (passage top-left) as the passage content.
-        // Without this, when s < 1 the passage text shrinks but overlays stay
-        // at their full declared size, making them appear disproportionately large.
-        //
-        // In the EDITOR (isExport=false) overlays are NOT rescaled — the user
-        // sees them at their declared canvas % positions while editing.
+        // In export renders, scale the FONT SIZE of overlay elements (comment boxes,
+        // float labels, text boxes) by s so their text stays proportional to the
+        // shrunken passage content.
+        // Positions and dimensions are NOT changed — the box stays exactly where the
+        // user placed it on the canvas. Moving them caused boxes to overlap the passage
+        // blocks; resizing them made them narrower than intended.
+        // The overall CSS transform applied by _slInjectScaled already scales the
+        // entire 960×540 canvas uniformly for the presenter/projector/PDF, so the
+        // declared px positions produce the correct visual layout.
         if(isExport && s < 1){
-          const passageLeft=parseFloat(passageEl.style.left)||0;
-          const passageTop =parseFloat(passageEl.style.top) ||0;
           container.querySelectorAll('.sl-el[data-el-id]').forEach(div=>{
             const elId=div.getAttribute('data-el-id');
             const el=slide.elements.find(e=>e.id===elId);
             if(!el) return;
-            // Scale position from passage origin: new = passageOrigin + (orig - passageOrigin)*s
-            const origLeft = el.x/100*w;
-            const origTop  = el.y/100*h;
-            div.style.left  =(passageLeft + (origLeft - passageLeft)*s)+'px';
-            div.style.top   =(passageTop  + (origTop  - passageTop) *s)+'px';
-            div.style.width =(el.w/100*w*s)+'px';
-            div.style.height=(el.h/100*h*s)+'px';
-            // Scale font sizes proportionally
             if(el.type==='textbox'){
-              const inner=div.querySelector('.sl-el-textbox-inner');
-              if(inner) inner.style.fontSize=((el.fontSize||18)*s)+'px';
+              const txInner=div.querySelector('.sl-el-textbox-inner');
+              if(txInner) txInner.style.fontSize=((el.fontSize||18)*s)+'px';
             } else {
               div.style.fontSize=(11*s)+'px';
             }

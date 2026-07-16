@@ -2,7 +2,7 @@
    SERVICE WORKER — Exegetical Phrasing Editor
    Auto cache-busting: bump APP_VERSION on each deploy
 ════════════════════════════════════════ */
-const APP_VERSION = '202607171500';
+const APP_VERSION = '202607171700';
 const CACHE_NAME  = 'exeg-app-v' + APP_VERSION;
 
 /* sw.js and index.html are intentionally excluded from PRECACHE.
@@ -15,6 +15,8 @@ const CACHE_NAME  = 'exeg-app-v' + APP_VERSION;
             load always gets the latest shell, which re-registers the
             latest sw.js. Falls back to cache when offline. */
 const PRECACHE = [
+  './',
+  './index.html',
   './app.css',
   './app.js',
   './bible.js',
@@ -30,12 +32,15 @@ const PRECACHE = [
   './data/cuv_t.json',
 ];
 
-/* URLs that must be served network-first, falling back to cache offline.
-   sw.js is not listed here either — the browser handles it natively. */
-const NETWORK_FIRST = [
-  './index.html',
-  './',
-];
+/* All files served cache-first. The browser always fetches sw.js directly from
+   the network (bypassing the service worker) for its built-in update check —
+   so new version detection works without needing index.html to be network-first.
+   When a new sw.js is detected, the new SW installs, the banner appears, and the
+   user presses Update to reload with all new files from the new cache.
+   Making index.html network-first caused the version number (in the <meta> tag)
+   to update silently on every page load before the banner appeared, giving the
+   impression of an automatic update. */
+const NETWORK_FIRST = [];
 
 /* Install: cache all app files — individual failures are caught so one
    missing or temporarily unavailable file doesn't abort the whole install */
