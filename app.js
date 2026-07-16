@@ -6320,46 +6320,26 @@ function slRenderSlideInto(slide, container, w, h){
 
       passageEl.appendChild(inner);
       container.appendChild(passageEl);
-      // Single rAF: draw connectors/brackets at natural size, then apply uniform scale.
-      // Both happen in one frame so SVG paths and blocks share the same layout pass.
+      // Single rAF: draw connectors/brackets after layout, then do NOT apply an inner
+      // scale transform. All content — passage rows AND overlay elements (comment cards,
+      // text boxes) — must scale together as one unit via the outer CSS transform that
+      // _slInjectScaled applies to the entire 960×540 wrap. If inner got its own
+      // transform:scale(s < 1), passage content would shrink but overlays (which are
+      // siblings of inner in container, not children of it) would not — causing overlays
+      // to appear disproportionately large in the presenter, projector, and PDF.
+      // Content that exceeds 960×540 is clipped by container.overflow:hidden, matching
+      // what the editor canvas shows.
       requestAnimationFrame(()=>{
         if(!container.contains(passageEl)) return; // stale render
 
-        // For diagram mode: draw connectors and brackets at natural block dimensions
+        // For diagram mode: draw connectors and brackets at natural size
         if(slide.view==='diagram' && _slDiagWrap){
           const v=slide.visibility;
           if(v.connectors) slDrawConnectorsIntoClone(_slDiagWrap, slide.rowIds);
           if(v.brackets)   slDrawBracketsIntoClone(_slDiagWrap, slide.rowIds);
         }
-
-        // Scale inner to fit passage area.
-        // scrollWidth/scrollHeight only measure non-absolutely-positioned content,
-        // so bracket SVG labels (position:absolute inside the SVG) are excluded.
-        // After drawing brackets, measure the SVG's actual bounding box and use
-        // its right/bottom extent as a floor for naturalW/naturalH so the scale
-        // shrinks enough to fit bracket labels without clipping.
-        let naturalW=inner.scrollWidth||inner.offsetWidth||400;
-        let naturalH=inner.scrollHeight||inner.offsetHeight||200;
-        if(slide.view==='diagram' && _slDiagWrap){
-          const dsvg=_slDiagWrap.querySelector('#dbrk-svg');
-          if(dsvg){
-            try{
-              const bb=dsvg.getBBox();
-              // bb.x is offset from SVG origin; bb.x+bb.width is the rightmost pixel
-              // of any bracket line or label foreignObject within the SVG
-              if(bb && bb.width>0){
-                naturalW=Math.max(naturalW, bb.x+bb.width);
-                naturalH=Math.max(naturalH, bb.y+bb.height);
-              }
-            }catch(e){/* getBBox() can throw if SVG not yet in layout; ignore */}
-          }
-        }
-        const areaW=parseFloat(passageEl.style.width);
-        const areaH=parseFloat(passageEl.style.height);
-        const scale=Math.min(areaW/Math.max(naturalW,1), areaH/Math.max(naturalH,1), 1);
-        inner.style.transform=`scale(${scale})`;
-        inner.style.width=naturalW+'px';
-        inner.style.height=naturalH+'px';
+        // No inner scale — leave inner at transform:none so passage content and
+        // overlay elements remain in the same coordinate space.
       });
     } else if(EDITOR_VIEW==='slides'){
       const msg=document.createElement('div');
