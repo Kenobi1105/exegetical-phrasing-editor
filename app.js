@@ -6163,7 +6163,7 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
 }
 
 /* ── Render a slide into a target container ── */
-function slRenderSlideInto(slide, container, w, h){
+function slRenderSlideInto(slide, container, w, h, isExport){
   container.innerHTML='';
   container.style.width=w+'px';
   container.style.height=h+'px';
@@ -6368,6 +6368,38 @@ function slRenderSlideInto(slide, container, w, h){
         inner.style.transformOrigin='top left';
         inner.style.width=naturalW+'px';
         inner.style.height=naturalH+'px';
+
+        // In export/presenter/projector renders, rescale overlay elements
+        // (comment boxes, float labels, text boxes) by the same factor s and
+        // from the same origin (passage top-left) as the passage content.
+        // Without this, when s < 1 the passage text shrinks but overlays stay
+        // at their full declared size, making them appear disproportionately large.
+        //
+        // In the EDITOR (isExport=false) overlays are NOT rescaled — the user
+        // sees them at their declared canvas % positions while editing.
+        if(isExport && s < 1){
+          const passageLeft=parseFloat(passageEl.style.left)||0;
+          const passageTop =parseFloat(passageEl.style.top) ||0;
+          container.querySelectorAll('.sl-el[data-el-id]').forEach(div=>{
+            const elId=div.getAttribute('data-el-id');
+            const el=slide.elements.find(e=>e.id===elId);
+            if(!el) return;
+            // Scale position from passage origin: new = passageOrigin + (orig - passageOrigin)*s
+            const origLeft = el.x/100*w;
+            const origTop  = el.y/100*h;
+            div.style.left  =(passageLeft + (origLeft - passageLeft)*s)+'px';
+            div.style.top   =(passageTop  + (origTop  - passageTop) *s)+'px';
+            div.style.width =(el.w/100*w*s)+'px';
+            div.style.height=(el.h/100*h*s)+'px';
+            // Scale font sizes proportionally
+            if(el.type==='textbox'){
+              const inner=div.querySelector('.sl-el-textbox-inner');
+              if(inner) inner.style.fontSize=((el.fontSize||18)*s)+'px';
+            } else {
+              div.style.fontSize=(11*s)+'px';
+            }
+          });
+        }
       });
     } else if(EDITOR_VIEW==='slides'){
       const msg=document.createElement('div');
@@ -6796,7 +6828,7 @@ function slStartThumbDrag(ev, fromIdx, thumbEl){
 function slRenderThumbContent(idx, container){
   const slide=SL_DECK.slides[idx]; if(!slide) return;
   const THUMB_W=152, THUMB_H=85; // thumbnail dimensions
-  slRenderSlideInto(slide, container, THUMB_W, THUMB_H);
+  slRenderSlideInto(slide, container, THUMB_W, THUMB_H, true);
 }
 function slRenderThumb(idx){
   const thumbs=document.querySelectorAll('.sl-thumb');
@@ -7036,7 +7068,10 @@ function _slRenderToHTML(slide, cb){
   const tmp=document.createElement('div');
   tmp.style.cssText=`position:absolute;left:-99999px;top:0;width:${W}px;height:${H}px;overflow:visible;background:#fff;`;
   document.body.appendChild(tmp);
-  slRenderSlideInto(slide, tmp, W, H);
+  // isExport=true: the rAF in slRenderSlideInto will rescale overlay elements
+  // by the same inner-scale factor s that shrinks passage content, keeping
+  // comment boxes and labels proportional to the text in the presenter/projector/PDF.
+  slRenderSlideInto(slide, tmp, W, H, true);
   requestAnimationFrame(()=>{
     requestAnimationFrame(()=>{
       const html=tmp.innerHTML;
