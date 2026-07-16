@@ -6185,7 +6185,14 @@ function slRenderSlideInto(slide, container, w, h){
 
       if(slide.view==='phrasing'){
         const rb=document.createElement('div');
-        rb.style.cssText='background:transparent;';
+        // Explicit width so .xrow flex children (especially .xcell.grow with flex:1)
+        // wrap at the same width as the passage area, not at their unconstrained
+        // max-content width. Without this, inner.scrollWidth is the full text-line
+        // length of the longest Greek row (potentially 2000px+), which forces a
+        // heavy inner scale → passage content appears tiny while overlay elements
+        // (comment cards, text boxes), which live outside `inner`, stay full-size.
+        const passageW=passageEl.style.width; // e.g. "902.4px"
+        rb.style.cssText=`background:transparent;width:${passageW};`;
         slide.rowIds.forEach(rid=>{
           const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
           if(!xrow) return;
