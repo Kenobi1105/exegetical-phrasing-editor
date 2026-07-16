@@ -6486,7 +6486,10 @@ function slRenderSlideInto(slide, container, w, h){
 
 /* ── Element selection — no re-render, just toggle visual state ── */
 function slSelectEl(id){
-  if(SL_SEL_EL_ID===id) return; // already selected
+  // NOTE: Do NOT early-return when id===SL_SEL_EL_ID. After any canvas rebuild
+  // (slRenderActive), the overlay DOM is recreated without resize handles even
+  // though SL_SEL_EL_ID still holds the same id. We must always re-apply the
+  // full selection (class + handles) to whichever DOM element is currently live.
   SL_SEL_EL_ID=id;
   const cv=document.getElementById('sl-canvas'); if(!cv) return;
 
@@ -6602,7 +6605,11 @@ function slStartElResize(ev, el, div, dir, cw, ch){
     document.removeEventListener('mousemove',onMove);
     document.removeEventListener('mouseup',onUp);
     _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'pos',oldVal:oldPos,newVal:{x:el.x,y:el.y,w:el.w,h:el.h}});
-    autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+    // Do NOT call slRenderActive() here — the overlay div is already at the correct
+    // size/position (updated live in onMove), and a full canvas rebuild would destroy
+    // the resize handles and require the user to click again to restore them.
+    autoSave();
+    slRenderThumb(SL_ACTIVE_IDX);
   };
   document.addEventListener('mousemove',onMove);
   document.addEventListener('mouseup',onUp);
@@ -6805,6 +6812,18 @@ function _slDoRender(){
   if(!slide){ cv.innerHTML=''; return; }
   cv.innerHTML=''; // clear before each render
   slRenderSlideInto(slide, cv, SL_CANVAS_W, SL_CANVAS_H);
+  // After a full canvas rebuild the overlay divs are new DOM nodes.
+  // SL_SEL_EL_ID still holds the previously selected id, so slRenderSlideInto
+  // adds the 'selected' class to the new div but does NOT add resize handles
+  // (that requires slSelectEl). Re-apply the full selection here so handles
+  // are always present on the live element without requiring another click.
+  if(SL_SEL_EL_ID){
+    const savedId=SL_SEL_EL_ID;
+    SL_SEL_EL_ID=null; // force slSelectEl to run (not early-return on same id)
+    // Use a minimal timeout so the rAF inside slRenderSlideInto (inner scale)
+    // has a chance to fire first, ensuring the overlay divs are in final position.
+    setTimeout(()=>slSelectEl(savedId), 0);
+  }
 }
 
 /* ── Full re-render (thumbnails + panel + active canvas) ── */
