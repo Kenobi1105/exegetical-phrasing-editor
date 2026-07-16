@@ -3358,7 +3358,9 @@ function collectData(){
   const R=getComputedStyle(document.documentElement);
   const colors={};['bg','accent','ink','sig','label','active'].forEach(k=>{colors[k]=R.getPropertyValue('--'+k).trim();});
   return{lang:SESS,langLabel:LANG,isRTL:IS_RTL,isSingle:IS_SINGLE,
-    verseRef:document.getElementById('refin').value,rows,cmts,RC,CC,colors,
+    verseRef:document.getElementById('refin').value,
+    versionLabel:sessionVersionLabel||document.getElementById('version-sub-input')?.value.trim()||'',
+    rows,cmts,RC,CC,colors,
     colWidths:{...COL_WIDTHS},
     editorView:EDITOR_VIEW,CNX,LBL,
     diagramData:{connectors:[...DIAGRAM_DATA.connectors], labels:[...DIAGRAM_DATA.labels]},
@@ -3545,13 +3547,12 @@ function projLoad(id){
       document.getElementById('sess-lbl').textContent=LANG+' Session';
       document.getElementById('ch-o-lbl').textContent=IS_SINGLE?LANG:LANG+' Text';
       document.getElementById('ch-t').style.display=IS_SINGLE?'none':'';
-      if(data.versionLabel){
+      if(data.versionLabel !== undefined){
         sessionVersionLabel=data.versionLabel;
         const vsub=document.getElementById('version-sub');
-        if(vsub)vsub.textContent=sessionVersionLabel||'Version (e.g., ESV, BHS, NA28)';
+        if(vsub)vsub.textContent=sessionVersionLabel||t('version.ph')||'Version (e.g., ESV, BHS, NA28)';
         const vsubI=document.getElementById('version-sub-input');
         if(vsubI)vsubI.value=sessionVersionLabel||'';
-        // ch-t-lbl always reads "Translation"; version shown in version-sub.
       }
     }
     loadData(data);
@@ -6463,7 +6464,12 @@ function slRenderSlideInto(slide, container, w, h){
       div.style.background = isCmtBox ? "rgba(247,243,233,.95)" : "rgba(73,53,72,.06)";
       div.style.border      = isCmtBox ? "1px solid rgba(73,53,72,.2)" : "1px solid rgba(73,53,72,.15)";
       div.style.borderRadius="6px"; div.style.padding="4px 7px";
-      div.style.fontFamily="var(--ui,sans-serif)"; div.style.fontSize="11px";
+      // Resolve the --ui CSS variable to its actual font stack so html2canvas
+      // (used for PDF export) gets a concrete font name rather than the literal
+      // string "var(--ui,sans-serif)", which it cannot resolve and falls back to
+      // the browser default — causing text to appear stretched or mis-sized in the PDF.
+      const resolvedUiFont=getComputedStyle(document.documentElement).getPropertyValue('--ui').trim()||'sans-serif';
+      div.style.fontFamily=resolvedUiFont; div.style.fontSize="11px";
       div.style.color="#333"; div.style.overflow="hidden";
       div.innerHTML=el.html||"";
       if(EDITOR_VIEW==="slides"){
@@ -6819,10 +6825,13 @@ function _slDoRender(){
   // are always present on the live element without requiring another click.
   if(SL_SEL_EL_ID){
     const savedId=SL_SEL_EL_ID;
-    SL_SEL_EL_ID=null; // force slSelectEl to run (not early-return on same id)
-    // Use a minimal timeout so the rAF inside slRenderSlideInto (inner scale)
-    // has a chance to fire first, ensuring the overlay divs are in final position.
-    setTimeout(()=>slSelectEl(savedId), 0);
+    SL_SEL_EL_ID=null; // let slSelectEl run without the same-id guard
+    // Restore resize handles after the rAF (inner scale) fires.
+    // Only run if SL_SEL_EL_ID is still null — i.e. the user hasn't clicked a
+    // different element between the render and this timeout. If they have, their
+    // click already called slSelectEl with the correct id; overriding it here
+    // would move the handles to the wrong element.
+    setTimeout(()=>{ if(SL_SEL_EL_ID===null) slSelectEl(savedId); }, 0);
   }
 }
 
@@ -6888,29 +6897,35 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
 </head><body>
 <div id="sl-proj-wrap"><div id="sl-proj"></div></div>
 <script>
+  var _lastPw=960, _lastPh=540;
+
+  function _applyScale(pw, ph){
+    var scaleX=window.innerWidth/pw, scaleY=window.innerHeight/ph;
+    var scale=Math.min(scaleX,scaleY);
+    var wrap=document.getElementById('sl-proj-wrap');
+    wrap.style.width=pw+'px';
+    wrap.style.height=ph+'px';
+    wrap.style.transform='scale('+scale+')';
+    wrap.style.left=Math.round((window.innerWidth-pw*scale)/2)+'px';
+    wrap.style.top=Math.round((window.innerHeight-ph*scale)/2)+'px';
+  }
+
   window.addEventListener('message',function(ev){
     if(!ev.data) return;
     if(ev.data.type==='sl-slide'){
       document.getElementById('sl-proj').innerHTML=ev.data.html;
-      // Scale the rendered content (pw×ph) up to fill the viewport
-      var pw=ev.data.pw||960, ph=ev.data.ph||540;
-      var scaleX=window.innerWidth/pw, scaleY=window.innerHeight/ph;
-      var scale=Math.min(scaleX,scaleY);
-      var wrap=document.getElementById('sl-proj-wrap');
-      wrap.style.width=pw+'px';
-      wrap.style.height=ph+'px';
-      wrap.style.transform='scale('+scale+')';
-      // Center if scale isn't perfectly filling both axes
-      wrap.style.left=Math.round((window.innerWidth-pw*scale)/2)+'px';
-      wrap.style.top=Math.round((window.innerHeight-ph*scale)/2)+'px';
+      _lastPw=ev.data.pw||960; _lastPh=ev.data.ph||540;
+      _applyScale(_lastPw, _lastPh);
     }
   });
+
+  // Rescale on resize (e.g. F11 fullscreen, window resize)
+  window.addEventListener('resize', function(){
+    _applyScale(_lastPw, _lastPh);
+  });
+
   // Wait for fonts to finish loading before signalling ready, so the main
   // window doesn't inject slide HTML before Gentium Plus is available.
-  // This prevents a mismatch between the inner passage scale (computed in
-  // the main window with Gentium Plus metrics) and the projector layout.
-  // document.fonts.ready always resolves, even offline — the 3-second
-  // fallback in the main window guards against it taking too long.
   document.fonts.ready.then(function(){
     if(window.opener) window.opener.postMessage({type:'sl-ready'},'*');
   });
