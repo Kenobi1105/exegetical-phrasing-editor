@@ -2,18 +2,12 @@
    SERVICE WORKER — Exegetical Phrasing Editor
    Auto cache-busting: bump APP_VERSION on each deploy
 ════════════════════════════════════════ */
-const APP_VERSION = '202607171700';
+const APP_VERSION = '202607171900';
 const CACHE_NAME  = 'exeg-app-v' + APP_VERSION;
 
-/* sw.js and index.html are intentionally excluded from PRECACHE.
-   sw.js  — must never be cached by the SW itself; the browser always
-            fetches it directly from the network so version changes are
-            detected on every page load. Caching it here would cause the
-            old SW to serve the old sw.js forever, breaking all future
-            update detection.
-   index.html — served network-first (see fetch handler below) so a fresh
-            load always gets the latest shell, which re-registers the
-            latest sw.js. Falls back to cache when offline. */
+/* sw.js must never be listed in PRECACHE — the browser always fetches sw.js
+   directly from the network (bypassing the service worker entirely) for its
+   built-in update check. Caching it here would have no effect anyway. */
 const PRECACHE = [
   './',
   './index.html',
@@ -81,47 +75,31 @@ self.addEventListener('message', e => {
   }
 });
 
-/* Fetch handler — two strategies:
-   1. NETWORK-FIRST for index.html and './' — always try the network so the
-      page shell and sw.js registration stay fresh. Falls back to cache if
-      offline. This is what lets the browser detect sw.js changes on F5.
-   2. CACHE-FIRST for everything else (app.css, app.js, data/*.json, etc.) —
-      fast loads from cache; network fill-in for anything not yet cached. */
+/* Fetch handler — cache-first for all app files.
+   Uses caches.open(CACHE_NAME) explicitly rather than caches.match() so each SW
+   version ONLY serves files from its OWN cache. caches.match() searches all caches
+   and can return a stale file from an old cache that hasn't been deleted yet —
+   this caused the "clicked Update but still saw the old version" bug, because the
+   old cache was still present during the brief window between skipWaiting and the
+   activate handler finishing its cleanup. */
 self.addEventListener('fetch', e => {
   // Skip non-GET and cross-origin requests (e.g. Google Fonts, NET Bible API)
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
 
-  const pathname = url.pathname.replace(/\/$/, '') || '/';
-  const isNetworkFirst = NETWORK_FIRST.some(p => {
-    const norm = new URL(p, self.location).pathname.replace(/\/$/, '') || '/';
-    return pathname === norm;
-  });
-
-  if (isNetworkFirst) {
-    // Network-first: fresh response when online, cached fallback when offline
-    e.respondWith(
-      fetch(e.request).then(res => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
-        }
-        return res;
-      }).catch(() => caches.match(e.request))
-    );
-  } else {
-    // Cache-first: instant load from cache, network fill-in for misses
-    e.respondWith(
-      caches.match(e.request).then(cached => {
+  e.respondWith(
+    caches.open(CACHE_NAME).then(cache =>
+      cache.match(e.request).then(cached => {
         if (cached) return cached;
+        // Not in our cache yet — fetch from network and cache it
         return fetch(e.request).then(res => {
-          if (!res || res.status !== 200 || res.type !== 'basic') return res;
-          const clone = res.clone();
-          caches.open(CACHE_NAME).then(c => c.put(e.request, clone));
+          if (res && res.status === 200 && res.type === 'basic') {
+            cache.put(e.request, res.clone());
+          }
           return res;
         });
       })
-    );
-  }
+    )
+  );
 });
