@@ -53,6 +53,23 @@ let SELECTED_CNX_ID=null;
 let DIAGRAM_ZOOM=100;
 const DIAGRAM_ZOOM_MIN=50, DIAGRAM_ZOOM_MAX=200, DIAGRAM_ZOOM_STEP=10;
 
+/* ── Annotations ──
+   Unified array for the four new annotation types:
+     • 'divider'  – horizontal rule between two rows in Phrasing view
+                    {id, afterRid, label, color}
+     • 'arrow'    – free SVG arrow in Diagram view
+                    {id, x1,y1,x2,y2, label, color, dashed}
+     • 'span'     – vertical brace grouping rows in Diagram view
+                    {id, startRid, endRid, label, color, side:'left'|'right'}
+     • 'arc'      – curved arc between two words in Diagram view
+                    {id, fromRid, fromWordIdx, toRid, toWordIdx, label, color}
+   All coordinates for diagram types are stored as percentages of #dcanvas
+   clientWidth / clientHeight so they survive zoom changes.
+   Dividers are stored by row id (afterRid) so they survive row reordering.
+*/
+let ANNOTATIONS=[];
+let ANN_CTR=0; // ever-incrementing annotation id seed
+
 /* ── Shared two-layer color palette (Highlight + Text Color + Line Color + Bracket Color) ──
    Layer 1 preset row differs by tool:
      - highlight / lineColor → 4 soft tones (original palette)
@@ -262,8 +279,9 @@ function openEditor(){
   // Restore comment pane button
   const cmtBtnOE=document.getElementById('btn-cmt-pane');
   if(cmtBtnOE) cmtBtnOE.disabled=false;
-  // Reset bracket state for new session
+  // Reset bracket and annotation state for new session
   BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
+  ANNOTATIONS=[]; ANN_CTR=0;
   if(typeof _brkCancelPending==='function') _brkCancelPending();
   if(typeof _brkCloseEditPopup==='function') _brkCloseEditPopup();
   document.getElementById('dbrk-svg')?.remove();
@@ -396,6 +414,7 @@ function setEditorView(view){
   }
   const isDiagram=EDITOR_VIEW==='diagram';
   const isSlides =EDITOR_VIEW==='slides';
+  const isPhrasing=!isDiagram&&!isSlides;
   document.getElementById('tzone').style.display    = (!isDiagram&&!isSlides)?'':'none';
   document.getElementById('dzone').style.display    = isDiagram?'':'none';
   document.getElementById('szone').style.display    = isSlides ?'flex':'none';
@@ -417,6 +436,11 @@ function setEditorView(view){
   document.getElementById('dzoom-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dlabel-sep')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-label')?.style.setProperty('display',isDiagram?'':'none');
+  // Annotation buttons: divider only in phrasing, arrows/span/arc only in diagram
+  document.getElementById('tb-add-divider')?.style.setProperty('display',isPhrasing?'':'none');
+  document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
+  document.getElementById('tb-add-span')?.style.setProperty('display',isDiagram?'':'none');
+  document.getElementById('tb-add-arc')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-cmt')?.style.setProperty('display',isDiagram?'':'none');
   // Show exactly one PDF export option in the popup depending on active view
   const phrasePdfBtn =document.getElementById('export-pdf-btn');
@@ -702,6 +726,8 @@ function renderDiagram(){
   // Add pip handles to diagram blocks and render any existing brackets
   if(typeof _brkSyncPips==='function') _brkSyncPips();
   if(typeof _brkRenderDiagram==='function') setTimeout(()=>_brkRenderDiagram(), 20);
+  // Re-render diagram annotations (arrows, spans, arcs)
+  setTimeout(()=>renderAnnLayer(), 30);
 }
 
 /* Build and mount one .dlabel element from a data object.
@@ -3186,8 +3212,9 @@ function restartSess(){
   document.getElementById('view-btn-slides')?.classList.remove('active');
   const cmtBtnRS=document.getElementById('btn-cmt-pane');
   if(cmtBtnRS) cmtBtnRS.disabled=false;
-  // Reset bracket and slide state
+  // Reset bracket, annotation, and slide state
   BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
+  ANNOTATIONS=[]; ANN_CTR=0;
   if(typeof _brkCancelPending==='function') _brkCancelPending();
   if(typeof slLoadDeck==='function') slLoadDeck({slides:[]});
   sessionVersionLabel='';
@@ -3366,6 +3393,8 @@ function collectData(){
     editorView:EDITOR_VIEW,CNX,LBL,
     diagramData:{connectors:[...DIAGRAM_DATA.connectors], labels:[...DIAGRAM_DATA.labels]},
     brackets: typeof collectBracketData==='function' ? collectBracketData() : [],
+    annotations: ANNOTATIONS.map(a=>({...a})),
+    annCtr: ANN_CTR,
     deck: typeof slCollectDeck==='function' ? slCollectDeck() : {slides:[]}};
 }
 
@@ -3480,6 +3509,13 @@ function loadData(data){
   setEditorView('phrasing');
   // Restore brackets (after rows are in DOM, loadBracketData defers render)
   if(typeof loadBracketData==='function') loadBracketData(data.brackets||[]);
+  // Restore annotations
+  ANNOTATIONS=Array.isArray(data.annotations)?data.annotations.map(a=>({...a})):[];
+  ANN_CTR=data.annCtr||0;
+  // Ensure ANN_CTR is at least as large as the highest existing id
+  ANNOTATIONS.forEach(a=>{ const n=parseInt(String(a.id||'').replace(/^ann-/,''),10); if(!isNaN(n)&&n>=ANN_CTR) ANN_CTR=n+1; });
+  // Re-render dividers in phrasing view after rows exist in DOM
+  setTimeout(()=>{ renderDividers(); if(EDITOR_VIEW==='diagram') renderAnnLayer(); }, 50);
   if(typeof slLoadDeck==='function') slLoadDeck(data.deck||{slides:[]});
 }
 
@@ -5520,11 +5556,703 @@ document.addEventListener('mousedown', ev=>{
 }, true);
 
 /* ════════════════════════════════════════
-   SLIDES / PRESENTER SYSTEM
-   Phase A: Slide Deck Builder
-   Phase B: Presenter Mode (two-window)
-   Phase C: PDF Export
+   ANNOTATIONS SYSTEM
+   Four types — dividers (phrasing view), free arrows, span markers,
+   and arc connectors (all diagram view).
+   All stored in the unified ANNOTATIONS array and persisted in the JSON.
 ════════════════════════════════════════ */
+
+/* ── Helper: generate a new annotation id ── */
+function _annId(){ return 'ann-'+(++ANN_CTR); }
+
+/* ── Helper: currently selected annotation id ── */
+let SELECTED_ANN_ID=null;
+
+/* ═══════════════════════════════════════════
+   1. DISCOURSE UNIT DIVIDERS  (Phrasing view)
+   A thin horizontal rule between two rows
+   with an editable relationship label.
+   Stored: {id, afterRid, label, color}
+═══════════════════════════════════════════ */
+function addDivider(){
+  // Add a divider after the currently focused row, or the last row
+  const focusedRow = lastFocusedRowEl
+    || document.querySelector('.xrow:last-child');
+  if(!focusedRow) return;
+  const afterRid = focusedRow.dataset.rid;
+  const ann = { id:_annId(), type:'divider', afterRid, label:'', color:'#C8A84B' };
+  ANNOTATIONS.push(ann);
+  renderDividers();
+  autoSave();
+  rowPush({type:'ann-add', ann:{...ann}});
+  // Focus the new divider label for immediate editing
+  setTimeout(()=>{
+    const el=document.querySelector(`.ann-divider[data-ann-id="${ann.id}"] .ann-div-label`);
+    if(el) el.focus();
+  }, 60);
+}
+
+function renderDividers(){
+  // Remove all existing divider elements
+  document.querySelectorAll('.ann-divider').forEach(e=>e.remove());
+  // Render each divider annotation after its target row
+  ANNOTATIONS.filter(a=>a.type==='divider').forEach(ann=>{
+    const row=document.querySelector(`.xrow[data-rid="${ann.afterRid}"]`);
+    if(!row) return;
+    const el=document.createElement('div');
+    el.className='ann-divider';
+    el.dataset.annId=ann.id;
+    el.style.setProperty('--div-color', ann.color||'#C8A84B');
+
+    const line=document.createElement('div');
+    line.className='ann-div-line';
+
+    const labelWrap=document.createElement('div');
+    labelWrap.className='ann-div-label-wrap';
+
+    const label=document.createElement('div');
+    label.className='ann-div-label';
+    label.contentEditable='true';
+    label.spellcheck=false;
+    label.setAttribute('data-ph', typeof t==='function'?t('ann.div.ph'):'Relationship…');
+    label.textContent=ann.label||'';
+    label.addEventListener('input',()=>{
+      ann.label=label.textContent.trim();
+      autoSave();
+    });
+    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+
+    const del=document.createElement('button');
+    del.className='ann-div-del';
+    del.title=typeof t==='function'?t('ann.delete'):'Delete annotation';
+    del.innerHTML='✕';
+    del.addEventListener('click',()=>{ deleteDivider(ann.id); });
+
+    // Color picker swatch
+    const swatch=document.createElement('input');
+    swatch.type='color'; swatch.className='ann-div-color';
+    swatch.value=ann.color||'#C8A84B';
+    swatch.title=typeof t==='function'?t('ann.color'):'Color';
+    swatch.addEventListener('change',()=>{
+      ann.color=swatch.value;
+      el.style.setProperty('--div-color', ann.color);
+      autoSave();
+    });
+
+    labelWrap.append(label, swatch, del);
+    el.append(line, labelWrap);
+    row.after(el);
+  });
+}
+
+function deleteDivider(id){
+  const ann=ANNOTATIONS.find(a=>a.id===id); if(!ann) return;
+  ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==id);
+  renderDividers();
+  autoSave();
+  rowPush({type:'ann-remove', ann:{...ann}});
+}
+
+/* ═══════════════════════════════════════════
+   2. FREE ARROWS  (Diagram view)
+   A draggable SVG arrow with optional label.
+   Stored: {id, x1,y1,x2,y2, label, color, dashed}
+   Coordinates are % of #dcanvas clientWidth/Height.
+═══════════════════════════════════════════ */
+
+/* Called from toolbar button or keyboard shortcut */
+function startFreeArrow(){
+  if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add arrows.'); return; }
+  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
+  toast(typeof t==='function'?t('ann.arrow.hint'):'Click and drag on the canvas to draw an arrow.');
+  canvas.classList.add('ann-arrow-mode');
+
+  let x1,y1;
+  const onDown=ev=>{
+    if(!canvas.classList.contains('ann-arrow-mode')) return;
+    ev.preventDefault();
+    const r=canvas.getBoundingClientRect();
+    const zoom=DIAGRAM_ZOOM/100;
+    x1=((ev.clientX-r.left)/zoom)/canvas.scrollWidth*100;
+    y1=((ev.clientY-r.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
+
+    // Rubber-band preview arrow
+    let rubber=document.getElementById('ann-arrow-rubber');
+    if(!rubber){
+      rubber=document.createElementNS('http://www.w3.org/2000/svg','line');
+      rubber.id='ann-arrow-rubber';
+      rubber.setAttribute('stroke','#C8A84B');
+      rubber.setAttribute('stroke-width','2');
+      rubber.setAttribute('stroke-dasharray','5,3');
+      rubber.setAttribute('marker-end','url(#ann-arrowhead-preview)');
+      const svg=document.getElementById('dconns'); if(svg) svg.appendChild(rubber);
+    }
+
+    const onMove=ev2=>{
+      const r2=canvas.getBoundingClientRect();
+      const x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
+      const y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
+      _updateRubberArrow(rubber, x1,y1,x2,y2, canvas);
+    };
+    const onUp=ev2=>{
+      document.removeEventListener('mousemove',onMove);
+      document.removeEventListener('mouseup',onUp);
+      canvas.classList.remove('ann-arrow-mode');
+      canvas.removeEventListener('mousedown',onDown);
+      if(rubber) rubber.remove();
+
+      const r2=canvas.getBoundingClientRect();
+      const x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
+      const y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
+      const dx=x2-x1, dy=y2-y1;
+      if(Math.sqrt(dx*dx+dy*dy)<1) return; // too small — cancel
+      const ann={id:_annId(),type:'arrow',x1,y1,x2,y2,label:'',color:'#C8A84B',dashed:false};
+      ANNOTATIONS.push(ann);
+      renderAnnLayer();
+      autoSave();
+      rowPush({type:'ann-add',ann:{...ann}});
+    };
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  };
+  canvas.addEventListener('mousedown',onDown);
+}
+
+function _updateRubberArrow(line, x1,y1,x2,y2, canvas){
+  const w=canvas.scrollWidth, h=canvas.scrollHeight;
+  line.setAttribute('x1',x1/100*w); line.setAttribute('y1',y1/100*h);
+  line.setAttribute('x2',x2/100*w); line.setAttribute('y2',y2/100*h);
+}
+
+/* ═══════════════════════════════════════════
+   3. SPAN MARKERS  (Diagram view)
+   A vertical brace grouping a range of rows.
+   Stored: {id, startRid, endRid, label, color, side:'right'}
+═══════════════════════════════════════════ */
+
+function addSpan(){
+  if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add span markers.'); return; }
+  // Prompt user to click the start block then the end block
+  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
+  toast(typeof t==='function'?t('ann.span.hint'):'Click the first row, then the last row, to mark a span.');
+  canvas.classList.add('ann-span-mode');
+  let firstRid=null;
+
+  const onClick=ev=>{
+    const block=ev.target.closest('.dblock');
+    if(!block) return;
+    ev.stopPropagation();
+    if(!firstRid){
+      firstRid=block.dataset.rid;
+      block.classList.add('ann-span-first');
+    } else {
+      const secondRid=block.dataset.rid;
+      canvas.classList.remove('ann-span-mode');
+      canvas.removeEventListener('click',onClick,true);
+      document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first'));
+      // Ensure startRid comes before endRid in DOM order
+      const rows=[...document.querySelectorAll('.drow[data-rid]')].map(r=>r.dataset.rid);
+      const i1=rows.indexOf(firstRid), i2=rows.indexOf(secondRid);
+      const startRid=i1<=i2?firstRid:secondRid;
+      const endRid  =i1<=i2?secondRid:firstRid;
+      const ann={id:_annId(),type:'span',startRid,endRid,label:'',color:'#C8A84B',side:'right'};
+      ANNOTATIONS.push(ann);
+      renderAnnLayer();
+      autoSave();
+      rowPush({type:'ann-add',ann:{...ann}});
+    }
+  };
+  canvas.addEventListener('click',onClick,true);
+  // Cancel with Escape
+  const onKey=ev=>{ if(ev.key==='Escape'){ canvas.classList.remove('ann-span-mode'); canvas.removeEventListener('click',onClick,true); document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first')); document.removeEventListener('keydown',onKey,true); } };
+  document.addEventListener('keydown',onKey,true);
+}
+
+/* ═══════════════════════════════════════════
+   4. ARC CONNECTORS  (Diagram view)
+   A curved arc between specific words in two blocks.
+   The user Ctrl+clicks a word in one block, then Ctrl+clicks
+   a word in another block. We record block rid + word index.
+   Stored: {id, fromRid, fromWordIdx, toRid, toWordIdx, label, color}
+═══════════════════════════════════════════ */
+
+let _arcPending=null; // {rid, wordIdx, wordEl}
+
+function _getWordIdx(textEl, targetNode){
+  // Returns the word index (0-based) of the word node that contains targetNode
+  const words=[...textEl.querySelectorAll('.ann-word')];
+  for(let i=0;i<words.length;i++){
+    if(words[i]===targetNode||words[i].contains(targetNode)) return i;
+  }
+  return -1;
+}
+
+function _wrapBlockTextWords(canvas){
+  // Wrap each word in dblock-text in a .ann-word span for click targeting.
+  // Only wraps if not already wrapped to avoid double-wrap.
+  canvas.querySelectorAll('.dblock-text').forEach(textEl=>{
+    if(textEl.querySelector('.ann-word')) return; // already wrapped
+    // Walk text nodes and wrap each word
+    const html=textEl.innerHTML;
+    // Simple word-wrap: split on spaces while preserving inline tags
+    // Use a regex replace on the innerHTML (words outside tags)
+    textEl.innerHTML=html.replace(/(<[^>]+>)|(\S+)/g,(m,tag,word)=>{
+      if(tag) return tag;
+      return `<span class="ann-word">${word}</span>`;
+    });
+  });
+}
+
+function enableArcMode(){
+  if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add arc connectors.'); return; }
+  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
+  _wrapBlockTextWords(canvas);
+  canvas.classList.add('ann-arc-mode');
+  toast(typeof t==='function'?t('ann.arc.hint'):'Ctrl+click a word in one block, then Ctrl+click a word in another block.');
+}
+
+function disableArcMode(){
+  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
+  canvas.classList.remove('ann-arc-mode');
+  _arcPending=null;
+  document.querySelectorAll('.ann-word.ann-arc-selected').forEach(w=>w.classList.remove('ann-arc-selected'));
+}
+
+// Global Ctrl+click listener for arc mode
+document.addEventListener('click',ev=>{
+  if(!ev.ctrlKey) return;
+  const canvas=document.getElementById('dcanvas');
+  if(!canvas||!canvas.classList.contains('ann-arc-mode')) return;
+  const block=ev.target.closest('.dblock'); if(!block) return;
+  const textEl=block.querySelector('.dblock-text'); if(!textEl) return;
+  const wordEl=ev.target.closest('.ann-word'); if(!wordEl) return;
+  ev.preventDefault(); ev.stopPropagation();
+  const rid=block.dataset.rid;
+  const wordIdx=_getWordIdx(textEl,wordEl);
+  if(wordIdx<0) return;
+
+  if(!_arcPending){
+    _arcPending={rid,wordIdx,wordEl};
+    wordEl.classList.add('ann-arc-selected');
+  } else {
+    if(_arcPending.rid===rid){ toast(typeof t==='function'?t('ann.arc.diff-block'):'Please click a word in a different block.'); return; }
+    _arcPending.wordEl.classList.remove('ann-arc-selected');
+    const ann={id:_annId(),type:'arc',
+      fromRid:_arcPending.rid, fromWordIdx:_arcPending.wordIdx,
+      toRid:rid, toWordIdx:wordIdx,
+      label:'', color:'#C8A84B'};
+    ANNOTATIONS.push(ann);
+    _arcPending=null;
+    disableArcMode();
+    renderAnnLayer();
+    autoSave();
+    rowPush({type:'ann-add',ann:{...ann}});
+  }
+});
+
+/* ═══════════════════════════════════════════
+   DIAGRAM ANNOTATION LAYER RENDERER
+   Draws arrows, spans, and arcs as SVG on
+   a dedicated layer above #dcanvas content.
+═══════════════════════════════════════════ */
+
+function renderAnnLayer(){
+  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
+
+  // Get or create the annotation SVG layer
+  let svg=document.getElementById('dann-svg');
+  if(!svg){
+    svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.id='dann-svg';
+    svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:20;';
+    // Defs: arrowhead markers (one per color would be ideal but we'll use a neutral one and colour the stroke)
+    svg.innerHTML=`<defs>
+      <marker id="ann-ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="context-stroke"/>
+      </marker>
+      <marker id="ann-ah-preview" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 z" fill="#C8A84B"/>
+      </marker>
+    </defs>`;
+    canvas.appendChild(svg);
+  }
+
+  // Clear previous annotation elements (keep defs)
+  [...svg.children].forEach(c=>{ if(c.tagName!=='defs') c.remove(); });
+
+  // Remove stale annotation overlay divs (labels on arrows/spans/arcs)
+  document.querySelectorAll('.ann-overlay-label').forEach(e=>e.remove());
+
+  const W=canvas.scrollWidth, H=canvas.scrollHeight;
+
+  ANNOTATIONS.forEach(ann=>{
+    if(ann.type==='arrow'){
+      _renderArrow(svg, ann, W, H, canvas);
+    } else if(ann.type==='span'){
+      _renderSpan(svg, ann, W, H, canvas);
+    } else if(ann.type==='arc'){
+      _renderArc(svg, ann, canvas);
+    }
+  });
+}
+
+function _renderArrow(svg, ann, W, H, canvas){
+  const x1=ann.x1/100*W, y1=ann.y1/100*H;
+  const x2=ann.x2/100*W, y2=ann.y2/100*H;
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.dataset.annId=ann.id;
+  g.style.pointerEvents='all';
+  g.style.cursor='pointer';
+
+  const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+  line.setAttribute('x1',x1); line.setAttribute('y1',y1);
+  line.setAttribute('x2',x2); line.setAttribute('y2',y2);
+  line.setAttribute('stroke',ann.color||'#C8A84B');
+  line.setAttribute('stroke-width','2');
+  if(ann.dashed) line.setAttribute('stroke-dasharray','6,3');
+  line.setAttribute('marker-end','url(#ann-ah)');
+
+  // Invisible wider hit area
+  const hit=document.createElementNS('http://www.w3.org/2000/svg','line');
+  hit.setAttribute('x1',x1); hit.setAttribute('y1',y1);
+  hit.setAttribute('x2',x2); hit.setAttribute('y2',y2);
+  hit.setAttribute('stroke','transparent'); hit.setAttribute('stroke-width','12');
+  hit.addEventListener('click',ev=>{ ev.stopPropagation(); _selectAnn(ann.id); });
+
+  g.append(hit, line);
+  svg.appendChild(g);
+
+  // Label
+  if(ann.label){
+    const mx=(x1+x2)/2, my=(y1+y2)/2;
+    _addAnnOverlayLabel(canvas, ann, mx, my);
+  }
+
+  // Drag handles when selected
+  if(SELECTED_ANN_ID===ann.id){
+    _addDragHandle(svg, ann, x1, y1, 'p1', W, H);
+    _addDragHandle(svg, ann, x2, y2, 'p2', W, H);
+    _addAnnDeleteBtn(canvas, ann, x1, y1);
+  }
+}
+
+function _renderSpan(svg, ann, W, H, canvas){
+  // Find start and end row bounding boxes
+  const startRow=canvas.querySelector(`.drow[data-rid="${ann.startRid}"]`);
+  const endRow  =canvas.querySelector(`.drow[data-rid="${ann.endRid}"]`);
+  if(!startRow||!endRow) return;
+
+  const cr=canvas.getBoundingClientRect();
+  const zoom=DIAGRAM_ZOOM/100;
+  const sr=startRow.getBoundingClientRect();
+  const er=endRow.getBoundingClientRect();
+
+  const top   =(sr.top   -cr.top +canvas.scrollTop)/zoom;
+  const bottom=(er.bottom-cr.top +canvas.scrollTop)/zoom;
+  const right =(Math.max(sr.right,er.right)-cr.left)/zoom + 18;
+
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.dataset.annId=ann.id;
+  g.style.pointerEvents='all';
+  g.style.cursor='pointer';
+
+  const color=ann.color||'#C8A84B';
+  const x=right, armLen=10;
+  // Top arm
+  const topArm=document.createElementNS('http://www.w3.org/2000/svg','line');
+  topArm.setAttribute('x1',x-armLen); topArm.setAttribute('y1',top);
+  topArm.setAttribute('x2',x);        topArm.setAttribute('y2',top);
+  topArm.setAttribute('stroke',color); topArm.setAttribute('stroke-width','2');
+  // Vertical bar
+  const bar=document.createElementNS('http://www.w3.org/2000/svg','line');
+  bar.setAttribute('x1',x); bar.setAttribute('y1',top);
+  bar.setAttribute('x2',x); bar.setAttribute('y2',bottom);
+  bar.setAttribute('stroke',color); bar.setAttribute('stroke-width','2');
+  // Bottom arm
+  const botArm=document.createElementNS('http://www.w3.org/2000/svg','line');
+  botArm.setAttribute('x1',x-armLen); botArm.setAttribute('y1',bottom);
+  botArm.setAttribute('x2',x);        botArm.setAttribute('y2',bottom);
+  botArm.setAttribute('stroke',color); botArm.setAttribute('stroke-width','2');
+  // Mid tick
+  const mid=(top+bottom)/2;
+  const midTick=document.createElementNS('http://www.w3.org/2000/svg','line');
+  midTick.setAttribute('x1',x); midTick.setAttribute('y1',mid);
+  midTick.setAttribute('x2',x+armLen); midTick.setAttribute('y2',mid);
+  midTick.setAttribute('stroke',color); midTick.setAttribute('stroke-width','2');
+
+  // Hit area
+  const hitBar=document.createElementNS('http://www.w3.org/2000/svg','rect');
+  hitBar.setAttribute('x',x-armLen); hitBar.setAttribute('y',top);
+  hitBar.setAttribute('width',armLen+18); hitBar.setAttribute('height',bottom-top);
+  hitBar.setAttribute('fill','transparent');
+  hitBar.addEventListener('click',ev=>{ ev.stopPropagation(); _selectAnn(ann.id); });
+
+  g.append(hitBar, topArm, bar, botArm, midTick);
+  svg.appendChild(g);
+
+  // Label at mid tick
+  if(ann.label||SELECTED_ANN_ID===ann.id){
+    _addAnnOverlayLabel(canvas, ann, x+armLen+4, mid);
+  }
+  if(SELECTED_ANN_ID===ann.id){
+    _addAnnDeleteBtn(canvas, ann, x, top);
+  }
+}
+
+function _renderArc(svg, ann, canvas){
+  // Find word elements by rid + wordIdx
+  const fromBlock=canvas.querySelector(`.dblock[data-rid="${ann.fromRid}"]`);
+  const toBlock  =canvas.querySelector(`.dblock[data-rid="${ann.toRid}"]`);
+  if(!fromBlock||!toBlock) return;
+
+  const fromWords=[...fromBlock.querySelectorAll('.ann-word')];
+  const toWords  =[...toBlock  .querySelectorAll('.ann-word')];
+  const fromWordEl=fromWords[ann.fromWordIdx];
+  const toWordEl  =toWords  [ann.toWordIdx];
+  if(!fromWordEl||!toWordEl) return;
+
+  const cr=canvas.getBoundingClientRect();
+  const zoom=DIAGRAM_ZOOM/100;
+  const fr=fromWordEl.getBoundingClientRect();
+  const tr=toWordEl  .getBoundingClientRect();
+
+  const fx=((fr.left+fr.right)/2-cr.left)/zoom;
+  const fy=(fr.top-cr.top+canvas.scrollTop)/zoom;
+  const tx=((tr.left+tr.right)/2-cr.left)/zoom;
+  const ty=(tr.top-cr.top+canvas.scrollTop)/zoom;
+
+  // Cubic bezier curving ABOVE the text
+  const cpY=Math.min(fy,ty)-40;
+  const d=`M ${fx} ${fy} C ${fx} ${cpY}, ${tx} ${cpY}, ${tx} ${ty}`;
+
+  const color=ann.color||'#C8A84B';
+  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
+  path.setAttribute('d',d);
+  path.setAttribute('fill','none');
+  path.setAttribute('stroke',color);
+  path.setAttribute('stroke-width','1.5');
+  path.setAttribute('marker-end','url(#ann-ah)');
+
+  const hitPath=document.createElementNS('http://www.w3.org/2000/svg','path');
+  hitPath.setAttribute('d',d);
+  hitPath.setAttribute('fill','none');
+  hitPath.setAttribute('stroke','transparent');
+  hitPath.setAttribute('stroke-width','10');
+  hitPath.style.pointerEvents='all';
+  hitPath.style.cursor='pointer';
+  hitPath.addEventListener('click',ev=>{ ev.stopPropagation(); _selectAnn(ann.id); });
+
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.dataset.annId=ann.id;
+  g.append(hitPath,path);
+  svg.appendChild(g);
+
+  // Label at midpoint
+  if(ann.label){
+    const mx=(fx+tx)/2, my=cpY-6;
+    _addAnnOverlayLabel(canvas, ann, mx, my);
+  }
+  if(SELECTED_ANN_ID===ann.id){
+    _addAnnDeleteBtn(canvas, ann, fx, fy-30);
+  }
+}
+
+/* ── Selection, editing, deletion ── */
+function _selectAnn(id){
+  SELECTED_ANN_ID=id;
+  renderAnnLayer();
+  // Show inline label editor in a floating popover
+  const ann=ANNOTATIONS.find(a=>a.id===id); if(!ann) return;
+  _showAnnEditPopup(ann);
+}
+
+function _showAnnEditPopup(ann){
+  let popup=document.getElementById('ann-edit-popup');
+  if(!popup){
+    popup=document.createElement('div');
+    popup.id='ann-edit-popup';
+    popup.className='ann-popup';
+    document.getElementById('dzone').appendChild(popup);
+  }
+  popup.innerHTML=`
+    <div class="ann-popup-row">
+      <input class="ann-popup-label" type="text" placeholder="${typeof t==='function'?t('ann.label-ph'):'Label…'}" value="${(ann.label||'').replace(/"/g,'&quot;')}"/>
+      <input class="ann-popup-color" type="color" value="${ann.color||'#C8A84B'}"/>
+      ${ann.type==='arrow'?`<label class="ann-popup-dashed"><input type="checkbox" ${ann.dashed?'checked':''}/>${typeof t==='function'?t('ann.dashed'):'Dashed'}</label>`:''}
+    </div>
+    <div class="ann-popup-row">
+      <button class="ann-popup-del">${typeof t==='function'?t('ann.delete'):'Delete'}</button>
+      <button class="ann-popup-close">${typeof t==='function'?t('ann.close'):'Done'}</button>
+    </div>`;
+  popup.style.display='block';
+
+  const labelIn=popup.querySelector('.ann-popup-label');
+  const colorIn=popup.querySelector('.ann-popup-color');
+  labelIn.addEventListener('input',()=>{ ann.label=labelIn.value.trim(); autoSave(); });
+  labelIn.addEventListener('change',()=>{ renderAnnLayer(); });
+  colorIn.addEventListener('change',()=>{ ann.color=colorIn.value; renderAnnLayer(); autoSave(); });
+  const dashedCb=popup.querySelector('.ann-popup-dashed input');
+  if(dashedCb) dashedCb.addEventListener('change',()=>{ ann.dashed=dashedCb.checked; renderAnnLayer(); autoSave(); });
+  popup.querySelector('.ann-popup-del').addEventListener('click',()=>{ deleteAnnotation(ann.id); popup.style.display='none'; });
+  popup.querySelector('.ann-popup-close').addEventListener('click',()=>{ popup.style.display='none'; SELECTED_ANN_ID=null; renderAnnLayer(); });
+}
+
+function deleteAnnotation(id){
+  const ann=ANNOTATIONS.find(a=>a.id===id); if(!ann) return;
+  ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==id);
+  SELECTED_ANN_ID=null;
+  if(ann.type==='divider') renderDividers();
+  else renderAnnLayer();
+  autoSave();
+  rowPush({type:'ann-remove',ann:{...ann}});
+}
+
+function _addAnnOverlayLabel(canvas, ann, cx, cy){
+  const wrap=document.createElement('div');
+  wrap.className='ann-overlay-label';
+  wrap.style.cssText=`position:absolute;left:${cx+4}px;top:${cy-8}px;pointer-events:auto;`;
+  wrap.textContent=ann.label;
+  wrap.style.color=ann.color||'#C8A84B';
+  canvas.appendChild(wrap);
+}
+
+function _addAnnDeleteBtn(canvas, ann, x, y){
+  const btn=document.createElement('button');
+  btn.className='ann-del-btn';
+  btn.style.cssText=`position:absolute;left:${x-8}px;top:${y-20}px;pointer-events:auto;`;
+  btn.textContent='✕';
+  btn.title=typeof t==='function'?t('ann.delete'):'Delete';
+  btn.addEventListener('click',ev=>{ ev.stopPropagation(); deleteAnnotation(ann.id); });
+  canvas.appendChild(btn);
+}
+
+function _addDragHandle(svg, ann, x, y, point, W, H){
+  const circle=document.createElementNS('http://www.w3.org/2000/svg','circle');
+  circle.setAttribute('cx',x); circle.setAttribute('cy',y); circle.setAttribute('r','6');
+  circle.setAttribute('fill','#fff'); circle.setAttribute('stroke',ann.color||'#C8A84B');
+  circle.setAttribute('stroke-width','2');
+  circle.style.pointerEvents='all'; circle.style.cursor='grab';
+  circle.addEventListener('mousedown',ev=>{
+    ev.stopPropagation(); ev.preventDefault();
+    const canvas=document.getElementById('dcanvas');
+    const onMove=ev2=>{
+      const r=canvas.getBoundingClientRect();
+      const zoom=DIAGRAM_ZOOM/100;
+      const px=((ev2.clientX-r.left)/zoom)/W*100;
+      const py=((ev2.clientY-r.top+canvas.scrollTop)/zoom)/H*100;
+      if(point==='p1'){ann.x1=px;ann.y1=py;}else{ann.x2=px;ann.y2=py;}
+      renderAnnLayer();
+    };
+    const onUp=()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); autoSave(); };
+    document.addEventListener('mousemove',onMove);
+    document.addEventListener('mouseup',onUp);
+  });
+  svg.appendChild(circle);
+}
+
+/* Click on canvas background deselects annotation */
+document.getElementById('dcanvas')?.addEventListener('click',()=>{
+  if(SELECTED_ANN_ID){ SELECTED_ANN_ID=null; renderAnnLayer(); }
+  const popup=document.getElementById('ann-edit-popup');
+  if(popup) popup.style.display='none';
+});
+
+/* Re-render ann layer when diagram is rebuilt */
+const _origRenderDiagram=typeof renderDiagram==='function'?renderDiagram:null;
+
+/* ── Undo/redo for annotations ── */
+function _annApplyUndo(op){
+  if(!op.type?.startsWith('ann-')) return false;
+  if(op.type==='ann-add'){
+    ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==op.ann.id);
+    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    return true;
+  }
+  if(op.type==='ann-remove'){
+    if(!ANNOTATIONS.find(a=>a.id===op.ann.id)) ANNOTATIONS.push({...op.ann});
+    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    return true;
+  }
+  return false;
+}
+
+/* Hook into existing undo/redo */
+const _origApplyRowUndo=typeof applyRowUndo==='function'?applyRowUndo:null;
+const _origApplyRowRedo=typeof applyRowRedo==='function'?applyRowRedo:null;
+
+/* ═══════════════════════════════════════════
+   SLIDES INTEGRATION
+   Render dividers into phrasing clone,
+   render arrows/spans/arcs into diagram clone.
+═══════════════════════════════════════════ */
+
+function slDrawDividersIntoClone(cloneRows, slide){
+  // cloneRows: the NodeList of cloned .xrow elements in the slide render container
+  // Insert divider elements after matching cloned rows
+  ANNOTATIONS.filter(a=>a.type==='divider').forEach(ann=>{
+    const cloneRow=[...cloneRows].find(r=>r.dataset.rid===ann.afterRid);
+    if(!cloneRow) return;
+    const el=document.createElement('div');
+    el.className='ann-divider ann-divider-slide';
+    el.style.setProperty('--div-color', ann.color||'#C8A84B');
+    const line=document.createElement('div'); line.className='ann-div-line';
+    const labelWrap=document.createElement('div'); labelWrap.className='ann-div-label-wrap';
+    const label=document.createElement('div'); label.className='ann-div-label';
+    label.textContent=ann.label||''; label.style.pointerEvents='none';
+    labelWrap.appendChild(label);
+    el.append(line,labelWrap);
+    cloneRow.after(el);
+  });
+}
+
+function slDrawAnnotationsIntoClone(cloneCanvas, visibleRids){
+  // Render diagram annotations (arrows, spans, arcs) into the slide diagram clone
+  const annToRender=ANNOTATIONS.filter(a=>
+    a.type==='arrow'||a.type==='span'||a.type==='arc'
+  );
+  if(!annToRender.length) return;
+
+  let svg=cloneCanvas.querySelector('#dann-svg-clone');
+  if(!svg){
+    svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    svg.id='dann-svg-clone';
+    svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:20;';
+    svg.innerHTML=`<defs><marker id="ann-ah-c" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="context-stroke"/></marker></defs>`;
+    cloneCanvas.appendChild(svg);
+  }
+
+  // Use live dcanvas dimensions as reference for % coordinates
+  const liveCanvas=document.getElementById('dcanvas');
+  if(!liveCanvas) return;
+  const W=liveCanvas.scrollWidth, H=liveCanvas.scrollHeight;
+  const cloneW=cloneCanvas.scrollWidth||W, cloneH=cloneCanvas.scrollHeight||H;
+
+  annToRender.forEach(ann=>{
+    if(ann.type==='arrow'){
+      const x1=ann.x1/100*cloneW, y1=ann.y1/100*cloneH;
+      const x2=ann.x2/100*cloneW, y2=ann.y2/100*cloneH;
+      const line=document.createElementNS('http://www.w3.org/2000/svg','line');
+      line.setAttribute('x1',x1);line.setAttribute('y1',y1);
+      line.setAttribute('x2',x2);line.setAttribute('y2',y2);
+      line.setAttribute('stroke',ann.color||'#C8A84B');
+      line.setAttribute('stroke-width','2');
+      if(ann.dashed) line.setAttribute('stroke-dasharray','6,3');
+      line.setAttribute('marker-end','url(#ann-ah-c)');
+      svg.appendChild(line);
+      if(ann.label){
+        const lbl=document.createElement('div');
+        lbl.className='ann-overlay-label';
+        lbl.style.cssText=`position:absolute;left:${(x1+x2)/2+4}px;top:${(y1+y2)/2-8}px;color:${ann.color||'#C8A84B'};pointer-events:none;font-size:11px;`;
+        lbl.textContent=ann.label;
+        cloneCanvas.appendChild(lbl);
+      }
+    }
+    // Spans and arcs in clone require DOM layout — skip for now (they use live DOM rects)
+    // They will be rendered when slDrawConnectorsIntoClone already handles layout-dependent items
+  });
+}
+
+
 
 /* ── State ── */
 let SL_DECK       = { slides: [] };   // the deck
@@ -5546,7 +6274,8 @@ const SL_RATIO    = 16/9;
 /* ── Default visibility ── */
 const SL_VIS_DEFAULT = {
   indentation:false, translation:false,
-  comments:false, connectors:false, brackets:false, labels:false
+  comments:false, connectors:false, brackets:false, labels:false,
+  dividers:true, annotations:true
 };
 
 /* ── Serialise / restore ── */
@@ -6227,6 +6956,8 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           }
         }
         inner.appendChild(rb);
+        // Render discourse unit dividers between cloned rows
+        slDrawDividersIntoClone(rb.querySelectorAll('.xrow'), slide);
       } else {
         // Build diagram content by cloning actual .dblock elements from the live
         // diagram rows — this preserves exact block dimensions (padding, font-size,
@@ -6339,6 +7070,8 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           const v=slide.visibility;
           if(v.connectors) slDrawConnectorsIntoClone(_slDiagWrap, slide.rowIds);
           if(v.brackets)   slDrawBracketsIntoClone(_slDiagWrap, slide.rowIds);
+          // Render free arrows (and future arc/span clones) into diagram slide
+          slDrawAnnotationsIntoClone(_slDiagWrap, slide.rowIds);
         }
 
         // Measure natural content size (before any scale)
