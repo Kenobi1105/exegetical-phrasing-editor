@@ -2,7 +2,9 @@
    STATE
 ════════════════════════════════════════ */
 let SESS='', LANG='', IS_RTL=false, IS_SINGLE=false;
-let sessionVersionLabel='';
+// NOTE: sessionVersionLabel is declared in bible.js as a shared global.
+// Do not redeclare it here with let/var — that would throw a SyntaxError
+// when both scripts are loaded in the same non-module scope.
 let hlColor='#F0D08F';
 let activeEl=null, savedRange=null;
 let RC=0, CC=0;
