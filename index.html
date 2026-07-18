@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607191200"/>
+<meta name="app-version" content="202607191500"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -327,6 +327,9 @@
       </button>
       <button class="tbtn" id="tb-add-arrow" title="Draw free arrow (Alt+A)" onclick="startFreeArrow()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="12 5 19 5 19 12"/></svg>
+      </button>
+      <button class="tbtn" id="tb-add-connector" title="Draw connector — Ctrl+drag block or word (Alt+C)" onclick="startConnectorMode()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 12 C5 6 19 6 19 12"/><polyline points="15 9 19 12 15 15"/></svg>
       </button>
       <button class="tbtn" id="tb-add-bracket" title="Add bracket — Shift+click two pips (Alt+B)" onclick="addBracketHint()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2"/></svg>

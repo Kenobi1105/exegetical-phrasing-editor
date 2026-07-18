@@ -4080,6 +4080,7 @@ body.brk-locked .dbrk-pip:hover {
 
 /* ── Diagram annotation canvas states ── */
 #dcanvas.ann-arrow-mode { cursor: crosshair; }
+#dcanvas.ann-connector-mode .dblock { cursor: crosshair; }
 
 /* .ann-word spans are created by _wrapBlockTextWords for word-level
    connector anchoring (Ctrl+drag on a word). They have no special

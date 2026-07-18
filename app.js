@@ -436,6 +436,7 @@ function setEditorView(view){
   // Annotation buttons: divider only in phrasing, arrow + bracket only in diagram
   document.getElementById('tb-add-divider')?.style.setProperty('display',isPhrasing?'':'none');
   document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
+  document.getElementById('tb-add-connector')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-bracket')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-cmt')?.style.setProperty('display',isDiagram?'':'none');
   // Show exactly one PDF export option in the popup depending on active view
@@ -1331,6 +1332,51 @@ function _snapFracY(fracY){ return fracY<0.5 ? 0 : 1; }
    Default color: #C8A84B (gold), weight: 1.5 — matching the arc connector.
    Escape during drag cancels. */
 /* Returns the index (0-based) of the .ann-word span that contains targetNode */
+/* ── Connector draw mode (toolbar button / Alt+C) ───────────────────────────
+   Clicking the connector button (or pressing Alt+C) toggles connector-draw
+   mode. While active, the canvas shows a crosshair cursor over blocks and
+   a hint toast. The user then Ctrl+drags from any block or word.
+   Pressing Escape, clicking the button again, or Alt+C again exits the mode. */
+let _connectorModeActive=false;
+
+function startConnectorMode(){
+  if(EDITOR_VIEW!=='diagram') return;
+  if(_connectorModeActive){
+    _exitConnectorMode();
+  } else {
+    _connectorModeActive=true;
+    _setAnnBtnActive('tb-add-connector', true);
+    // Pre-wrap all blocks so .ann-word spans exist for word-level detection
+    document.querySelectorAll('#dcanvas .dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
+    document.getElementById('dcanvas')?.classList.add('ann-connector-mode');
+    toast(typeof t==='function'?t('ann.connector.hint'):'Ctrl+drag from any block or word to draw a connector. Drag to a word for word-level anchoring.');
+  }
+}
+
+function _exitConnectorMode(){
+  _connectorModeActive=false;
+  _setAnnBtnActive('tb-add-connector', false);
+  document.getElementById('dcanvas')?.classList.remove('ann-connector-mode');
+}
+
+/* Called after a connector is successfully committed — exit mode */
+function _onConnectorCommitted(){
+  if(_connectorModeActive) _exitConnectorMode();
+}
+
+/* Pre-wrap blocks when Ctrl is pressed in diagram view ─────────────────────
+   The Ctrl+drag connector checks ev.target.closest('.ann-word') to detect
+   word-level clicks. But .ann-word spans only exist after _wrapBlockTextWords_single
+   runs — which is inside startConnectorDraw, called from the mousedown handler.
+   By then, ev.target is already captured and closest('.ann-word') always returns null.
+   Fix: when Ctrl is pressed in diagram view, pre-wrap all visible blocks so
+   the .ann-word spans exist before any mousedown fires. */
+document.addEventListener('keydown', ev=>{
+  if(ev.key!=='Control'||EDITOR_VIEW!=='diagram') return;
+  document.querySelectorAll('#dcanvas .dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
+});
+
+/* Returns the index (0-based) of the .ann-word span that contains targetNode */
 function _getWordIdx(textEl, targetNode){
   const words=[...textEl.querySelectorAll('.ann-word')];
   for(let i=0;i<words.length;i++){
@@ -1469,6 +1515,7 @@ function startConnectorDraw(ev, fromRid){
       rowPush({type:'connector-add', connector:newConnector});
       autoSave();
       renderDiagramConnectors();
+      _onConnectorCommitted();
     }
   };
 
@@ -5635,8 +5682,9 @@ document.addEventListener('keyup', ev=>{
 document.addEventListener('keydown', ev=>{
   if(ev.key==='Escape'){
     if(BRACKET_PENDING){ _brkCancelPending(); toast(t('bracket.cancel')); }
-    // Also exit bracket locked mode if active
+    // Also exit bracket locked mode and connector mode if active
     if(document.body.classList.contains('brk-locked')) _brkExitLockedMode();
+    if(typeof _exitConnectorMode==='function') _exitConnectorMode();
     _brkDeselect();
   }
 }, true);
@@ -8162,7 +8210,7 @@ document.addEventListener('keydown',function(ev){
 /* ── Alt+1/2/3/T/L/P/D/A/B hotkeys ── */
 document.addEventListener('keydown',function(ev){
   if(!ev.altKey||ev.shiftKey||ev.ctrlKey||ev.metaKey)return;
-  if(!'123tTlLpPdDaAbB'.includes(ev.key))return;
+  if(!'123tTlLpPdDaAbBcC'.includes(ev.key))return;
   const tag=(ev.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea')return;
   const s2Visible=!document.getElementById('s2')?.classList.contains('hidden');
@@ -8190,8 +8238,8 @@ document.addEventListener('keydown',function(ev){
   if((ev.key==='a'||ev.key==='A')&&!s1Visible&&EDITOR_VIEW==='diagram'){
     startFreeArrow();
   }
-  if((ev.key==='b'||ev.key==='B')&&!s1Visible&&EDITOR_VIEW==='diagram'){
-    addBracketHint();
+  if((ev.key==='c'||ev.key==='C')&&!s1Visible&&EDITOR_VIEW==='diagram'){
+    startConnectorMode();
   }
 });
 
