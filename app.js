@@ -974,16 +974,25 @@ function startBlockDrag(ev, rid){
    the vertical inset, per the curve connector's original spec.) */
 const CONN_EDGE_INSET=6;
 function _connectorPoint(el, fracX, fracY, canvasRect, wordIdx){
-  // Word-level anchor: find the .ann-word span at wordIdx and use its center
+  // Word-level anchor: find the .ann-word span at wordIdx and use its center.
+  // Also compute whether the word sits in the top or bottom half of its block
+  // (fracY 0 = top, 1 = bottom) so the caller can apply the correct hook direction.
   if(wordIdx!=null){
     const words=el.querySelectorAll('.ann-word');
     const wordEl=words[wordIdx];
     if(wordEl){
       const wr=wordEl.getBoundingClientRect();
+      const br=el.getBoundingClientRect();
       const canvas=document.getElementById('dcanvas');
+      const scrollTop=canvas?canvas.scrollTop:0;
+      const wordCenterY=(wr.top+wr.bottom)/2;
+      const blockMidY=(br.top+br.bottom)/2;
+      // Expose the vertical-edge fraction so _makeCurveConnectorEl can hook correctly
+      const wordFracY=wordCenterY<blockMidY?0:1;
       return {
         x:(wr.left+wr.right)/2-canvasRect.left,
-        y:(wr.top+wr.bottom)/2-canvasRect.top+(canvas?canvas.scrollTop:0)
+        y:(wr.top+wr.bottom)/2-canvasRect.top+scrollTop,
+        wordFracY          // 0 = top-half word → hook exits upward; 1 = bottom-half → downward
       };
     }
   }
@@ -1193,12 +1202,22 @@ function _makeHitPath(d, cnxId){
    as a <g> containing a wide invisible hit path plus the real visible
    (hooked S-curve) path. Rendered into the FRONT svg layer. */
 function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
-  // Pass fromWordIdx/toWordIdx so word-level connectors anchor to the specific word
   const p1=_connectorPoint(fromEl, cnx.fromX??0.5, cnx.fromY??0.5, canvasRect, cnx.fromWordIdx??null);
   const p2=_connectorPoint(toEl,   cnx.toX  ??0.5, cnx.toY  ??0.5, canvasRect, cnx.toWordIdx  ??null);
-  // For word-level endpoints, don't apply the vertical hook — use plain bezier
-  const fromY=cnx.fromWordIdx!=null?null:(cnx.fromY);
-  const toY  =cnx.toWordIdx  !=null?null:(cnx.toY);
+
+  // Determine hook fractions:
+  // • Block-level endpoint: use the stored fracY (0=top, 1=bottom edge).
+  // • Word-level endpoint: use wordFracY computed from which half of the block
+  //   the word sits in — so the hook exits/arrives in the correct direction.
+  const fromY = cnx.fromWordIdx!=null ? (p1.wordFracY??0) : cnx.fromY;
+  let   toY   = cnx.toWordIdx  !=null ? (p2.wordFracY??1) : cnx.toY;
+
+  // Fix 3: if the connector runs nearly straight down (|dx| < 30 SVG units),
+  // suppress the landing hook at the destination so the curve arrives cleanly
+  // rather than curling sideways. The departure hook at the source still applies.
+  const dx=p2.x-p1.x;
+  if(Math.abs(dx)<30) toY=null;
+
   const d=_connectorPathD(p1,p2,fromY,toY);
   const isSelected=(SELECTED_CNX_ID===cnx.id);
 
@@ -1364,16 +1383,22 @@ function _onConnectorCommitted(){
   if(_connectorModeActive) _exitConnectorMode();
 }
 
-/* Pre-wrap blocks when Ctrl is pressed in diagram view ─────────────────────
-   The Ctrl+drag connector checks ev.target.closest('.ann-word') to detect
-   word-level clicks. But .ann-word spans only exist after _wrapBlockTextWords_single
-   runs — which is inside startConnectorDraw, called from the mousedown handler.
-   By then, ev.target is already captured and closest('.ann-word') always returns null.
-   Fix: when Ctrl is pressed in diagram view, pre-wrap all visible blocks so
-   the .ann-word spans exist before any mousedown fires. */
+/* Pre-wrap + visual connector mode on Ctrl keydown/keyup ─────────────────
+   When Ctrl is held in diagram view:
+   1. Pre-wrap all .dblock-text elements so .ann-word spans exist before mousedown.
+   2. Add ann-connector-mode to #dcanvas so words show as clickable boxes (CSS).
+   On Ctrl keyup: remove ann-connector-mode unless toolbar button locked it on. */
 document.addEventListener('keydown', ev=>{
   if(ev.key!=='Control'||EDITOR_VIEW!=='diagram') return;
+  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
   document.querySelectorAll('#dcanvas .dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
+  canvas.classList.add('ann-connector-mode');
+});
+document.addEventListener('keyup', ev=>{
+  if(ev.key!=='Control') return;
+  if(!_connectorModeActive){
+    document.getElementById('dcanvas')?.classList.remove('ann-connector-mode');
+  }
 });
 
 /* Returns the index (0-based) of the .ann-word span that contains targetNode */

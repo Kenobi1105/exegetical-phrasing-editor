@@ -4082,6 +4082,18 @@ body.brk-locked .dbrk-pip:hover {
 #dcanvas.ann-arrow-mode { cursor: crosshair; }
 #dcanvas.ann-connector-mode .dblock { cursor: crosshair; }
 
+/* Show word-level anchoring targets as subtle boxes in connector mode */
+#dcanvas.ann-connector-mode .ann-word {
+  outline: 1px dashed rgba(200,168,75,.55);
+  border-radius: 2px;
+  background: rgba(200,168,75,.08);
+  cursor: crosshair;
+}
+#dcanvas.ann-connector-mode .ann-word:hover {
+  outline-color: #C8A84B;
+  background: rgba(200,168,75,.22);
+}
+
 /* .ann-word spans are created by _wrapBlockTextWords for word-level
    connector anchoring (Ctrl+drag on a word). They have no special
    visual style — the anchoring is determined by click position only. */
