@@ -141,8 +141,8 @@ const LANGS = {
     'diagram.delete-label':'Delete label',
 
     /* ── Annotations ── */
-    'ann.div.add':       'Add discourse divider',
-    'ann.div.ph':        'Relationship…',
+    'ann.div.add':       'Add Proposition Divider',
+    'ann.div.ph':        'Proposition…',
     'ann.arrow.add':     'Draw free arrow',
     'ann.arrow.hint':    'Click and drag on the canvas to draw an arrow.',
     'ann.span.add':      'Add span marker',
@@ -488,8 +488,8 @@ const LANGS = {
     'diagram.delete-label':'删除标注',
 
     /* ── Annotations ── */
-    'ann.div.add':       '添加语篇分隔线',
-    'ann.div.ph':        '关系…',
+    'ann.div.add':       '添加命题分隔线',
+    'ann.div.ph':        '命题…',
     'ann.arrow.add':     '绘制自由箭头',
     'ann.arrow.hint':    '在图示区域点击并拖动以绘制箭头。',
     'ann.span.add':      '添加跨度标记',

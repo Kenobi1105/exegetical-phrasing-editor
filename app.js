@@ -269,15 +269,6 @@ function openEditor(){
   document.getElementById('app').style.display='flex';
   _applySessionLabels();
   document.getElementById('ch-t').style.display=IS_SINGLE?'none':'';
-  // Always open on Phrasing View — explicitly reset all view zones
-  EDITOR_VIEW='phrasing';
-  document.getElementById('tzone').style.display='';
-  document.getElementById('dzone').style.display='none';
-  document.getElementById('szone').style.display='none';
-  document.getElementById('sl-presenter').style.display='none';
-  document.getElementById('view-btn-phrasing')?.classList.add('active');
-  document.getElementById('view-btn-diagram')?.classList.remove('active');
-  document.getElementById('view-btn-slides')?.classList.remove('active');
   // Restore comment pane button
   const cmtBtnOE=document.getElementById('btn-cmt-pane');
   if(cmtBtnOE) cmtBtnOE.disabled=false;
@@ -288,6 +279,10 @@ function openEditor(){
   if(typeof _brkCloseEditPopup==='function') _brkCloseEditPopup();
   document.getElementById('dbrk-svg')?.remove();
   if(typeof slLoadDeck==='function') slLoadDeck({slides:[]});
+  // setEditorView handles zones, toolbar buttons (including annotation buttons),
+  // and active tab highlights — call it so everything resets consistently.
+  EDITOR_VIEW=''; // force setEditorView to apply the change
+  setEditorView('phrasing');
   autoSave();
   if(typeof _updateS12Pill==='function') _updateS12Pill();
   // Restore Bible Module pin state now that #app is visible
@@ -2271,6 +2266,8 @@ function applyRowUndo(op){
   if(typeof _slApplyUndo==='function' && _slApplyUndo(op)) return;
   // Bracket ops — handled entirely by bracket system
   if(typeof _brkApplyUndo==='function' && _brkApplyUndo(op)) return;
+  // Annotation ops (dividers, arrows, spans, arcs)
+  if(typeof _annApplyUndo==='function' && _annApplyUndo(op)) return;
   if(op.type==='indent'){
     // Re-query the cell from the DOM (op.el reference may be stale)
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
@@ -2421,6 +2418,8 @@ function applyRowRedo(op){
   if(typeof _slApplyRedo==='function' && _slApplyRedo(op)) return;
   // Bracket ops — handled entirely by bracket system
   if(typeof _brkApplyRedo==='function' && _brkApplyRedo(op)) return;
+  // Annotation ops
+  if(typeof _annApplyRedo==='function' && _annApplyRedo(op)) return;
   if(op.type==='indent'){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     const ce=row?row.querySelector('.cedit[data-indent]')||row.querySelector('.cedit'):op.el;
@@ -5577,12 +5576,12 @@ let SELECTED_ANN_ID=null;
    Stored: {id, afterRid, label, color}
 ═══════════════════════════════════════════ */
 function addDivider(){
-  // Add a divider after the currently focused row, or the last row
+  // Add a proposition divider ABOVE the currently focused row, or the first row
   const focusedRow = lastFocusedRowEl
-    || document.querySelector('.xrow:last-child');
+    || document.querySelector('.xrow');
   if(!focusedRow) return;
-  const afterRid = focusedRow.dataset.rid;
-  const ann = { id:_annId(), type:'divider', afterRid, label:'', color:'#C8A84B' };
+  const beforeRid = focusedRow.dataset.rid;
+  const ann = { id:_annId(), type:'divider', beforeRid, label:'', color:'#C8A84B' };
   ANNOTATIONS.push(ann);
   renderDividers();
   autoSave();
@@ -5597,9 +5596,11 @@ function addDivider(){
 function renderDividers(){
   // Remove all existing divider elements
   document.querySelectorAll('.ann-divider').forEach(e=>e.remove());
-  // Render each divider annotation after its target row
+  // Render each proposition divider BEFORE its target row
   ANNOTATIONS.filter(a=>a.type==='divider').forEach(ann=>{
-    const row=document.querySelector(`.xrow[data-rid="${ann.afterRid}"]`);
+    // Support both old afterRid (legacy) and new beforeRid
+    const rid=ann.beforeRid||ann.afterRid;
+    const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
     if(!row) return;
     const el=document.createElement('div');
     el.className='ann-divider';
@@ -5616,7 +5617,7 @@ function renderDividers(){
     label.className='ann-div-label';
     label.contentEditable='true';
     label.spellcheck=false;
-    label.setAttribute('data-ph', typeof t==='function'?t('ann.div.ph'):'Relationship…');
+    label.setAttribute('data-ph', typeof t==='function'?t('ann.div.ph'):'Proposition…');
     label.textContent=ann.label||'';
     label.addEventListener('input',()=>{
       ann.label=label.textContent.trim();
@@ -5643,7 +5644,7 @@ function renderDividers(){
 
     labelWrap.append(label, swatch, del);
     el.append(line, labelWrap);
-    row.after(el);
+    row.before(el);  // Proposition divider appears ABOVE its row
   });
 }
 
@@ -5662,12 +5663,18 @@ function deleteDivider(id){
    Coordinates are % of #dcanvas clientWidth/Height.
 ═══════════════════════════════════════════ */
 
+function _setAnnBtnActive(id, active){
+  const btn=document.getElementById(id);
+  if(btn) btn.classList.toggle('active', active);
+}
+
 /* Called from toolbar button or keyboard shortcut */
 function startFreeArrow(){
   if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add arrows.'); return; }
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
   toast(typeof t==='function'?t('ann.arrow.hint'):'Click and drag on the canvas to draw an arrow.');
   canvas.classList.add('ann-arrow-mode');
+  _setAnnBtnActive('tb-add-arrow', true);
 
   let x1,y1;
   const onDown=ev=>{
@@ -5692,8 +5699,14 @@ function startFreeArrow(){
 
     const onMove=ev2=>{
       const r2=canvas.getBoundingClientRect();
-      const x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
-      const y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
+      let x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
+      let y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
+      // Snap to horizontal or vertical when Shift is held
+      if(ev2.shiftKey){
+        const dx=x2-x1, dy=y2-y1;
+        if(Math.abs(dy)*canvas.scrollWidth < Math.abs(dx)*canvas.scrollHeight*0.15) y2=y1;      // snap horizontal
+        else if(Math.abs(dx)*canvas.scrollHeight < Math.abs(dy)*canvas.scrollWidth*0.15) x2=x1; // snap vertical
+      }
       _updateRubberArrow(rubber, x1,y1,x2,y2, canvas);
     };
     const onUp=ev2=>{
@@ -5701,11 +5714,17 @@ function startFreeArrow(){
       document.removeEventListener('mouseup',onUp);
       canvas.classList.remove('ann-arrow-mode');
       canvas.removeEventListener('mousedown',onDown);
+      _setAnnBtnActive('tb-add-arrow', false);
       if(rubber) rubber.remove();
 
       const r2=canvas.getBoundingClientRect();
-      const x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
-      const y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
+      let x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
+      let y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
+      if(ev2.shiftKey){
+        const dx=x2-x1, dy=y2-y1;
+        if(Math.abs(dy)*canvas.scrollWidth < Math.abs(dx)*canvas.scrollHeight*0.15) y2=y1;
+        else if(Math.abs(dx)*canvas.scrollHeight < Math.abs(dy)*canvas.scrollWidth*0.15) x2=x1;
+      }
       const dx=x2-x1, dy=y2-y1;
       if(Math.sqrt(dx*dx+dy*dy)<1) return; // too small — cancel
       const ann={id:_annId(),type:'arrow',x1,y1,x2,y2,label:'',color:'#C8A84B',dashed:false};
@@ -5738,6 +5757,7 @@ function addSpan(){
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
   toast(typeof t==='function'?t('ann.span.hint'):'Click the first row, then the last row, to mark a span.');
   canvas.classList.add('ann-span-mode');
+  _setAnnBtnActive('tb-add-span', true);
   let firstRid=null;
 
   const onClick=ev=>{
@@ -5750,6 +5770,7 @@ function addSpan(){
     } else {
       const secondRid=block.dataset.rid;
       canvas.classList.remove('ann-span-mode');
+      _setAnnBtnActive('tb-add-span', false);
       canvas.removeEventListener('click',onClick,true);
       document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first'));
       // Ensure startRid comes before endRid in DOM order
@@ -5766,7 +5787,7 @@ function addSpan(){
   };
   canvas.addEventListener('click',onClick,true);
   // Cancel with Escape
-  const onKey=ev=>{ if(ev.key==='Escape'){ canvas.classList.remove('ann-span-mode'); canvas.removeEventListener('click',onClick,true); document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first')); document.removeEventListener('keydown',onKey,true); } };
+  const onKey=ev=>{ if(ev.key==='Escape'){ canvas.classList.remove('ann-span-mode'); _setAnnBtnActive('tb-add-span',false); canvas.removeEventListener('click',onClick,true); document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first')); document.removeEventListener('keydown',onKey,true); } };
   document.addEventListener('keydown',onKey,true);
 }
 
@@ -5790,17 +5811,39 @@ function _getWordIdx(textEl, targetNode){
 }
 
 function _wrapBlockTextWords(canvas){
-  // Wrap each word in dblock-text in a .ann-word span for click targeting.
-  // Only wraps if not already wrapped to avoid double-wrap.
+  // Wrap each word in dblock-text spans for Ctrl+click arc targeting.
+  // Uses a DOM TreeWalker to walk TEXT NODES only — never touches or re-parses
+  // the HTML markup, so inline styles, colors, and superscripts are preserved.
   canvas.querySelectorAll('.dblock-text').forEach(textEl=>{
     if(textEl.querySelector('.ann-word')) return; // already wrapped
-    // Walk text nodes and wrap each word
-    const html=textEl.innerHTML;
-    // Simple word-wrap: split on spaces while preserving inline tags
-    // Use a regex replace on the innerHTML (words outside tags)
-    textEl.innerHTML=html.replace(/(<[^>]+>)|(\S+)/g,(m,tag,word)=>{
-      if(tag) return tag;
-      return `<span class="ann-word">${word}</span>`;
+
+    const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+    const textNodes=[];
+    let node;
+    while((node=walker.nextNode())) textNodes.push(node);
+
+    textNodes.forEach(tn=>{
+      const text=tn.nodeValue;
+      if(!text.trim()) return;
+      // Split on whitespace, wrapping each non-space run in a span
+      const frag=document.createDocumentFragment();
+      let buf='', inWord=false;
+      for(let i=0;i<=text.length;i++){
+        const ch=i<text.length?text[i]:'';
+        const isWS=ch===''||ch===' '||ch==='\t'||ch==='\n'||ch==='\r';
+        if(!isWS){
+          if(!inWord){ inWord=true; buf=ch; }
+          else buf+=ch;
+        } else {
+          if(inWord){
+            const sp=document.createElement('span');
+            sp.className='ann-word'; sp.textContent=buf;
+            frag.appendChild(sp); inWord=false; buf='';
+          }
+          if(ch) frag.appendChild(document.createTextNode(ch));
+        }
+      }
+      tn.parentNode.replaceChild(frag, tn);
     });
   });
 }
@@ -5810,12 +5853,14 @@ function enableArcMode(){
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
   _wrapBlockTextWords(canvas);
   canvas.classList.add('ann-arc-mode');
+  _setAnnBtnActive('tb-add-arc', true);
   toast(typeof t==='function'?t('ann.arc.hint'):'Ctrl+click a word in one block, then Ctrl+click a word in another block.');
 }
 
 function disableArcMode(){
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
   canvas.classList.remove('ann-arc-mode');
+  _setAnnBtnActive('tb-add-arc', false);
   _arcPending=null;
   document.querySelectorAll('.ann-word.ann-arc-selected').forEach(w=>w.classList.remove('ann-arc-selected'));
 }
@@ -5882,8 +5927,8 @@ function renderAnnLayer(){
   // Clear previous annotation elements (keep defs)
   [...svg.children].forEach(c=>{ if(c.tagName!=='defs') c.remove(); });
 
-  // Remove stale annotation overlay divs (labels on arrows/spans/arcs)
-  document.querySelectorAll('.ann-overlay-label').forEach(e=>e.remove());
+  // Remove stale annotation overlay divs AND delete buttons (both appended to canvas)
+  document.querySelectorAll('.ann-overlay-label,.ann-del-btn').forEach(e=>e.remove());
 
   const W=canvas.scrollWidth, H=canvas.scrollHeight;
 
@@ -6082,7 +6127,7 @@ function _showAnnEditPopup(ann){
       <input class="ann-popup-color" type="color" value="${ann.color||'#C8A84B'}"/>
       ${ann.type==='arrow'?`<label class="ann-popup-dashed"><input type="checkbox" ${ann.dashed?'checked':''}/>${typeof t==='function'?t('ann.dashed'):'Dashed'}</label>`:''}
     </div>
-    <div class="ann-popup-row">
+    <div class="ann-popup-row ann-popup-actions">
       <button class="ann-popup-del">${typeof t==='function'?t('ann.delete'):'Delete'}</button>
       <button class="ann-popup-close">${typeof t==='function'?t('ann.close'):'Done'}</button>
     </div>`;
@@ -6103,6 +6148,9 @@ function deleteAnnotation(id){
   const ann=ANNOTATIONS.find(a=>a.id===id); if(!ann) return;
   ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==id);
   SELECTED_ANN_ID=null;
+  // Hide the edit popup immediately so it doesn't persist after deletion
+  const popup=document.getElementById('ann-edit-popup');
+  if(popup) popup.style.display='none';
   if(ann.type==='divider') renderDividers();
   else renderAnnLayer();
   autoSave();
@@ -6178,6 +6226,22 @@ function _annApplyUndo(op){
   return false;
 }
 
+function _annApplyRedo(op){
+  if(!op.type?.startsWith('ann-')) return false;
+  // Redo is the mirror of undo: ann-add re-adds, ann-remove re-removes
+  if(op.type==='ann-add'){
+    if(!ANNOTATIONS.find(a=>a.id===op.ann.id)) ANNOTATIONS.push({...op.ann});
+    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    return true;
+  }
+  if(op.type==='ann-remove'){
+    ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==op.ann.id);
+    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    return true;
+  }
+  return false;
+}
+
 /* Hook into existing undo/redo */
 const _origApplyRowUndo=typeof applyRowUndo==='function'?applyRowUndo:null;
 const _origApplyRowRedo=typeof applyRowRedo==='function'?applyRowRedo:null;
@@ -6189,10 +6253,9 @@ const _origApplyRowRedo=typeof applyRowRedo==='function'?applyRowRedo:null;
 ═══════════════════════════════════════════ */
 
 function slDrawDividersIntoClone(cloneRows, slide){
-  // cloneRows: the NodeList of cloned .xrow elements in the slide render container
-  // Insert divider elements after matching cloned rows
   ANNOTATIONS.filter(a=>a.type==='divider').forEach(ann=>{
-    const cloneRow=[...cloneRows].find(r=>r.dataset.rid===ann.afterRid);
+    const rid=ann.beforeRid||ann.afterRid;
+    const cloneRow=[...cloneRows].find(r=>r.dataset.rid===rid);
     if(!cloneRow) return;
     const el=document.createElement('div');
     el.className='ann-divider ann-divider-slide';
@@ -6203,7 +6266,7 @@ function slDrawDividersIntoClone(cloneRows, slide){
     label.textContent=ann.label||''; label.style.pointerEvents='none';
     labelWrap.appendChild(label);
     el.append(line,labelWrap);
-    cloneRow.after(el);
+    cloneRow.before(el);  // Proposition divider appears above its row in slides too
   });
 }
 

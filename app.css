@@ -4113,6 +4113,10 @@ body.brk-active .dbrk-pip:hover {
   align-items: center;
   gap: 6px;
 }
+.ann-popup-actions {
+  justify-content: space-between;
+  padding-top: 2px;
+}
 .ann-popup-label {
   flex: 1;
   height: 28px;
@@ -4149,7 +4153,7 @@ body.brk-active .dbrk-pip:hover {
   border-radius: 99px; border: 1.5px solid rgba(73,53,72,.2);
   background: transparent; color: var(--muted);
   font-family: var(--ui); font-size: 11px; font-weight: 600;
-  cursor: pointer; transition: all .12s; margin-left: auto;
+  cursor: pointer; transition: all .12s;
 }
 .ann-popup-close:hover { color: var(--sig); border-color: var(--sig); }
 
