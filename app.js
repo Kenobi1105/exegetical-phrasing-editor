@@ -5663,6 +5663,26 @@ function deleteDivider(id){
    Coordinates are % of #dcanvas clientWidth/Height.
 ═══════════════════════════════════════════ */
 
+/* ── Active annotation mode tracking ─────────────────────────────────────────
+   Only one annotation draw mode (arrow, span, arc) can be active at a time.
+   _cancelAnnMode() exits whatever mode is current.
+   Each mode function calls _cancelAnnMode() before activating itself, and checks
+   whether it is already the active mode (for toggle-off behaviour).
+───────────────────────────────────────────────────────────────────────────── */
+let _annActiveMode=null;           // 'arrow'|'span'|'arc'|null
+let _annCancelFns=[];              // cleanup callbacks registered by the active mode
+
+function _cancelAnnMode(){
+  _annCancelFns.forEach(fn=>fn());
+  _annCancelFns=[];
+  _annActiveMode=null;
+  // Deactivate all annotation tool buttons
+  ['tb-add-arrow','tb-add-span','tb-add-arc'].forEach(id=>_setAnnBtnActive(id,false));
+  // Remove mode CSS classes from canvas
+  const canvas=document.getElementById('dcanvas');
+  if(canvas) canvas.classList.remove('ann-arrow-mode','ann-span-mode','ann-arc-mode');
+}
+
 function _setAnnBtnActive(id, active){
   const btn=document.getElementById(id);
   if(btn) btn.classList.toggle('on', active);
@@ -5671,10 +5691,14 @@ function _setAnnBtnActive(id, active){
 /* Called from toolbar button or keyboard shortcut */
 function startFreeArrow(){
   if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add arrows.'); return; }
+  // Toggle off if arrow mode is already active
+  if(_annActiveMode==='arrow'){ _cancelAnnMode(); return; }
+  _cancelAnnMode(); // exit any other active mode first
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
   toast(typeof t==='function'?t('ann.arrow.hint'):'Click and drag on the canvas to draw an arrow.');
   canvas.classList.add('ann-arrow-mode');
   _setAnnBtnActive('tb-add-arrow', true);
+  _annActiveMode='arrow';
 
   let x1,y1;
   const onDown=ev=>{
@@ -5712,10 +5736,8 @@ function startFreeArrow(){
     const onUp=ev2=>{
       document.removeEventListener('mousemove',onMove);
       document.removeEventListener('mouseup',onUp);
-      canvas.classList.remove('ann-arrow-mode');
-      canvas.removeEventListener('mousedown',onDown);
-      _setAnnBtnActive('tb-add-arrow', false);
       if(rubber) rubber.remove();
+      _cancelAnnMode(); // exits arrow mode, deactivates button
 
       const r2=canvas.getBoundingClientRect();
       let x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
@@ -5737,6 +5759,13 @@ function startFreeArrow(){
     document.addEventListener('mouseup',onUp);
   };
   canvas.addEventListener('mousedown',onDown);
+  // Register a cancel callback so _cancelAnnMode() can clean up arrow mode
+  _annCancelFns.push(()=>{
+    canvas.classList.remove('ann-arrow-mode');
+    canvas.removeEventListener('mousedown',onDown);
+    const rubber=document.getElementById('ann-arrow-rubber');
+    if(rubber) rubber.remove();
+  });
 }
 
 function _updateRubberArrow(line, x1,y1,x2,y2, canvas){
@@ -5753,11 +5782,13 @@ function _updateRubberArrow(line, x1,y1,x2,y2, canvas){
 
 function addSpan(){
   if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add span markers.'); return; }
-  // Prompt user to click the start block then the end block
+  if(_annActiveMode==='span'){ _cancelAnnMode(); return; }
+  _cancelAnnMode();
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
-  toast(typeof t==='function'?t('ann.span.hint'):'Click the first row, then the last row, to mark a span.');
+  toast(typeof t==='function'?t('ann.span.hint'):'Click the first block, then the last block, to mark a span.');
   canvas.classList.add('ann-span-mode');
   _setAnnBtnActive('tb-add-span', true);
+  _annActiveMode='span';
   let firstRid=null;
 
   const onClick=ev=>{
@@ -5769,12 +5800,12 @@ function addSpan(){
       block.classList.add('ann-span-first');
     } else {
       const secondRid=block.dataset.rid;
-      canvas.classList.remove('ann-span-mode');
-      _setAnnBtnActive('tb-add-span', false);
-      canvas.removeEventListener('click',onClick,true);
-      document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first'));
-      // Ensure startRid comes before endRid in DOM order
-      const rows=[...document.querySelectorAll('.drow[data-rid]')].map(r=>r.dataset.rid);
+      if(secondRid===firstRid){
+        toast(typeof t==='function'?t('ann.span.diff-block'):'Please click a different block for the end of the span.');
+        return;
+      }
+      _cancelAnnMode();
+      const rows=[...document.querySelectorAll('#dcanvas .drow[data-rid]')].map(r=>r.dataset.rid);
       const i1=rows.indexOf(firstRid), i2=rows.indexOf(secondRid);
       const startRid=i1<=i2?firstRid:secondRid;
       const endRid  =i1<=i2?secondRid:firstRid;
@@ -5785,9 +5816,15 @@ function addSpan(){
       rowPush({type:'ann-add',ann:{...ann}});
     }
   };
-  // Use setTimeout so the toolbar button's click event fully completes before
-  // the canvas capture listener is registered — prevents the same click from
-  // immediately triggering onClick and resetting span mode.
+
+  const onKey=ev=>{ if(ev.key==='Escape'){ _cancelAnnMode(); } };
+
+  _annCancelFns.push(()=>{
+    canvas.removeEventListener('click',onClick,true);
+    document.removeEventListener('keydown',onKey,true);
+    document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first'));
+  });
+
   setTimeout(()=>{
     canvas.addEventListener('click',onClick,true);
     document.addEventListener('keydown',onKey,true);
@@ -5853,9 +5890,15 @@ function _wrapBlockTextWords(canvas){
 
 function enableArcMode(){
   if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add arc connectors.'); return; }
+  if(_annActiveMode==='arc'){ _cancelAnnMode(); return; }
+  _cancelAnnMode();
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
-  // Delay word-wrapping and mode activation so the toolbar button's own click
-  // event fully completes before we start listening for Ctrl+clicks on the canvas.
+  _annActiveMode='arc';
+  _annCancelFns.push(()=>{
+    canvas.classList.remove('ann-arc-mode');
+    _arcPending=null;
+    document.querySelectorAll('.ann-word.ann-arc-selected').forEach(w=>w.classList.remove('ann-arc-selected'));
+  });
   setTimeout(()=>{
     _wrapBlockTextWords(canvas);
     canvas.classList.add('ann-arc-mode');
@@ -5865,11 +5908,7 @@ function enableArcMode(){
 }
 
 function disableArcMode(){
-  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
-  canvas.classList.remove('ann-arc-mode');
-  _setAnnBtnActive('tb-add-arc', false);
-  _arcPending=null;
-  document.querySelectorAll('.ann-word.ann-arc-selected').forEach(w=>w.classList.remove('ann-arc-selected'));
+  _cancelAnnMode();
 }
 
 // Global Ctrl+click listener for arc mode
