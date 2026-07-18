@@ -4101,12 +4101,12 @@ body.brk-active .dbrk-pip:hover {
   border: 1px solid rgba(73,53,72,.15);
   border-radius: var(--r);
   box-shadow: 0 4px 18px rgba(0,0,0,.14);
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: none;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   font-family: var(--ui);
-  min-width: 220px;
+  min-width: 240px;
 }
 .ann-popup-row {
   display: flex;

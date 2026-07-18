@@ -5665,7 +5665,7 @@ function deleteDivider(id){
 
 function _setAnnBtnActive(id, active){
   const btn=document.getElementById(id);
-  if(btn) btn.classList.toggle('active', active);
+  if(btn) btn.classList.toggle('on', active);
 }
 
 /* Called from toolbar button or keyboard shortcut */
@@ -5785,10 +5785,13 @@ function addSpan(){
       rowPush({type:'ann-add',ann:{...ann}});
     }
   };
-  canvas.addEventListener('click',onClick,true);
-  // Cancel with Escape
-  const onKey=ev=>{ if(ev.key==='Escape'){ canvas.classList.remove('ann-span-mode'); _setAnnBtnActive('tb-add-span',false); canvas.removeEventListener('click',onClick,true); document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first')); document.removeEventListener('keydown',onKey,true); } };
-  document.addEventListener('keydown',onKey,true);
+  // Use setTimeout so the toolbar button's click event fully completes before
+  // the canvas capture listener is registered — prevents the same click from
+  // immediately triggering onClick and resetting span mode.
+  setTimeout(()=>{
+    canvas.addEventListener('click',onClick,true);
+    document.addEventListener('keydown',onKey,true);
+  }, 0);
 }
 
 /* ═══════════════════════════════════════════
@@ -5851,9 +5854,13 @@ function _wrapBlockTextWords(canvas){
 function enableArcMode(){
   if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add arc connectors.'); return; }
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
-  _wrapBlockTextWords(canvas);
-  canvas.classList.add('ann-arc-mode');
-  _setAnnBtnActive('tb-add-arc', true);
+  // Delay word-wrapping and mode activation so the toolbar button's own click
+  // event fully completes before we start listening for Ctrl+clicks on the canvas.
+  setTimeout(()=>{
+    _wrapBlockTextWords(canvas);
+    canvas.classList.add('ann-arc-mode');
+    _setAnnBtnActive('tb-add-arc', true);
+  }, 0);
   toast(typeof t==='function'?t('ann.arc.hint'):'Ctrl+click a word in one block, then Ctrl+click a word in another block.');
 }
 
@@ -5906,31 +5913,38 @@ document.addEventListener('click',ev=>{
 function renderAnnLayer(){
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
 
+  const W=canvas.scrollWidth||canvas.offsetWidth||900;
+  const H=canvas.scrollHeight||canvas.offsetHeight||500;
+
   // Get or create the annotation SVG layer
   let svg=document.getElementById('dann-svg');
   if(!svg){
     svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
     svg.id='dann-svg';
-    svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;z-index:20;';
-    // Defs: arrowhead markers (one per color would be ideal but we'll use a neutral one and colour the stroke)
-    svg.innerHTML=`<defs>
-      <marker id="ann-ah" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-        <path d="M0,0 L0,6 L8,3 z" fill="context-stroke"/>
-      </marker>
-      <marker id="ann-ah-preview" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-        <path d="M0,0 L0,6 L8,3 z" fill="#C8A84B"/>
-      </marker>
-    </defs>`;
     canvas.appendChild(svg);
   }
+  // Resize and reposition on every call so it always matches dcanvas layout
+  svg.style.cssText='position:absolute;top:0;left:0;overflow:visible;pointer-events:none;z-index:20;';
+  svg.setAttribute('width', W);
+  svg.setAttribute('height', H);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
-  // Clear previous annotation elements (keep defs)
-  [...svg.children].forEach(c=>{ if(c.tagName!=='defs') c.remove(); });
+  // Defs with arrowhead marker — use a solid fill (context-stroke not supported in all browsers)
+  svg.innerHTML=`<defs>
+    <marker id="ann-ah" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#C8A84B"/>
+    </marker>
+  </defs>`;
 
   // Remove stale annotation overlay divs AND delete buttons (both appended to canvas)
   document.querySelectorAll('.ann-overlay-label,.ann-del-btn').forEach(e=>e.remove());
 
-  const W=canvas.scrollWidth, H=canvas.scrollHeight;
+  // If the selected annotation was deleted, hide the popup
+  if(SELECTED_ANN_ID && !ANNOTATIONS.find(a=>a.id===SELECTED_ANN_ID)){
+    SELECTED_ANN_ID=null;
+    const popup=document.getElementById('ann-edit-popup');
+    if(popup) popup.style.display='none';
+  }
 
   ANNOTATIONS.forEach(ann=>{
     if(ann.type==='arrow'){
@@ -5957,7 +5971,22 @@ function _renderArrow(svg, ann, W, H, canvas){
   line.setAttribute('stroke',ann.color||'#C8A84B');
   line.setAttribute('stroke-width','2');
   if(ann.dashed) line.setAttribute('stroke-dasharray','6,3');
-  line.setAttribute('marker-end','url(#ann-ah)');
+  // Per-arrow coloured arrowhead: inject a dedicated marker for this arrow's color
+  const markerId='ann-ah-'+ann.id.replace(/[^a-z0-9]/gi,'_');
+  let defs=svg.querySelector('defs');
+  if(!defs){ defs=document.createElementNS('http://www.w3.org/2000/svg','defs'); svg.prepend(defs); }
+  let mk=defs.querySelector('#'+markerId);
+  if(!mk){
+    mk=document.createElementNS('http://www.w3.org/2000/svg','marker');
+    mk.setAttribute('id',markerId); mk.setAttribute('markerWidth','8');
+    mk.setAttribute('markerHeight','8'); mk.setAttribute('refX','7');
+    mk.setAttribute('refY','3'); mk.setAttribute('orient','auto');
+    const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d','M0,0 L0,6 L8,3 z'); p.setAttribute('fill',ann.color||'#C8A84B');
+    mk.appendChild(p); defs.appendChild(mk);
+  } else { defs.querySelector('#'+markerId+' path')?.setAttribute('fill',ann.color||'#C8A84B'); }
+
+  line.setAttribute('marker-end','url(#'+markerId+')');
 
   // Invisible wider hit area
   const hit=document.createElementNS('http://www.w3.org/2000/svg','line');
@@ -6137,9 +6166,21 @@ function _showAnnEditPopup(ann){
   const colorIn=popup.querySelector('.ann-popup-color');
   labelIn.addEventListener('input',()=>{ ann.label=labelIn.value.trim(); autoSave(); });
   labelIn.addEventListener('change',()=>{ renderAnnLayer(); });
-  colorIn.addEventListener('change',()=>{ ann.color=colorIn.value; renderAnnLayer(); autoSave(); });
+  colorIn.addEventListener('change',()=>{
+    const oldColor=ann.color;
+    ann.color=colorIn.value;
+    renderAnnLayer();
+    autoSave();
+    rowPush({type:'ann-edit', annId:ann.id, prop:'color', oldVal:oldColor, newVal:ann.color});
+  });
   const dashedCb=popup.querySelector('.ann-popup-dashed input');
-  if(dashedCb) dashedCb.addEventListener('change',()=>{ ann.dashed=dashedCb.checked; renderAnnLayer(); autoSave(); });
+  if(dashedCb) dashedCb.addEventListener('change',()=>{
+    const oldDashed=ann.dashed;
+    ann.dashed=dashedCb.checked;
+    renderAnnLayer();
+    autoSave();
+    rowPush({type:'ann-edit', annId:ann.id, prop:'dashed', oldVal:oldDashed, newVal:ann.dashed});
+  });
   popup.querySelector('.ann-popup-del').addEventListener('click',()=>{ deleteAnnotation(ann.id); popup.style.display='none'; });
   popup.querySelector('.ann-popup-close').addEventListener('click',()=>{ popup.style.display='none'; SELECTED_ANN_ID=null; renderAnnLayer(); });
 }
@@ -6211,16 +6252,34 @@ document.getElementById('dcanvas')?.addEventListener('click',()=>{
 const _origRenderDiagram=typeof renderDiagram==='function'?renderDiagram:null;
 
 /* ── Undo/redo for annotations ── */
+function _annHidePopupIfStale(){
+  // If the popup is showing for an annotation that no longer exists, hide it
+  if(SELECTED_ANN_ID && !ANNOTATIONS.find(a=>a.id===SELECTED_ANN_ID)){
+    SELECTED_ANN_ID=null;
+    const popup=document.getElementById('ann-edit-popup');
+    if(popup) popup.style.display='none';
+  }
+}
+
 function _annApplyUndo(op){
   if(!op.type?.startsWith('ann-')) return false;
   if(op.type==='ann-add'){
     ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==op.ann.id);
+    _annHidePopupIfStale();
     if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
     return true;
   }
   if(op.type==='ann-remove'){
     if(!ANNOTATIONS.find(a=>a.id===op.ann.id)) ANNOTATIONS.push({...op.ann});
     if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    return true;
+  }
+  if(op.type==='ann-edit'){
+    const ann=ANNOTATIONS.find(a=>a.id===op.annId); if(!ann) return true;
+    ann[op.prop]=op.oldVal;
+    renderAnnLayer();
+    // Re-open popup with updated values if this annotation is still selected
+    if(SELECTED_ANN_ID===op.annId) _showAnnEditPopup(ann);
     return true;
   }
   return false;
@@ -6236,7 +6295,15 @@ function _annApplyRedo(op){
   }
   if(op.type==='ann-remove'){
     ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==op.ann.id);
+    _annHidePopupIfStale();
     if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    return true;
+  }
+  if(op.type==='ann-edit'){
+    const ann=ANNOTATIONS.find(a=>a.id===op.annId); if(!ann) return true;
+    ann[op.prop]=op.newVal;
+    renderAnnLayer();
+    if(SELECTED_ANN_ID===op.annId) _showAnnEditPopup(ann);
     return true;
   }
   return false;
