@@ -5811,7 +5811,8 @@ function addSpan(){
       const endRid  =i1<=i2?secondRid:firstRid;
       const ann={id:_annId(),type:'span',startRid,endRid,label:'',color:'#C8A84B',side:'right'};
       ANNOTATIONS.push(ann);
-      renderAnnLayer();
+      // Defer one rAF so DOM layout is fully settled after _cancelAnnMode()
+      requestAnimationFrame(()=>{ renderAnnLayer(); });
       autoSave();
       rowPush({type:'ann-add',ann:{...ann}});
     }
@@ -6052,7 +6053,7 @@ function _renderArrow(svg, ann, W, H, canvas){
 }
 
 function _renderSpan(svg, ann, W, H, canvas){
-  // Find start and end row bounding boxes
+  // Find start and end row bounding boxes via the .drow elements
   const startRow=canvas.querySelector(`.drow[data-rid="${ann.startRid}"]`);
   const endRow  =canvas.querySelector(`.drow[data-rid="${ann.endRid}"]`);
   if(!startRow||!endRow) return;
@@ -6062,9 +6063,24 @@ function _renderSpan(svg, ann, W, H, canvas){
   const sr=startRow.getBoundingClientRect();
   const er=endRow.getBoundingClientRect();
 
+  // Use the rightmost .dblock right edge within the spanned rows, not the full
+  // .drow right edge (which includes verse/label cells and equals scrollWidth,
+  // placing the bracket beyond the SVG viewBox and requiring horizontal scroll).
+  let blockRight=0;
+  const allRows=canvas.querySelectorAll('.drow[data-rid]');
+  const rids=[...document.querySelectorAll('#dcanvas .drow[data-rid]')].map(r=>r.dataset.rid);
+  const i1=rids.indexOf(ann.startRid), i2=rids.indexOf(ann.endRid);
+  const lo=Math.min(i1,i2), hi=Math.max(i1,i2);
+  rids.slice(lo,hi+1).forEach(rid=>{
+    const blk=canvas.querySelector(`.dblock[data-rid="${rid}"]`);
+    if(blk){ const br=blk.getBoundingClientRect(); blockRight=Math.max(blockRight,(br.right-cr.left)/zoom); }
+  });
+  if(blockRight===0) blockRight=W*0.8; // fallback
+
   const top   =(sr.top   -cr.top +canvas.scrollTop)/zoom;
   const bottom=(er.bottom-cr.top +canvas.scrollTop)/zoom;
-  const right =(Math.max(sr.right,er.right)-cr.left)/zoom + 18;
+  const x=blockRight+18; // bracket sits 18px right of the widest block
+  const armLen=10;
 
   const g=document.createElementNS('http://www.w3.org/2000/svg','g');
   g.dataset.annId=ann.id;
@@ -6072,7 +6088,6 @@ function _renderSpan(svg, ann, W, H, canvas){
   g.style.cursor='pointer';
 
   const color=ann.color||'#C8A84B';
-  const x=right, armLen=10;
   // Top arm
   const topArm=document.createElementNS('http://www.w3.org/2000/svg','line');
   topArm.setAttribute('x1',x-armLen); topArm.setAttribute('y1',top);
@@ -6098,7 +6113,7 @@ function _renderSpan(svg, ann, W, H, canvas){
   // Hit area
   const hitBar=document.createElementNS('http://www.w3.org/2000/svg','rect');
   hitBar.setAttribute('x',x-armLen); hitBar.setAttribute('y',top);
-  hitBar.setAttribute('width',armLen+18); hitBar.setAttribute('height',bottom-top);
+  hitBar.setAttribute('width',armLen+24); hitBar.setAttribute('height',bottom-top);
   hitBar.setAttribute('fill','transparent');
   hitBar.addEventListener('click',ev=>{ ev.stopPropagation(); _selectAnn(ann.id); });
 
