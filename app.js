@@ -433,11 +433,10 @@ function setEditorView(view){
   document.getElementById('dzoom-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dlabel-sep')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-label')?.style.setProperty('display',isDiagram?'':'none');
-  // Annotation buttons: divider only in phrasing, arrows/span/arc only in diagram
+  // Annotation buttons: divider only in phrasing, arrow + bracket only in diagram
   document.getElementById('tb-add-divider')?.style.setProperty('display',isPhrasing?'':'none');
   document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
-  document.getElementById('tb-add-span')?.style.setProperty('display',isDiagram?'':'none');
-  document.getElementById('tb-add-arc')?.style.setProperty('display',isDiagram?'':'none');
+  document.getElementById('tb-add-bracket')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-cmt')?.style.setProperty('display',isDiagram?'':'none');
   // Show exactly one PDF export option in the popup depending on active view
   const phrasePdfBtn =document.getElementById('export-pdf-btn');
@@ -902,7 +901,14 @@ function addDiagramLabel(){
    startConnectorDraw below) rather than moving the block. */
 function startBlockDrag(ev, rid){
   if(ev.button!==0) return; // left mouse button only
-  if(ev.shiftKey){ startConnectorDraw(ev, rid); return; }
+  if(ev.ctrlKey){
+    // Ensure .ann-word spans exist for word-level anchor detection
+    const fromBlk=document.querySelector(`.dblock[data-rid="${rid}"]`);
+    const dcanvas=document.getElementById('dcanvas');
+    if(fromBlk&&dcanvas) _wrapBlockTextWords(dcanvas);
+    startConnectorDraw(ev, rid);
+    return;
+  }
   ev.preventDefault();
   ev.stopPropagation();
 
@@ -967,11 +973,25 @@ function startBlockDrag(ev, rid){
    left/right edge — which gets no horizontal inset; only fracY 0/1 get
    the vertical inset, per the curve connector's original spec.) */
 const CONN_EDGE_INSET=6;
-function _connectorPoint(el, fracX, fracY, canvasRect){
+function _connectorPoint(el, fracX, fracY, canvasRect, wordIdx){
+  // Word-level anchor: find the .ann-word span at wordIdx and use its center
+  if(wordIdx!=null){
+    const words=el.querySelectorAll('.ann-word');
+    const wordEl=words[wordIdx];
+    if(wordEl){
+      const wr=wordEl.getBoundingClientRect();
+      const canvas=document.getElementById('dcanvas');
+      return {
+        x:(wr.left+wr.right)/2-canvasRect.left,
+        y:(wr.top+wr.bottom)/2-canvasRect.top+(canvas?canvas.scrollTop:0)
+      };
+    }
+  }
+  // Block-level anchor (original behaviour)
   const r=el.getBoundingClientRect();
   let y=r.top-canvasRect.top + r.height*fracY;
-  if(fracY===0) y+=CONN_EDGE_INSET;      // top edge — nudge down, into the block
-  else if(fracY===1) y-=CONN_EDGE_INSET; // bottom edge — nudge up, into the block
+  if(fracY===0) y+=CONN_EDGE_INSET;
+  else if(fracY===1) y-=CONN_EDGE_INSET;
   return {
     x: r.left-canvasRect.left + r.width*fracX,
     y
@@ -1173,9 +1193,13 @@ function _makeHitPath(d, cnxId){
    as a <g> containing a wide invisible hit path plus the real visible
    (hooked S-curve) path. Rendered into the FRONT svg layer. */
 function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
-  const p1=_connectorPoint(fromEl, cnx.fromX??0.5, cnx.fromY??0.5, canvasRect);
-  const p2=_connectorPoint(toEl, cnx.toX??0.5, cnx.toY??0.5, canvasRect);
-  const d=_connectorPathD(p1,p2,cnx.fromY,cnx.toY);
+  // Pass fromWordIdx/toWordIdx so word-level connectors anchor to the specific word
+  const p1=_connectorPoint(fromEl, cnx.fromX??0.5, cnx.fromY??0.5, canvasRect, cnx.fromWordIdx??null);
+  const p2=_connectorPoint(toEl,   cnx.toX  ??0.5, cnx.toY  ??0.5, canvasRect, cnx.toWordIdx  ??null);
+  // For word-level endpoints, don't apply the vertical hook — use plain bezier
+  const fromY=cnx.fromWordIdx!=null?null:(cnx.fromY);
+  const toY  =cnx.toWordIdx  !=null?null:(cnx.toY);
+  const d=_connectorPathD(p1,p2,fromY,toY);
   const isSelected=(SELECTED_CNX_ID===cnx.id);
 
   const g=document.createElementNS('http://www.w3.org/2000/svg','g');
@@ -1299,15 +1323,14 @@ function refreshDiagramConnectors(){
    edges or mid-block vertically, only the top or bottom edge. */
 function _snapFracY(fracY){ return fracY<0.5 ? 0 : 1; }
 
-/* Shift+drag from a block starts drawing a connector instead of moving the
-   block. A rubber-band curve follows the cursor FROM THE EXACT POINT the
-   drag started, with its vertical position snapped to the top or bottom
-   edge of the block (see _snapFracY); horizontal position stays free.
-   Releasing over a DIFFERENT block commits a new connector, anchored the
-   same way at the release point (solid, black, by default per spec), and
-   the creation is pushed onto ROW_STACK so Ctrl+Z/Ctrl+Y can undo/redo it
-   like any other row-level edit. Releasing anywhere else (empty canvas,
-   the same block, outside any block) cancels with no change. */
+/* Ctrl+drag from a block (or a specific word within a block) starts drawing
+   a connector. If the mousedown lands on a .ann-word span, the connector
+   anchors to that word's center (word-level). Otherwise it anchors to the
+   block fraction position as before (block-level).
+   Word-level endpoints are stored as fromWordIdx/toWordIdx (integer).
+   Block-level endpoints use fromWordIdx/toWordIdx = null (or absent).
+   Default color: #C8A84B (gold), weight: 1.5 — matching the arc connector.
+   Escape during drag cancels. */
 function startConnectorDraw(ev, fromRid){
   ev.preventDefault();
   ev.stopPropagation();
@@ -1317,28 +1340,38 @@ function startConnectorDraw(ev, fromRid){
   const fromEl=document.querySelector(`.dblock[data-rid="${fromRid}"]`);
   if(!canvas||!svg||!fromEl) return;
 
-  // Capture the exact start point as a fraction of the source block's
-  // current size (horizontal free, vertical snapped top/bottom) — the
-  // same representation committed connectors use.
+  // Determine if the drag started on a specific word (word-level anchor)
+  const fromWordEl=ev.target.closest('.ann-word');
+  const fromWordIdx=fromWordEl?_getWordIdx(fromEl.querySelector('.dblock-text'), fromWordEl):null;
+
+  // Compute start fractional position within the block
   const fr0=fromEl.getBoundingClientRect();
   const fromFracX=Math.min(1,Math.max(0,(ev.clientX-fr0.left)/fr0.width));
   const fromFracY=_snapFracY(Math.min(1,Math.max(0,(ev.clientY-fr0.top)/fr0.height)));
 
+  // If word-level: use the word's center as the visual start point for the rubber-band
+  let p1Override=null;
+  if(fromWordEl){
+    const wr=fromWordEl.getBoundingClientRect();
+    const cr=canvas.getBoundingClientRect();
+    p1Override={x:(wr.left+wr.right)/2-cr.left, y:(wr.top+wr.bottom)/2-cr.top+(canvas.scrollTop||0)};
+  }
+
   const rubberPath=document.createElementNS('http://www.w3.org/2000/svg','path');
   rubberPath.setAttribute('class','dconn-rubberband');
   rubberPath.setAttribute('fill','none');
-  rubberPath.setAttribute('stroke','#000000');
-  rubberPath.setAttribute('stroke-width','1');
+  rubberPath.setAttribute('stroke','#C8A84B');
+  rubberPath.setAttribute('stroke-width','1.5');
   rubberPath.setAttribute('stroke-dasharray','4,4');
-  canvas.appendChild(svg); // ensure front-most before drawing the rubber-band too
+  canvas.appendChild(svg);
   svg.appendChild(rubberPath);
 
   fromEl.classList.add('dconn-source');
 
   const updateRubberband=(mx,my)=>{
     const canvasRect=canvas.getBoundingClientRect();
-    const p1=_connectorPoint(fromEl, fromFracX, fromFracY, canvasRect);
-    const p2={x:mx-canvasRect.left, y:my-canvasRect.top};
+    const p1=p1Override||_connectorPoint(fromEl, fromFracX, fromFracY, canvasRect);
+    const p2={x:mx-canvasRect.left, y:my-canvasRect.top+(canvas.scrollTop||0)};
     rubberPath.setAttribute('d', _connectorPathD(p1,p2,fromFracY,null));
   };
   updateRubberband(ev.clientX, ev.clientY);
@@ -1353,13 +1386,19 @@ function startConnectorDraw(ev, fromRid){
     else { hoverTarget=null; }
   };
 
-  const onUp=mv=>{
+  const cancel=()=>{
     document.removeEventListener('mousemove',onMove);
     document.removeEventListener('mouseup',onUp);
+    document.removeEventListener('keydown',onKey,true);
     rubberPath.remove();
     fromEl.classList.remove('dconn-source');
     if(hoverTarget) hoverTarget.classList.remove('dconn-target');
+  };
 
+  const onKey=kev=>{ if(kev.key==='Escape'){ kev.preventDefault(); cancel(); } };
+
+  const onUp=mv=>{
+    cancel();
     const el=document.elementFromPoint?document.elementFromPoint(mv.clientX, mv.clientY):null;
     const toBlock=el?el.closest('.dblock'):null;
     if(toBlock && toBlock!==fromEl){
@@ -1367,26 +1406,29 @@ function startConnectorDraw(ev, fromRid){
       const tr=toBlock.getBoundingClientRect();
       const toFracX=Math.min(1,Math.max(0,(mv.clientX-tr.left)/tr.width));
       const toFracY=_snapFracY(Math.min(1,Math.max(0,(mv.clientY-tr.top)/tr.height)));
+
+      // Determine if release was on a specific word (word-level anchor)
+      const toWordEl=el?el.closest('.ann-word'):null;
+      const toWordIdx=toWordEl?_getWordIdx(toBlock.querySelector('.dblock-text'), toWordEl):null;
+
       CNX++;
       const newConnector={
         id:'cnx'+CNX, fromRid:String(fromRid), toRid:String(toRid),
         kind:'curve',
         fromX:fromFracX, fromY:fromFracY, toX:toFracX, toY:toFracY,
-        pattern:'solid', startCap:'none', endCap:'arrow', weight:1, color:'#F0D08F'
+        fromWordIdx, toWordIdx,
+        pattern:'solid', startCap:'none', endCap:'arrow', weight:1.5, color:'#C8A84B'
       };
       DIAGRAM_DATA.connectors.push(newConnector);
-      // Push to ROW_STACK so Ctrl+Z/Ctrl+Y can undo/redo connector creation,
-      // the same way Tab/Shift+Tab indent changes and drag-to-indent do.
       rowPush({type:'connector-add', connector:newConnector});
       autoSave();
       renderDiagramConnectors();
     }
-    // Released over empty canvas, the source block itself, or outside any
-    // block entirely — cancel silently, nothing was committed.
   };
 
   document.addEventListener('mousemove',onMove);
   document.addEventListener('mouseup',onUp);
+  document.addEventListener('keydown',onKey,true);
 }
 
 /* Right-angle connectors support TWO gestures:
@@ -5575,6 +5617,20 @@ let SELECTED_ANN_ID=null;
    with an editable relationship label.
    Stored: {id, afterRid, label, color}
 ═══════════════════════════════════════════ */
+/* ── Bracket system hint (toolbar button / Alt+B) ──────────────────────────
+   The bracket draw gesture is Shift+click on a block pip dot (unchanged).
+   This function just highlights the button and shows a toast so new users
+   can discover how to use it. */
+function addBracketHint(){
+  if(EDITOR_VIEW!=='diagram') return;
+  const btn=document.getElementById('tb-add-bracket');
+  if(btn){
+    btn.classList.add('on');
+    setTimeout(()=>btn.classList.remove('on'), 1500);
+  }
+  toast(typeof t==='function'?t('ann.bracket.hint'):'Shift+click a pip dot on any block to start a bracket, then Shift+click another pip to complete it.');
+}
+
 function addDivider(){
   // Add a proposition divider ABOVE the currently focused row, or the first row
   const focusedRow = lastFocusedRowEl
@@ -5677,10 +5733,9 @@ function _cancelAnnMode(){
   _annCancelFns=[];
   _annActiveMode=null;
   // Deactivate all annotation tool buttons
-  ['tb-add-arrow','tb-add-span','tb-add-arc'].forEach(id=>_setAnnBtnActive(id,false));
-  // Remove mode CSS classes from canvas
+  ['tb-add-arrow','tb-add-bracket'].forEach(id=>_setAnnBtnActive(id,false));
   const canvas=document.getElementById('dcanvas');
-  if(canvas) canvas.classList.remove('ann-arrow-mode','ann-span-mode','ann-arc-mode');
+  if(canvas) canvas.classList.remove('ann-arrow-mode');
 }
 
 function _setAnnBtnActive(id, active){
@@ -5774,185 +5829,11 @@ function _updateRubberArrow(line, x1,y1,x2,y2, canvas){
   line.setAttribute('x2',x2/100*w); line.setAttribute('y2',y2/100*h);
 }
 
-/* ═══════════════════════════════════════════
-   3. SPAN MARKERS  (Diagram view)
-   A vertical brace grouping a range of rows.
-   Stored: {id, startRid, endRid, label, color, side:'right'}
-═══════════════════════════════════════════ */
 
-function addSpan(){
-  if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add span markers.'); return; }
-  if(_annActiveMode==='span'){ _cancelAnnMode(); return; }
-  _cancelAnnMode();
-  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
-  toast(typeof t==='function'?t('ann.span.hint'):'Click the first block, then the last block, to mark a span.');
-  canvas.classList.add('ann-span-mode');
-  _setAnnBtnActive('tb-add-span', true);
-  _annActiveMode='span';
-  let firstRid=null;
 
-  const onClick=ev=>{
-    const block=ev.target.closest('.dblock');
-    if(!block) return;
-    ev.stopPropagation();
-    if(!firstRid){
-      firstRid=block.dataset.rid;
-      block.classList.add('ann-span-first');
-    } else {
-      const secondRid=block.dataset.rid;
-      if(secondRid===firstRid){
-        toast(typeof t==='function'?t('ann.span.diff-block'):'Please click a different block for the end of the span.');
-        return;
-      }
-      _cancelAnnMode();
-      const rows=[...document.querySelectorAll('#dcanvas .drow[data-rid]')].map(r=>r.dataset.rid);
-      const i1=rows.indexOf(firstRid), i2=rows.indexOf(secondRid);
-      const startRid=i1<=i2?firstRid:secondRid;
-      const endRid  =i1<=i2?secondRid:firstRid;
-      const ann={id:_annId(),type:'span',startRid,endRid,label:'',color:'#C8A84B',side:'right'};
-      ANNOTATIONS.push(ann);
-      // Defer one rAF so DOM layout is fully settled after _cancelAnnMode()
-      requestAnimationFrame(()=>{ renderAnnLayer(); });
-      autoSave();
-      rowPush({type:'ann-add',ann:{...ann}});
-    }
-  };
 
-  const onKey=ev=>{ if(ev.key==='Escape'){ _cancelAnnMode(); } };
 
-  _annCancelFns.push(()=>{
-    canvas.removeEventListener('click',onClick,true);
-    document.removeEventListener('keydown',onKey,true);
-    document.querySelectorAll('.ann-span-first').forEach(b=>b.classList.remove('ann-span-first'));
-  });
 
-  setTimeout(()=>{
-    canvas.addEventListener('click',onClick,true);
-    document.addEventListener('keydown',onKey,true);
-  }, 0);
-}
-
-/* ═══════════════════════════════════════════
-   4. ARC CONNECTORS  (Diagram view)
-   A curved arc between specific words in two blocks.
-   The user Ctrl+clicks a word in one block, then Ctrl+clicks
-   a word in another block. We record block rid + word index.
-   Stored: {id, fromRid, fromWordIdx, toRid, toWordIdx, label, color}
-═══════════════════════════════════════════ */
-
-let _arcPending=null; // {rid, wordIdx, wordEl}
-
-function _getWordIdx(textEl, targetNode){
-  // Returns the word index (0-based) of the word node that contains targetNode
-  const words=[...textEl.querySelectorAll('.ann-word')];
-  for(let i=0;i<words.length;i++){
-    if(words[i]===targetNode||words[i].contains(targetNode)) return i;
-  }
-  return -1;
-}
-
-function _wrapBlockTextWords(canvas){
-  // Wrap each word in dblock-text spans for Ctrl+click arc targeting.
-  // Uses a DOM TreeWalker to walk TEXT NODES only — never touches or re-parses
-  // the HTML markup, so inline styles, colors, and superscripts are preserved.
-  canvas.querySelectorAll('.dblock-text').forEach(textEl=>{
-    if(textEl.querySelector('.ann-word')) return; // already wrapped
-
-    const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
-    const textNodes=[];
-    let node;
-    while((node=walker.nextNode())) textNodes.push(node);
-
-    textNodes.forEach(tn=>{
-      const text=tn.nodeValue;
-      if(!text.trim()) return;
-      // Split on whitespace, wrapping each non-space run in a span
-      const frag=document.createDocumentFragment();
-      let buf='', inWord=false;
-      for(let i=0;i<=text.length;i++){
-        const ch=i<text.length?text[i]:'';
-        const isWS=ch===''||ch===' '||ch==='\t'||ch==='\n'||ch==='\r';
-        if(!isWS){
-          if(!inWord){ inWord=true; buf=ch; }
-          else buf+=ch;
-        } else {
-          if(inWord){
-            const sp=document.createElement('span');
-            sp.className='ann-word'; sp.textContent=buf;
-            frag.appendChild(sp); inWord=false; buf='';
-          }
-          if(ch) frag.appendChild(document.createTextNode(ch));
-        }
-      }
-      tn.parentNode.replaceChild(frag, tn);
-    });
-  });
-}
-
-function enableArcMode(){
-  if(EDITOR_VIEW!=='diagram'){ toast(typeof t==='function'?t('ann.diagram-only'):'Switch to Diagram view to add arc connectors.'); return; }
-  if(_annActiveMode==='arc'){ _cancelAnnMode(); return; }
-  _cancelAnnMode();
-  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
-  _annActiveMode='arc';
-  _annCancelFns.push(()=>{
-    canvas.classList.remove('ann-arc-mode');
-    _arcPending=null;
-    document.querySelectorAll('.ann-word.ann-arc-selected').forEach(w=>w.classList.remove('ann-arc-selected'));
-  });
-  setTimeout(()=>{
-    _wrapBlockTextWords(canvas);
-    canvas.classList.add('ann-arc-mode');
-    _setAnnBtnActive('tb-add-arc', true);
-  }, 0);
-  toast(typeof t==='function'?t('ann.arc.hint'):'Ctrl+click a word in one block, then Ctrl+click a word in another block.');
-}
-
-function disableArcMode(){
-  _cancelAnnMode();
-}
-
-// Arc Ctrl+click handler — registered on #dcanvas in CAPTURE phase.
-// Must be capture (not bubble on document) because the .dblock element has its own
-// bubble-phase click handler that calls ev.stopPropagation(), which would prevent
-// a document-level listener from ever receiving Ctrl+clicks on a block.
-// Capture fires top-down BEFORE any element-level bubble handlers, so we intercept
-// the click first and call stopPropagation() ourselves to prevent block selection.
-document.getElementById('dcanvas')?.addEventListener('click', ev=>{
-  if(!ev.ctrlKey) return;
-  const canvas=document.getElementById('dcanvas');
-  if(!canvas||!canvas.classList.contains('ann-arc-mode')) return;
-  const block=ev.target.closest('.dblock'); if(!block) return;
-  const textEl=block.querySelector('.dblock-text'); if(!textEl) return;
-  const wordEl=ev.target.closest('.ann-word'); if(!wordEl){
-    // Words might not be wrapped yet if the block was re-rendered after enableArcMode
-    _wrapBlockTextWords(canvas);
-    toast(typeof t==='function'?t('ann.arc.hint'):'Ctrl+click a word in one block, then Ctrl+click a word in another block.');
-    return;
-  }
-  ev.preventDefault(); ev.stopPropagation(); // prevent block selection during arc mode
-  const rid=block.dataset.rid;
-  const wordIdx=_getWordIdx(textEl,wordEl);
-  if(wordIdx<0) return;
-
-  if(!_arcPending){
-    _arcPending={rid,wordIdx,wordEl};
-    wordEl.classList.add('ann-arc-selected');
-  } else {
-    if(_arcPending.rid===rid){ toast(typeof t==='function'?t('ann.arc.diff-block'):'Please click a word in a different block.'); return; }
-    _arcPending.wordEl.classList.remove('ann-arc-selected');
-    const ann={id:_annId(),type:'arc',
-      fromRid:_arcPending.rid, fromWordIdx:_arcPending.wordIdx,
-      toRid:rid, toWordIdx:wordIdx,
-      label:'', color:'#C8A84B'};
-    ANNOTATIONS.push(ann);
-    _arcPending=null;
-    disableArcMode();
-    requestAnimationFrame(()=>renderAnnLayer());
-    autoSave();
-    rowPush({type:'ann-add',ann:{...ann}});
-  }
-}, true); // true = capture phase
 
 /* ═══════════════════════════════════════════
    DIAGRAM ANNOTATION LAYER RENDERER
@@ -5999,11 +5880,8 @@ function renderAnnLayer(){
   ANNOTATIONS.forEach(ann=>{
     if(ann.type==='arrow'){
       _renderArrow(svg, ann, W, H, canvas);
-    } else if(ann.type==='span'){
-      _renderSpan(svg, ann, W, H, canvas);
-    } else if(ann.type==='arc'){
-      _renderArc(svg, ann, canvas);
     }
+    // span and arc types removed — old saves with these types are silently skipped
   });
 }
 
@@ -6062,153 +5940,7 @@ function _renderArrow(svg, ann, W, H, canvas){
   }
 }
 
-function _renderSpan(svg, ann, W, H, canvas){
-  // Find start and end row bounding boxes via the .drow elements
-  const startRow=canvas.querySelector(`.drow[data-rid="${ann.startRid}"]`);
-  const endRow  =canvas.querySelector(`.drow[data-rid="${ann.endRid}"]`);
-  if(!startRow||!endRow) return;
 
-  const cr=canvas.getBoundingClientRect();
-  const zoom=DIAGRAM_ZOOM/100;
-  const sr=startRow.getBoundingClientRect();
-  const er=endRow.getBoundingClientRect();
-
-  // Use the rightmost .dblock right edge within the spanned rows, not the full
-  // .drow right edge (which includes verse/label cells and equals scrollWidth,
-  // placing the bracket beyond the SVG viewBox and requiring horizontal scroll).
-  let blockRight=0;
-  const allRows=canvas.querySelectorAll('.drow[data-rid]');
-  const rids=[...document.querySelectorAll('#dcanvas .drow[data-rid]')].map(r=>r.dataset.rid);
-  const i1=rids.indexOf(ann.startRid), i2=rids.indexOf(ann.endRid);
-  const lo=Math.min(i1,i2), hi=Math.max(i1,i2);
-  rids.slice(lo,hi+1).forEach(rid=>{
-    const blk=canvas.querySelector(`.dblock[data-rid="${rid}"]`);
-    if(blk){ const br=blk.getBoundingClientRect(); blockRight=Math.max(blockRight,(br.right-cr.left)/zoom); }
-  });
-  if(blockRight===0) blockRight=W*0.8; // fallback
-
-  const top   =(sr.top   -cr.top +canvas.scrollTop)/zoom;
-  const bottom=(er.bottom-cr.top +canvas.scrollTop)/zoom;
-  const x=blockRight+18; // bracket sits 18px right of the widest block
-  const armLen=10;
-
-  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
-  g.dataset.annId=ann.id;
-  g.style.pointerEvents='all';
-  g.style.cursor='pointer';
-
-  const color=ann.color||'#C8A84B';
-  // Top arm
-  const topArm=document.createElementNS('http://www.w3.org/2000/svg','line');
-  topArm.setAttribute('x1',x-armLen); topArm.setAttribute('y1',top);
-  topArm.setAttribute('x2',x);        topArm.setAttribute('y2',top);
-  topArm.setAttribute('stroke',color); topArm.setAttribute('stroke-width','2');
-  // Vertical bar
-  const bar=document.createElementNS('http://www.w3.org/2000/svg','line');
-  bar.setAttribute('x1',x); bar.setAttribute('y1',top);
-  bar.setAttribute('x2',x); bar.setAttribute('y2',bottom);
-  bar.setAttribute('stroke',color); bar.setAttribute('stroke-width','2');
-  // Bottom arm
-  const botArm=document.createElementNS('http://www.w3.org/2000/svg','line');
-  botArm.setAttribute('x1',x-armLen); botArm.setAttribute('y1',bottom);
-  botArm.setAttribute('x2',x);        botArm.setAttribute('y2',bottom);
-  botArm.setAttribute('stroke',color); botArm.setAttribute('stroke-width','2');
-  // Mid tick
-  const mid=(top+bottom)/2;
-  const midTick=document.createElementNS('http://www.w3.org/2000/svg','line');
-  midTick.setAttribute('x1',x); midTick.setAttribute('y1',mid);
-  midTick.setAttribute('x2',x+armLen); midTick.setAttribute('y2',mid);
-  midTick.setAttribute('stroke',color); midTick.setAttribute('stroke-width','2');
-
-  // Hit area
-  const hitBar=document.createElementNS('http://www.w3.org/2000/svg','rect');
-  hitBar.setAttribute('x',x-armLen); hitBar.setAttribute('y',top);
-  hitBar.setAttribute('width',armLen+24); hitBar.setAttribute('height',bottom-top);
-  hitBar.setAttribute('fill','transparent');
-  hitBar.addEventListener('click',ev=>{ ev.stopPropagation(); _selectAnn(ann.id); });
-
-  g.append(hitBar, topArm, bar, botArm, midTick);
-  svg.appendChild(g);
-
-  // Label at mid tick
-  if(ann.label||SELECTED_ANN_ID===ann.id){
-    _addAnnOverlayLabel(canvas, ann, x+armLen+4, mid);
-  }
-  if(SELECTED_ANN_ID===ann.id){
-    _addAnnDeleteBtn(canvas, ann, x, top);
-  }
-}
-
-function _renderArc(svg, ann, canvas){
-  // Find word elements by rid + wordIdx
-  const fromBlock=canvas.querySelector(`.dblock[data-rid="${ann.fromRid}"]`);
-  const toBlock  =canvas.querySelector(`.dblock[data-rid="${ann.toRid}"]`);
-  if(!fromBlock||!toBlock) return;
-
-  const fromWords=[...fromBlock.querySelectorAll('.ann-word')];
-  const toWords  =[...toBlock  .querySelectorAll('.ann-word')];
-  const fromWordEl=fromWords[ann.fromWordIdx];
-  const toWordEl  =toWords  [ann.toWordIdx];
-  if(!fromWordEl||!toWordEl) return;
-
-  const cr=canvas.getBoundingClientRect();
-  const zoom=DIAGRAM_ZOOM/100;
-  const fr=fromWordEl.getBoundingClientRect();
-  const tr=toWordEl  .getBoundingClientRect();
-
-  const fx=((fr.left+fr.right)/2-cr.left)/zoom;
-  const fy=(fr.top-cr.top+canvas.scrollTop)/zoom;
-  const tx=((tr.left+tr.right)/2-cr.left)/zoom;
-  const ty=(tr.top-cr.top+canvas.scrollTop)/zoom;
-
-  // Cubic bezier curving ABOVE the text
-  const cpY=Math.min(fy,ty)-40;
-  const d=`M ${fx} ${fy} C ${fx} ${cpY}, ${tx} ${cpY}, ${tx} ${ty}`;
-
-  const color=ann.color||'#C8A84B';
-  // Per-arc coloured arrowhead
-  const arcMarkerId='ann-ah-'+ann.id.replace(/[^a-z0-9]/gi,'_');
-  let defs=svg.querySelector('defs');
-  if(!defs){ defs=document.createElementNS('http://www.w3.org/2000/svg','defs'); svg.prepend(defs); }
-  if(!defs.querySelector('#'+arcMarkerId)){
-    const mk=document.createElementNS('http://www.w3.org/2000/svg','marker');
-    mk.setAttribute('id',arcMarkerId); mk.setAttribute('markerWidth','8');
-    mk.setAttribute('markerHeight','8'); mk.setAttribute('refX','7');
-    mk.setAttribute('refY','3'); mk.setAttribute('orient','auto');
-    const p=document.createElementNS('http://www.w3.org/2000/svg','path');
-    p.setAttribute('d','M0,0 L0,6 L8,3 z'); p.setAttribute('fill',color);
-    mk.appendChild(p); defs.appendChild(mk);
-  }
-  const path=document.createElementNS('http://www.w3.org/2000/svg','path');
-  path.setAttribute('d',d);
-  path.setAttribute('fill','none');
-  path.setAttribute('stroke',color);
-  path.setAttribute('stroke-width','1.5');
-  path.setAttribute('marker-end','url(#'+arcMarkerId+')');
-
-  const hitPath=document.createElementNS('http://www.w3.org/2000/svg','path');
-  hitPath.setAttribute('d',d);
-  hitPath.setAttribute('fill','none');
-  hitPath.setAttribute('stroke','transparent');
-  hitPath.setAttribute('stroke-width','10');
-  hitPath.style.pointerEvents='all';
-  hitPath.style.cursor='pointer';
-  hitPath.addEventListener('click',ev=>{ ev.stopPropagation(); _selectAnn(ann.id); });
-
-  const g=document.createElementNS('http://www.w3.org/2000/svg','g');
-  g.dataset.annId=ann.id;
-  g.append(hitPath,path);
-  svg.appendChild(g);
-
-  // Label at midpoint
-  if(ann.label){
-    const mx=(fx+tx)/2, my=cpY-6;
-    _addAnnOverlayLabel(canvas, ann, mx, my);
-  }
-  if(SELECTED_ANN_ID===ann.id){
-    _addAnnDeleteBtn(canvas, ann, fx, fy-30);
-  }
-}
 
 /* ── Selection, editing, deletion ── */
 function _selectAnn(id){
@@ -8366,10 +8098,10 @@ document.addEventListener('keydown',function(ev){
   if(typeof toggleLang==='function')toggleLang();
 });
 
-/* ── Alt+1 / Alt+2 / Alt+T / Alt+L / Alt+P hotkeys ── */
+/* ── Alt+1/2/3/T/L/P/D/A/B hotkeys ── */
 document.addEventListener('keydown',function(ev){
   if(!ev.altKey||ev.shiftKey||ev.ctrlKey||ev.metaKey)return;
-  if(ev.key!=='1'&&ev.key!=='2'&&ev.key!=='3'&&ev.key!=='t'&&ev.key!=='T'&&ev.key!=='l'&&ev.key!=='L'&&ev.key!=='p'&&ev.key!=='P')return;
+  if(!'123tTlLpPdDaAbB'.includes(ev.key))return;
   const tag=(ev.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea')return;
   const s2Visible=!document.getElementById('s2')?.classList.contains('hidden');
@@ -8389,6 +8121,16 @@ document.addEventListener('keydown',function(ev){
   }
   if((ev.key==='p'||ev.key==='P')&&!s1Visible){
     setEditorView('slides');
+  }
+  // Annotation shortcuts
+  if((ev.key==='d'||ev.key==='D')&&!s1Visible&&EDITOR_VIEW==='phrasing'){
+    addDivider();
+  }
+  if((ev.key==='a'||ev.key==='A')&&!s1Visible&&EDITOR_VIEW==='diagram'){
+    startFreeArrow();
+  }
+  if((ev.key==='b'||ev.key==='B')&&!s1Visible&&EDITOR_VIEW==='diagram'){
+    addBracketHint();
   }
 });
 

@@ -4072,25 +4072,11 @@ body.brk-active .dbrk-pip:hover {
 
 /* ── Diagram annotation canvas states ── */
 #dcanvas.ann-arrow-mode { cursor: crosshair; }
-#dcanvas.ann-span-mode  { cursor: cell; }
-#dcanvas.ann-arc-mode .ann-word { cursor: pointer; }
 
-/* Word spans for arc connector targeting */
-.ann-word { display: inline; border-radius: 2px; }
-.ann-arc-mode .ann-word:hover {
-  background: rgba(200,168,75,.25);
-  outline: 1px solid rgba(200,168,75,.5);
-}
-.ann-word.ann-arc-selected {
-  background: rgba(200,168,75,.35);
-  outline: 1px solid #C8A84B;
-}
-
-/* Span marker: highlight first block in span-mode */
-.ann-span-first {
-  outline: 2px dashed #C8A84B;
-  outline-offset: 2px;
-}
+/* .ann-word spans are created by _wrapBlockTextWords for word-level
+   connector anchoring (Ctrl+drag on a word). They have no special
+   visual style — the anchoring is determined by click position only. */
+.ann-word { display: inline; }
 
 /* ── Annotation edit popup ── */
 .ann-popup {

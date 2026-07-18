@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607182000"/>
+<meta name="app-version" content="202607190900"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -322,17 +322,14 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </button>
       <!-- ── Annotation buttons ── -->
-      <button class="tbtn" id="tb-add-divider" title="Add discourse unit divider" onclick="addDivider()" style="display:none">
+      <button class="tbtn" id="tb-add-divider" title="Add Proposition Divider (Alt+D)" onclick="addDivider()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="3,2"/><line x1="3" y1="8" x2="7" y2="8"/><line x1="3" y1="16" x2="7" y2="16"/></svg>
       </button>
-      <button class="tbtn" id="tb-add-arrow" title="Draw free arrow" onclick="startFreeArrow()" style="display:none">
+      <button class="tbtn" id="tb-add-arrow" title="Draw free arrow (Alt+A)" onclick="startFreeArrow()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="12 5 19 5 19 12"/></svg>
       </button>
-      <button class="tbtn" id="tb-add-span" title="Add span marker" onclick="addSpan()" style="display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="17" y1="4" x2="21" y2="4"/><line x1="19" y1="4" x2="19" y2="20"/><line x1="17" y1="20" x2="21" y2="20"/><line x1="19" y1="12" x2="22" y2="12"/></svg>
-      </button>
-      <button class="tbtn" id="tb-add-arc" title="Add arc connector (Ctrl+click words)" onclick="enableArcMode()" style="display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 19 Q12 4 19 19"/><circle cx="5" cy="19" r="2" fill="currentColor" stroke="none"/><circle cx="19" cy="19" r="2" fill="currentColor" stroke="none"/></svg>
+      <button class="tbtn" id="tb-add-bracket" title="Add bracket — Shift+click two pips (Alt+B)" onclick="addBracketHint()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h2"/><path d="M16 4h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-2"/></svg>
       </button>
       <div class="tsep"></div>
       <div class="tr-r">
