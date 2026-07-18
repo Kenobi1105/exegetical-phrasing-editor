@@ -588,9 +588,9 @@ function makeDiagramRowEl(row){
   lane.appendChild(block);
   block.addEventListener('mousedown', ev=>startBlockDrag(ev, rid));
   block.addEventListener('click', ev=>{
-    // Select this block (gold outline). Shift+click is a connector gesture,
-    // not a selection — ignore it. Also ignore if this was the end of a drag.
-    if(ev.shiftKey) return;
+    // Select this block (gold outline). Shift+click is a bracket gesture and
+    // Ctrl+click is a connector draw gesture — ignore both for selection.
+    if(ev.shiftKey||ev.ctrlKey) return;
     ev.stopPropagation(); // don't bubble to canvas deselect listener
     selectDiagBlock(rid);
   });
@@ -652,7 +652,8 @@ function makeDiagramRowEl(row){
   pipDot.className = 'dbrk-pip';
   pipDot.dataset.rid = rid;
   pipDot.addEventListener('mousedown', ev=>{
-    if(!ev.shiftKey) return;
+    // Fire in two cases: Shift held (classic gesture) OR brk-locked mode (toolbar button active)
+    if(!ev.shiftKey && !document.body.classList.contains('brk-locked')) return;
     ev.preventDefault();
     ev.stopPropagation();
     _brkHandleClick(rid, pipDot);
@@ -902,10 +903,8 @@ function addDiagramLabel(){
 function startBlockDrag(ev, rid){
   if(ev.button!==0) return; // left mouse button only
   if(ev.ctrlKey){
-    // Ensure .ann-word spans exist for word-level anchor detection
-    const fromBlk=document.querySelector(`.dblock[data-rid="${rid}"]`);
-    const dcanvas=document.getElementById('dcanvas');
-    if(fromBlk&&dcanvas) _wrapBlockTextWords(dcanvas);
+    ev.preventDefault();
+    ev.stopPropagation();
     startConnectorDraw(ev, rid);
     return;
   }
@@ -1331,6 +1330,48 @@ function _snapFracY(fracY){ return fracY<0.5 ? 0 : 1; }
    Block-level endpoints use fromWordIdx/toWordIdx = null (or absent).
    Default color: #C8A84B (gold), weight: 1.5 — matching the arc connector.
    Escape during drag cancels. */
+/* Returns the index (0-based) of the .ann-word span that contains targetNode */
+function _getWordIdx(textEl, targetNode){
+  const words=[...textEl.querySelectorAll('.ann-word')];
+  for(let i=0;i<words.length;i++){
+    if(words[i]===targetNode||words[i].contains(targetNode)) return i;
+  }
+  return -1;
+}
+
+/* Wrap words in a single .dblock's text with .ann-word spans for word-level
+   connector anchoring. Only touches the given block element, not the whole canvas,
+   so it's safe to call during a mousedown without disrupting other blocks' DOM. */
+function _wrapBlockTextWords_single(blockEl){
+  const textEl=blockEl?.querySelector('.dblock-text');
+  if(!textEl||textEl.querySelector('.ann-word')) return; // already wrapped
+  const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+  const textNodes=[];
+  let node;
+  while((node=walker.nextNode())) textNodes.push(node);
+  textNodes.forEach(tn=>{
+    const text=tn.nodeValue;
+    if(!text.trim()) return;
+    const frag=document.createDocumentFragment();
+    let buf='', inWord=false;
+    for(let i=0;i<=text.length;i++){
+      const ch=i<text.length?text[i]:'';
+      const isWS=ch===''||ch===' '||ch==='\t'||ch==='\n'||ch==='\r';
+      if(!isWS){
+        if(!inWord){ inWord=true; buf=ch; } else buf+=ch;
+      } else {
+        if(inWord){
+          const sp=document.createElement('span');
+          sp.className='ann-word'; sp.textContent=buf;
+          frag.appendChild(sp); inWord=false; buf='';
+        }
+        if(ch) frag.appendChild(document.createTextNode(ch));
+      }
+    }
+    tn.parentNode.replaceChild(frag,tn);
+  });
+}
+
 function startConnectorDraw(ev, fromRid){
   ev.preventDefault();
   ev.stopPropagation();
@@ -1339,6 +1380,10 @@ function startConnectorDraw(ev, fromRid){
   const svg=document.getElementById('dconns');
   const fromEl=document.querySelector(`.dblock[data-rid="${fromRid}"]`);
   if(!canvas||!svg||!fromEl) return;
+
+  // Wrap words on the FROM block only so word-level anchoring works
+  // without rewriting the entire canvas DOM (which would interrupt the drag).
+  _wrapBlockTextWords_single(fromEl);
 
   // Determine if the drag started on a specific word (word-level anchor)
   const fromWordEl=ev.target.closest('.ann-word');
@@ -1402,6 +1447,7 @@ function startConnectorDraw(ev, fromRid){
     const el=document.elementFromPoint?document.elementFromPoint(mv.clientX, mv.clientY):null;
     const toBlock=el?el.closest('.dblock'):null;
     if(toBlock && toBlock!==fromEl){
+      _wrapBlockTextWords_single(toBlock); // ensure .ann-word spans exist on target
       const toRid=toBlock.dataset.rid;
       const tr=toBlock.getBoundingClientRect();
       const toFracX=Math.min(1,Math.max(0,(mv.clientX-tr.left)/tr.width));
@@ -5071,6 +5117,8 @@ function _brkHandleClick(rid, pipEl){
     const endRid   = rid;
     _brkCancelPending();
     if(startRid===endRid){ toast(t('bracket.cancel')); return; }
+    // Exit locked mode after completing a bracket
+    if(document.body.classList.contains('brk-locked')) _brkExitLockedMode();
     _brkCreate(startRid, endRid);
   }
 }
@@ -5587,6 +5635,8 @@ document.addEventListener('keyup', ev=>{
 document.addEventListener('keydown', ev=>{
   if(ev.key==='Escape'){
     if(BRACKET_PENDING){ _brkCancelPending(); toast(t('bracket.cancel')); }
+    // Also exit bracket locked mode if active
+    if(document.body.classList.contains('brk-locked')) _brkExitLockedMode();
     _brkDeselect();
   }
 }, true);
@@ -5617,18 +5667,29 @@ let SELECTED_ANN_ID=null;
    with an editable relationship label.
    Stored: {id, afterRid, label, color}
 ═══════════════════════════════════════════ */
-/* ── Bracket system hint (toolbar button / Alt+B) ──────────────────────────
-   The bracket draw gesture is Shift+click on a block pip dot (unchanged).
-   This function just highlights the button and shows a toast so new users
-   can discover how to use it. */
+/* ── Bracket mode toggle (toolbar button / Alt+B) ──────────────────────────
+   Toggles 'brk-locked' on body, which shows pips persistently (same CSS as
+   brk-shift) so the user can click them without holding Shift.
+   Dismissed by: clicking the button again, Alt+B again, or Escape. */
 function addBracketHint(){
   if(EDITOR_VIEW!=='diagram') return;
+  const body=document.body;
   const btn=document.getElementById('tb-add-bracket');
-  if(btn){
-    btn.classList.add('on');
-    setTimeout(()=>btn.classList.remove('on'), 1500);
+  if(body.classList.contains('brk-locked')){
+    // Toggle off — cancel any pending first click and exit bracket mode
+    _brkExitLockedMode();
+  } else {
+    body.classList.add('brk-locked');
+    if(btn) btn.classList.add('on');
+    toast(typeof t==='function'?t('ann.bracket.hint'):'Shift+click a pip dot to start a bracket. Click again or press Escape to cancel.');
   }
-  toast(typeof t==='function'?t('ann.bracket.hint'):'Shift+click a pip dot on any block to start a bracket, then Shift+click another pip to complete it.');
+}
+
+function _brkExitLockedMode(){
+  document.body.classList.remove('brk-locked');
+  const btn=document.getElementById('tb-add-bracket');
+  if(btn) btn.classList.remove('on');
+  if(BRACKET_PENDING) _brkCancelPending();
 }
 
 function addDivider(){

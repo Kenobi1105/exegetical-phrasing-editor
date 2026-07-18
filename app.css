@@ -3190,6 +3190,12 @@ body.brk-shift .dbrk-pip {
   pointer-events: auto;
 }
 
+/* Show pips when bracket toolbar button is active (brk-locked mode) */
+body.brk-locked .dbrk-pip {
+  opacity: 1;
+  pointer-events: auto;
+}
+
 /* Show pips when bracket is pending (after first click) */
 body.brk-active .dbrk-pip {
   opacity: 1;
@@ -3198,13 +3204,15 @@ body.brk-active .dbrk-pip {
 
 /* Make pip cell interactive when pips are visible */
 body.brk-shift .drow-pip-cell,
-body.brk-active .drow-pip-cell {
+body.brk-active .drow-pip-cell,
+body.brk-locked .drow-pip-cell {
   pointer-events: auto;
 }
 
 /* Hover */
 body.brk-shift .dbrk-pip:hover,
-body.brk-active .dbrk-pip:hover {
+body.brk-active .dbrk-pip:hover,
+body.brk-locked .dbrk-pip:hover {
   background: var(--sig, #493548);
   border-color: var(--sig, #493548);
 }
