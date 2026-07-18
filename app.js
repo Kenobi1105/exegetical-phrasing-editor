@@ -5912,15 +5912,25 @@ function disableArcMode(){
   _cancelAnnMode();
 }
 
-// Global Ctrl+click listener for arc mode
-document.addEventListener('click',ev=>{
+// Arc Ctrl+click handler — registered on #dcanvas in CAPTURE phase.
+// Must be capture (not bubble on document) because the .dblock element has its own
+// bubble-phase click handler that calls ev.stopPropagation(), which would prevent
+// a document-level listener from ever receiving Ctrl+clicks on a block.
+// Capture fires top-down BEFORE any element-level bubble handlers, so we intercept
+// the click first and call stopPropagation() ourselves to prevent block selection.
+document.getElementById('dcanvas')?.addEventListener('click', ev=>{
   if(!ev.ctrlKey) return;
   const canvas=document.getElementById('dcanvas');
   if(!canvas||!canvas.classList.contains('ann-arc-mode')) return;
   const block=ev.target.closest('.dblock'); if(!block) return;
   const textEl=block.querySelector('.dblock-text'); if(!textEl) return;
-  const wordEl=ev.target.closest('.ann-word'); if(!wordEl) return;
-  ev.preventDefault(); ev.stopPropagation();
+  const wordEl=ev.target.closest('.ann-word'); if(!wordEl){
+    // Words might not be wrapped yet if the block was re-rendered after enableArcMode
+    _wrapBlockTextWords(canvas);
+    toast(typeof t==='function'?t('ann.arc.hint'):'Ctrl+click a word in one block, then Ctrl+click a word in another block.');
+    return;
+  }
+  ev.preventDefault(); ev.stopPropagation(); // prevent block selection during arc mode
   const rid=block.dataset.rid;
   const wordIdx=_getWordIdx(textEl,wordEl);
   if(wordIdx<0) return;
@@ -5938,11 +5948,11 @@ document.addEventListener('click',ev=>{
     ANNOTATIONS.push(ann);
     _arcPending=null;
     disableArcMode();
-    renderAnnLayer();
+    requestAnimationFrame(()=>renderAnnLayer());
     autoSave();
     rowPush({type:'ann-add',ann:{...ann}});
   }
-});
+}, true); // true = capture phase
 
 /* ═══════════════════════════════════════════
    DIAGRAM ANNOTATION LAYER RENDERER
@@ -5969,7 +5979,7 @@ function renderAnnLayer(){
   svg.setAttribute('height', H);
   svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
 
-  // Defs with arrowhead marker — use a solid fill (context-stroke not supported in all browsers)
+  // Defs with a generic arrowhead marker for arcs (arrows get per-colour markers in _renderArrow)
   svg.innerHTML=`<defs>
     <marker id="ann-ah" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
       <path d="M0,0 L0,6 L8,3 z" fill="#C8A84B"/>
@@ -6156,12 +6166,25 @@ function _renderArc(svg, ann, canvas){
   const d=`M ${fx} ${fy} C ${fx} ${cpY}, ${tx} ${cpY}, ${tx} ${ty}`;
 
   const color=ann.color||'#C8A84B';
+  // Per-arc coloured arrowhead
+  const arcMarkerId='ann-ah-'+ann.id.replace(/[^a-z0-9]/gi,'_');
+  let defs=svg.querySelector('defs');
+  if(!defs){ defs=document.createElementNS('http://www.w3.org/2000/svg','defs'); svg.prepend(defs); }
+  if(!defs.querySelector('#'+arcMarkerId)){
+    const mk=document.createElementNS('http://www.w3.org/2000/svg','marker');
+    mk.setAttribute('id',arcMarkerId); mk.setAttribute('markerWidth','8');
+    mk.setAttribute('markerHeight','8'); mk.setAttribute('refX','7');
+    mk.setAttribute('refY','3'); mk.setAttribute('orient','auto');
+    const p=document.createElementNS('http://www.w3.org/2000/svg','path');
+    p.setAttribute('d','M0,0 L0,6 L8,3 z'); p.setAttribute('fill',color);
+    mk.appendChild(p); defs.appendChild(mk);
+  }
   const path=document.createElementNS('http://www.w3.org/2000/svg','path');
   path.setAttribute('d',d);
   path.setAttribute('fill','none');
   path.setAttribute('stroke',color);
   path.setAttribute('stroke-width','1.5');
-  path.setAttribute('marker-end','url(#ann-ah)');
+  path.setAttribute('marker-end','url(#'+arcMarkerId+')');
 
   const hitPath=document.createElementNS('http://www.w3.org/2000/svg','path');
   hitPath.setAttribute('d',d);
