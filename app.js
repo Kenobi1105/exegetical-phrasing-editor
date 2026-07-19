@@ -1251,17 +1251,16 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
     toY = cnx.toY;
   }
 
-  // When running nearly straight down (|dx| < 30), reduce horizPull so the
-  // curve stays tight and vertical rather than bowing sideways. We signal this
-  // to _connectorPathD by passing a special nearVertical flag via toY=null AND
-  // a matching flag on p2 — handled by a small wrapper path computation.
-  const nearVertical = Math.abs(dx) < 30;
+  // Three path strategies based on horizontal offset:
+  // • |dx| < 10  — truly vertical: plain straight line + arrowhead, no hook/bow
+  // • 10 ≤ |dx| < 30 — slightly offset: tight S-curve with minimal horizPull
+  // • |dx| ≥ 30  — normal: full hooked S-curve
+  const absDx = Math.abs(dx);
   let d;
-  if(nearVertical){
-    // Both endpoints already have fromY/toY set above.
-    // Override _connectorPathD's MIN_HOOK_HORIZ_PULL for near-vertical case
-    // by passing NaN as horizPull indicator — instead we call the path builder
-    // with a reduced pull directly.
+  if(absDx < 10){
+    // Straight vertical line — simplest and cleanest for directly-stacked blocks
+    d = `M${p1.x},${p1.y} L${p2.x},${p2.y}`;
+  } else if(absDx < 30){
     d = _connectorPathDTight(p1, p2, fromY, toY);
   } else {
     d = _connectorPathD(p1, p2, fromY, toY);
