@@ -1200,13 +1200,12 @@ function _makeHitPath(d, cnxId){
 }
 
 /* Build one CURVE connector with direction-aware endpoint placement.
-   The arc always travels through the SPACE BETWEEN the connected words/blocks:
-   • Going DOWN (p1 above p2):  exits p1 bottom, arrives p2 bottom from below
-   • Going UP   (p1 below p2):  exits p1 top,    arrives p2 top from above
+   The arc travels through the SPACE BETWEEN the connected words/blocks:
+   • Going DOWN (p1 above p2):  exits p1 BOTTOM (downward), lands on p2 TOP from above
+   • Going UP   (p1 below p2):  exits p1 TOP (upward),    lands on p2 BOTTOM from below
    • Nearly horizontal:         use block fracY as-is (original behaviour)
-   For word-level endpoints, the actual path endpoint is placed at the word's
-   top or bottom edge (not center) so the arrowhead sits at the edge of the
-   word rather than blocking the text itself. */
+   For word-level endpoints, the actual path endpoint is placed just outside
+   the word edge (with WORD_ARROW_CLEARANCE) so the arrowhead sits clear of the text. */
 function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
   // Pass 1: get preliminary midpoint positions so we can determine direction
   const raw1=_connectorPoint(fromEl, cnx.fromX??0.5, cnx.fromY??0.5, canvasRect, cnx.fromWordIdx??null);
@@ -1227,12 +1226,12 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
       // Horizontal: keep center y, use block fracY fallback
       fromY = cnx.fromY??0.5;
     } else if(dy>0){
-      // Going down: exit from bottom of word
-      p1.y = raw1.wordBottom - CONN_EDGE_INSET;
+      // Going down: exit from below the from-word (wordBottom already has clearance)
+      p1.y = raw1.wordBottom;
       fromY = 1;
     } else {
-      // Going up: exit from top of word
-      p1.y = raw1.wordTop + CONN_EDGE_INSET;
+      // Going up: exit from above the from-word (wordTop already has clearance)
+      p1.y = raw1.wordTop;
       fromY = 0;
     }
   } else {
@@ -1243,13 +1242,13 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
     if(isHorizontal){
       toY = cnx.toY??0.5;
     } else if(dy>0){
-      // Going down: arrive at bottom from below
-      p2.y = raw2.wordBottom - CONN_EDGE_INSET;
-      toY = 1;
-    } else {
-      // Going up: arrive at top from above
-      p2.y = raw2.wordTop + CONN_EDGE_INSET;
+      // Going down: land on TOP of destination word, arriving from above
+      p2.y = raw2.wordTop;
       toY = 0;
+    } else {
+      // Going up: land on BOTTOM of destination word, arriving from below
+      p2.y = raw2.wordBottom;
+      toY = 1;
     }
   } else {
     toY = cnx.toY;
@@ -1271,13 +1270,13 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
     const hookSide = 18; // horizontal offset for the departure curl
     let c1x, c1y, c2x, c2y;
     if(dy >= 0){
-      // Going down: exit below-right of p1, arrive straight from below at p2
+      // Going down: hook out from below-right of p1, arrive at p2 from above
       c1x = p1.x + hookSide; c1y = p1.y + hookDist;
-      c2x = p2.x;            c2y = p2.y + hookDist * 0.4;
-    } else {
-      // Going up: exit above-right of p1, arrive straight from above at p2
-      c1x = p1.x + hookSide; c1y = p1.y - hookDist;
       c2x = p2.x;            c2y = p2.y - hookDist * 0.4;
+    } else {
+      // Going up: hook out from above-right of p1, arrive at p2 from below
+      c1x = p1.x + hookSide; c1y = p1.y - hookDist;
+      c2x = p2.x;            c2y = p2.y + hookDist * 0.4;
     }
     d = `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
   } else if(absDx < 30){
