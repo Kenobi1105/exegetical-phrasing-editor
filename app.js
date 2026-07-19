@@ -973,7 +973,7 @@ function startBlockDrag(ev, rid){
    left/right edge — which gets no horizontal inset; only fracY 0/1 get
    the vertical inset, per the curve connector's original spec.) */
 const CONN_EDGE_INSET=6;
-const WORD_ARROW_CLEARANCE=4; // px gap between word edge and arrowhead tip
+const WORD_ARROW_CLEARANCE=0; // arrowhead tip sits right at the word edge
 
 function _connectorPoint(el, fracX, fracY, canvasRect, wordIdx){
   // Word-level anchor: return a preliminary point at the word CENTER plus the
@@ -1045,7 +1045,7 @@ function _connectorPathD(p1,p2,fromY,toY){
   // the control point at least ~30px further out to visibly clear the
   // block's top edge on a short connector, not just poke a few px past
   // its own bottom edge) while still scaling up for longer connectors.
-  const hookDist=Math.max(30, Math.min(70, Math.abs(dy)*0.5));
+  const hookDist=Math.max(18, Math.min(70, Math.abs(dy)*0.5));
   const MIN_HOOK_HORIZ_PULL=26;
   let horizPull=dx*0.3;
   if(Math.abs(horizPull)<MIN_HOOK_HORIZ_PULL){
@@ -1265,9 +1265,10 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
   if(absDx < 10){
     // Hook at departure, then drop straight to landing.
     // c1: offset right + in the travel direction from p1 (produces the outward curl)
-    // c2: directly above/below p2 with negligible horizontal offset (straight arrival)
-    const hookDist = Math.max(24, Math.abs(dy) * 0.3);
-    const hookSide = 18; // horizontal offset for the departure curl
+    // c2: directly above/below p2 with small vertical offset (straight arrival)
+    const hookDist = Math.max(14, Math.abs(dy) * 0.18);
+    const hookSide = 12; // horizontal offset for the departure curl — kept small so the
+                         // line visually starts close to the departure word
     let c1x, c1y, c2x, c2y;
     if(dy >= 0){
       // Going down: hook out from below-right of p1, arrive at p2 from above
@@ -1308,7 +1309,7 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
    based on fromY/toY (typically both=1 for going-down, both=0 for going-up). */
 function _connectorPathDTight(p1,p2,fromY,toY){
   const dy=p2.y-p1.y;
-  const hookDist=Math.max(20, Math.abs(dy)*0.35);
+  const hookDist=Math.max(14, Math.abs(dy)*0.22);
   const horizPull=8; // very small — just enough to show it's a curve not a straight line
 
   let c1x,c1y;
@@ -1356,21 +1357,18 @@ function _makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, svg, trunkX){
    rendered block are silently skipped (per spec — no warning, no
    orphan-preservation UI; they simply don't draw until/unless the row
    reappears, e.g. via undo).
-   #dconns is (re)moved to be the LAST child of #dcanvas every time this
-   runs, so curve lines always paint IN FRONT of block content. #dconns-
-   back is NOT re-appended — it stays wherever renderDiagram() originally
-   placed it (as the FIRST child), so right-angle lines paint BEHIND block
-   content, the opposite z-order, per spec (structural lines shouldn't
-   obscure text) — made safe to click despite that z-order by routing
-   every right-angle connector through the same shared trunk column (see
-   _rightAngleTrunkX), computed once here and shared by every right-angle
-   connector in this render pass. */
+   Both #dconns and #dconns-back are placed as early children of #dcanvas
+   so ALL connector lines paint BEHIND block content — words remain readable
+   even when multiple connectors are drawn. Right-angle connectors stay in
+   #dconns-back (first child); curve connectors go in #dconns (second child),
+   both behind the .dblock elements that follow. */
 function renderDiagramConnectors(){
   const svg=document.getElementById('dconns');
   const backSvg=document.getElementById('dconns-back');
   const canvas=document.getElementById('dcanvas');
   if(!svg||!backSvg||!canvas) return;
-  canvas.appendChild(svg); // re-append: moves it to be the last child (front-most)
+  // Place #dconns right after #dconns-back (both behind all .dblock children)
+  canvas.insertBefore(svg, backSvg.nextSibling);
   const canvasRect=canvas.getBoundingClientRect();
   svg.setAttribute('width', canvas.scrollWidth);
   svg.setAttribute('height', canvas.scrollHeight);
