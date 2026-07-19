@@ -973,10 +973,13 @@ function startBlockDrag(ev, rid){
    left/right edge — which gets no horizontal inset; only fracY 0/1 get
    the vertical inset, per the curve connector's original spec.) */
 const CONN_EDGE_INSET=6;
+const WORD_ARROW_CLEARANCE=4; // px gap between word edge and arrowhead tip
+
 function _connectorPoint(el, fracX, fracY, canvasRect, wordIdx){
   // Word-level anchor: return a preliminary point at the word CENTER plus the
   // word's rect so _makeCurveConnectorEl can pick the correct edge (top/bottom)
   // after computing direction from both midpoints in a two-pass approach.
+  // wordTop/wordBottom are the outer edges of the word (arrowhead clears by WORD_ARROW_CLEARANCE).
   if(wordIdx!=null){
     const words=el.querySelectorAll('.ann-word');
     const wordEl=words[wordIdx];
@@ -987,8 +990,9 @@ function _connectorPoint(el, fracX, fracY, canvasRect, wordIdx){
       return {
         x:(wr.left+wr.right)/2-canvasRect.left,
         y:(wr.top+wr.bottom)/2-canvasRect.top+scrollTop,
-        wordTop:wr.top-canvasRect.top+scrollTop,
-        wordBottom:wr.bottom-canvasRect.top+scrollTop,
+        // Place endpoints just OUTSIDE the word so the arrowhead tip clears the text
+        wordTop:   wr.top    - canvasRect.top + scrollTop - WORD_ARROW_CLEARANCE,
+        wordBottom:wr.bottom - canvasRect.top + scrollTop + WORD_ARROW_CLEARANCE,
         isWord:true
       };
     }
@@ -1252,14 +1256,30 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
   }
 
   // Three path strategies based on horizontal offset:
-  // • |dx| < 10  — truly vertical: plain straight line + arrowhead, no hook/bow
+  // • |dx| < 10  — truly vertical: hook at departure, then straight down to landing.
+  //                Uses a cubic bezier where c1 curves outward from p1 and c2 sits
+  //                just above/below p2 so the path arrives nearly straight.
   // • 10 ≤ |dx| < 30 — slightly offset: tight S-curve with minimal horizPull
   // • |dx| ≥ 30  — normal: full hooked S-curve
   const absDx = Math.abs(dx);
   let d;
   if(absDx < 10){
-    // Straight vertical line — simplest and cleanest for directly-stacked blocks
-    d = `M${p1.x},${p1.y} L${p2.x},${p2.y}`;
+    // Hook at departure, then drop straight to landing.
+    // c1: offset right + in the travel direction from p1 (produces the outward curl)
+    // c2: directly above/below p2 with negligible horizontal offset (straight arrival)
+    const hookDist = Math.max(24, Math.abs(dy) * 0.3);
+    const hookSide = 18; // horizontal offset for the departure curl
+    let c1x, c1y, c2x, c2y;
+    if(dy >= 0){
+      // Going down: exit below-right of p1, arrive straight from below at p2
+      c1x = p1.x + hookSide; c1y = p1.y + hookDist;
+      c2x = p2.x;            c2y = p2.y + hookDist * 0.4;
+    } else {
+      // Going up: exit above-right of p1, arrive straight from above at p2
+      c1x = p1.x + hookSide; c1y = p1.y - hookDist;
+      c2x = p2.x;            c2y = p2.y - hookDist * 0.4;
+    }
+    d = `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
   } else if(absDx < 30){
     d = _connectorPathDTight(p1, p2, fromY, toY);
   } else {
