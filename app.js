@@ -903,7 +903,7 @@ function addDiagramLabel(){
    startConnectorDraw below) rather than moving the block. */
 function startBlockDrag(ev, rid){
   if(ev.button!==0) return; // left mouse button only
-  if(ev.ctrlKey){
+  if(ev.ctrlKey || _connectorModeActive){
     ev.preventDefault();
     ev.stopPropagation();
     startConnectorDraw(ev, rid);
@@ -974,25 +974,22 @@ function startBlockDrag(ev, rid){
    the vertical inset, per the curve connector's original spec.) */
 const CONN_EDGE_INSET=6;
 function _connectorPoint(el, fracX, fracY, canvasRect, wordIdx){
-  // Word-level anchor: find the .ann-word span at wordIdx and use its center.
-  // Also compute whether the word sits in the top or bottom half of its block
-  // (fracY 0 = top, 1 = bottom) so the caller can apply the correct hook direction.
+  // Word-level anchor: return a preliminary point at the word CENTER plus the
+  // word's rect so _makeCurveConnectorEl can pick the correct edge (top/bottom)
+  // after computing direction from both midpoints in a two-pass approach.
   if(wordIdx!=null){
     const words=el.querySelectorAll('.ann-word');
     const wordEl=words[wordIdx];
     if(wordEl){
       const wr=wordEl.getBoundingClientRect();
-      const br=el.getBoundingClientRect();
       const canvas=document.getElementById('dcanvas');
       const scrollTop=canvas?canvas.scrollTop:0;
-      const wordCenterY=(wr.top+wr.bottom)/2;
-      const blockMidY=(br.top+br.bottom)/2;
-      // Expose the vertical-edge fraction so _makeCurveConnectorEl can hook correctly
-      const wordFracY=wordCenterY<blockMidY?0:1;
       return {
         x:(wr.left+wr.right)/2-canvasRect.left,
         y:(wr.top+wr.bottom)/2-canvasRect.top+scrollTop,
-        wordFracY          // 0 = top-half word → hook exits upward; 1 = bottom-half → downward
+        wordTop:wr.top-canvasRect.top+scrollTop,
+        wordBottom:wr.bottom-canvasRect.top+scrollTop,
+        isWord:true
       };
     }
   }
@@ -1198,29 +1195,79 @@ function _makeHitPath(d, cnxId){
   return hitPath;
 }
 
-/* Build one CURVE connector (the original freeform Shift+drag connector)
-   as a <g> containing a wide invisible hit path plus the real visible
-   (hooked S-curve) path. Rendered into the FRONT svg layer. */
+/* Build one CURVE connector with direction-aware endpoint placement.
+   The arc always travels through the SPACE BETWEEN the connected words/blocks:
+   • Going DOWN (p1 above p2):  exits p1 bottom, arrives p2 bottom from below
+   • Going UP   (p1 below p2):  exits p1 top,    arrives p2 top from above
+   • Nearly horizontal:         use block fracY as-is (original behaviour)
+   For word-level endpoints, the actual path endpoint is placed at the word's
+   top or bottom edge (not center) so the arrowhead sits at the edge of the
+   word rather than blocking the text itself. */
 function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
-  const p1=_connectorPoint(fromEl, cnx.fromX??0.5, cnx.fromY??0.5, canvasRect, cnx.fromWordIdx??null);
-  const p2=_connectorPoint(toEl,   cnx.toX  ??0.5, cnx.toY  ??0.5, canvasRect, cnx.toWordIdx  ??null);
+  // Pass 1: get preliminary midpoint positions so we can determine direction
+  const raw1=_connectorPoint(fromEl, cnx.fromX??0.5, cnx.fromY??0.5, canvasRect, cnx.fromWordIdx??null);
+  const raw2=_connectorPoint(toEl,   cnx.toX  ??0.5, cnx.toY  ??0.5, canvasRect, cnx.toWordIdx  ??null);
 
-  // Determine hook fractions:
-  // • Block-level endpoint: use the stored fracY (0=top, 1=bottom edge).
-  // • Word-level endpoint: use wordFracY computed from which half of the block
-  //   the word sits in — so the hook exits/arrives in the correct direction.
-  const fromY = cnx.fromWordIdx!=null ? (p1.wordFracY??0) : cnx.fromY;
-  let   toY   = cnx.toWordIdx  !=null ? (p2.wordFracY??1) : cnx.toY;
+  const dy=raw2.y-raw1.y;
+  const dx=raw2.x-raw1.x;
 
-  // Fix 3: if the connector runs nearly straight down (|dx| < 30 SVG units),
-  // suppress the landing hook at the destination so the curve arrives cleanly
-  // rather than curling sideways. The departure hook at the source still applies.
-  const dx=p2.x-p1.x;
-  if(Math.abs(dx)<30) toY=null;
+  // Pass 2: for word-level endpoints, pick the correct edge based on direction;
+  // for block-level endpoints, keep the original fracY behaviour.
+  let p1={...raw1}, p2={...raw2};
+  let fromY, toY;
 
-  const d=_connectorPathD(p1,p2,fromY,toY);
+  const isHorizontal = Math.abs(dy) < 20 && Math.abs(dx) > 40;
+
+  if(raw1.isWord){
+    if(isHorizontal){
+      // Horizontal: keep center y, use block fracY fallback
+      fromY = cnx.fromY??0.5;
+    } else if(dy>0){
+      // Going down: exit from bottom of word
+      p1.y = raw1.wordBottom - CONN_EDGE_INSET;
+      fromY = 1;
+    } else {
+      // Going up: exit from top of word
+      p1.y = raw1.wordTop + CONN_EDGE_INSET;
+      fromY = 0;
+    }
+  } else {
+    fromY = cnx.fromY;
+  }
+
+  if(raw2.isWord){
+    if(isHorizontal){
+      toY = cnx.toY??0.5;
+    } else if(dy>0){
+      // Going down: arrive at bottom from below
+      p2.y = raw2.wordBottom - CONN_EDGE_INSET;
+      toY = 1;
+    } else {
+      // Going up: arrive at top from above
+      p2.y = raw2.wordTop + CONN_EDGE_INSET;
+      toY = 0;
+    }
+  } else {
+    toY = cnx.toY;
+  }
+
+  // When running nearly straight down (|dx| < 30), reduce horizPull so the
+  // curve stays tight and vertical rather than bowing sideways. We signal this
+  // to _connectorPathD by passing a special nearVertical flag via toY=null AND
+  // a matching flag on p2 — handled by a small wrapper path computation.
+  const nearVertical = Math.abs(dx) < 30;
+  let d;
+  if(nearVertical){
+    // Both endpoints already have fromY/toY set above.
+    // Override _connectorPathD's MIN_HOOK_HORIZ_PULL for near-vertical case
+    // by passing NaN as horizPull indicator — instead we call the path builder
+    // with a reduced pull directly.
+    d = _connectorPathDTight(p1, p2, fromY, toY);
+  } else {
+    d = _connectorPathD(p1, p2, fromY, toY);
+  }
+
   const isSelected=(SELECTED_CNX_ID===cnx.id);
-
   const g=document.createElementNS('http://www.w3.org/2000/svg','g');
   g.setAttribute('class','dconn-group'+(isSelected?' selected':''));
   g.setAttribute('data-cnx-id',cnx.id);
@@ -1235,6 +1282,28 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
   g.appendChild(_makeHitPath(d, cnx.id));
   g.appendChild(path);
   return g;
+}
+
+/* Tight variant of _connectorPathD for near-vertical connectors (|dx| < 30).
+   Uses a much smaller horizPull so the curve stays narrow and vertical
+   rather than bowing sideways. The hook still exits/arrives correctly
+   based on fromY/toY (typically both=1 for going-down, both=0 for going-up). */
+function _connectorPathDTight(p1,p2,fromY,toY){
+  const dy=p2.y-p1.y;
+  const hookDist=Math.max(20, Math.abs(dy)*0.35);
+  const horizPull=8; // very small — just enough to show it's a curve not a straight line
+
+  let c1x,c1y;
+  if(fromY===0){        c1x=p1.x+horizPull; c1y=p1.y-hookDist; }
+  else if(fromY===1){   c1x=p1.x+horizPull; c1y=p1.y+hookDist; }
+  else{                 c1x=p1.x+horizPull; c1y=p1.y;           }
+
+  let c2x,c2y;
+  if(toY===0){          c2x=p2.x-horizPull; c2y=p2.y-hookDist; }
+  else if(toY===1){     c2x=p2.x-horizPull; c2y=p2.y+hookDist; }
+  else{                 c2x=p2.x-horizPull; c2y=p2.y;           }
+
+  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
 }
 
 /* Build one RIGHT-ANGLE connector — single 90° bend, left/right-edge
