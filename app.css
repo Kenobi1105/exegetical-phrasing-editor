@@ -4213,15 +4213,41 @@ body.brk-locked .dbrk-pip:hover {
   box-shadow: none;
 }
 
-/* Label cells become click targets for merge (Alt+click) */
+/* Label cells in edit mode — show merge button */
 #dcanvas.dem-active .dl {
-  cursor: pointer;
-  border-radius: 3px;
-  transition: background .12s;
+  position: relative;
+  cursor: default;
 }
-#dcanvas.dem-active .dl:hover {
-  background: rgba(200,168,75,.15);
-  outline: 1px dashed #C8A84B;
+
+/* Merge button: appears inside the label cell, floats above the label text */
+.dem-merge-btn {
+  display: none;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--sig, #493548);
+  color: #fff;
+  border: none;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1;
+  padding: 2px 4px;
+  cursor: pointer;
+  z-index: 10;
+  white-space: nowrap;
+  opacity: 0;
+  transition: opacity .12s;
+  pointer-events: auto;
+}
+#dcanvas.dem-active .dem-merge-btn {
+  display: block;
+}
+#dcanvas.dem-active .dl:hover .dem-merge-btn {
+  opacity: 1;
+}
+.dem-merge-btn:hover {
+  background: #cc2222;
 }
 
 /* Word tokens in edit mode */

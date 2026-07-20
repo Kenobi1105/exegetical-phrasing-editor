@@ -6621,13 +6621,19 @@ function _applyDiagramEditMode(on){
     canvas.classList.add('dem-active');
     if(btn) btn.classList.add('on');
     canvas.querySelectorAll('.dblock').forEach(blk=>_demTokenize(blk));
-    canvas.querySelectorAll('.dl').forEach(lCell=>_demWireLabelCell(lCell));
+    // Add merge buttons to each label cell
+    canvas.querySelectorAll('.dl').forEach(lCell=>{
+      const drow=lCell.closest('.drow'); if(!drow) return;
+      _demAddMergeBtn(lCell, drow.dataset.rid);
+    });
     // Wire red-slash hover on all dedit-word spans
     canvas.querySelectorAll('.dedit-word').forEach(w=>_demWireWordHover(w));
   } else {
     canvas.classList.remove('dem-active');
     if(btn) btn.classList.remove('on');
     canvas.querySelectorAll('.dblock').forEach(blk=>_demUntokenize(blk));
+    // Remove merge buttons
+    canvas.querySelectorAll('.dem-merge-btn').forEach(b=>b.remove());
     // Remove any lingering red slash
     document.getElementById('dem-slash')?.remove();
   }
@@ -6656,26 +6662,23 @@ function _demWireWordHover(wordEl){
 }
 
 /* ── Wire label cell for merge ── */
-function _demWireLabelCell(lCell){
-  if(lCell.dataset.demWired) return;
-  lCell.dataset.demWired='1';
-  lCell.addEventListener('click', ev=>{
-    if(!ev.altKey) return;
-    if(!DIAGRAM_EDIT_MODE) return;
+/* ── Merge button ── */
+function _demAddMergeBtn(lCell, rid){
+  if(lCell.querySelector('.dem-merge-btn')) return; // already added
+  const btn=document.createElement('button');
+  btn.className='dem-merge-btn';
+  btn.title='Merge this row into the row above';
+  btn.textContent='↑';
+  btn.addEventListener('click', ev=>{
     ev.preventDefault(); ev.stopPropagation();
-    // Find the drow and then its matching xrow by rid
-    const drow=lCell.closest('.drow');
-    if(!drow) return;
-    const rid=drow.dataset.rid;
-    // Switch to phrasing view momentarily to perform mergeRowUp
-    // Actually: we can call mergeRowUp directly since it operates on .xrow
+    if(!DIAGRAM_EDIT_MODE) return;
     mergeRowUp(rid);
-    // Rebuild diagram after merge
     setTimeout(()=>{
       if(EDITOR_VIEW==='diagram') renderDiagram();
       if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 40);
     }, 30);
   });
+  lCell.appendChild(btn);
 }
 
 /* ── Click on .dedit-word: split at that word's group ── */
