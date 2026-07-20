@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607202000"/>
+<meta name="app-version" content="202607202300"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -312,6 +312,15 @@
         <span id="dzoom-pct" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:44px;padding:0 4px;text-align:center;user-select:none;cursor:pointer" onclick="setDiagramZoom(100)" data-i18n-title="diagram.zoom-reset" title="Reset zoom to 100% (Ctrl+0)">100%</span>
         <button class="tbtn" data-i18n-title="diagram.zoom-in" title="Zoom in (Ctrl++)" onclick="diagramZoomIn()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        </button>
+      </div>
+      <div class="tg" id="dfont-grp" style="display:none">
+        <button class="tbtn" title="Decrease diagram font size" onclick="diagramFontDec()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><text x="4" y="19" font-size="7" fill="currentColor" stroke="none" font-family="sans-serif">A</text><text x="14" y="21" font-size="10" fill="currentColor" stroke="none" font-family="sans-serif">A</text></svg>
+        </button>
+        <span id="dfont-sz" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:34px;padding:0 4px;text-align:center;user-select:none;cursor:pointer" title="Reset font size to 16px" onclick="setDiagramFontSize(16)">16px</span>
+        <button class="tbtn" title="Increase diagram font size" onclick="diagramFontInc()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/><text x="2" y="20" font-size="7" fill="currentColor" stroke="none" font-family="sans-serif">A</text><text x="12" y="22" font-size="10" fill="currentColor" stroke="none" font-family="sans-serif">A</text></svg>
         </button>
       </div>
       <div class="tsep" id="dlabel-sep" style="display:none"></div>

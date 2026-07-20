@@ -55,6 +55,8 @@ let LBL=0; // floating label ID counter
 let SELECTED_CNX_ID=null;
 let DIAGRAM_ZOOM=100;
 const DIAGRAM_ZOOM_MIN=50, DIAGRAM_ZOOM_MAX=200, DIAGRAM_ZOOM_STEP=10;
+let DIAGRAM_FONT_SIZE=16; // px — default larger than the original 14px
+const DIAGRAM_FONT_MIN=10, DIAGRAM_FONT_MAX=28, DIAGRAM_FONT_STEP=1;
 
 /* ── Annotations ──
    Unified array for the four new annotation types:
@@ -432,6 +434,7 @@ function setEditorView(view){
   document.getElementById('view-btn-slides')?.classList.toggle('active',isSlides);
   document.getElementById('dzoom-sep')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('dzoom-grp')?.style.setProperty('display',isDiagram?'flex':'none');
+  document.getElementById('dfont-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dlabel-sep')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-label')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-dem')?.style.setProperty('display',isDiagram?'':'none');
@@ -514,6 +517,17 @@ function setDiagramZoom(pct){
 }
 function diagramZoomIn(){ setDiagramZoom(DIAGRAM_ZOOM+DIAGRAM_ZOOM_STEP); }
 function diagramZoomOut(){ setDiagramZoom(DIAGRAM_ZOOM-DIAGRAM_ZOOM_STEP); }
+
+function setDiagramFontSize(sz){
+  DIAGRAM_FONT_SIZE=Math.max(DIAGRAM_FONT_MIN, Math.min(DIAGRAM_FONT_MAX, sz));
+  const canvas=document.getElementById('dcanvas');
+  if(canvas) canvas.style.setProperty('--diagram-font', DIAGRAM_FONT_SIZE+'px');
+  const lbl=document.getElementById('dfont-sz');
+  if(lbl) lbl.textContent=DIAGRAM_FONT_SIZE+'px';
+  autoSave();
+}
+function diagramFontInc(){ setDiagramFontSize(DIAGRAM_FONT_SIZE+DIAGRAM_FONT_STEP); }
+function diagramFontDec(){ setDiagramFontSize(DIAGRAM_FONT_SIZE-DIAGRAM_FONT_STEP); }
 
 /* Re-render the diagram canvas only if it's the currently visible view.
    Called after any row mutation (add/split/merge/indent/clear/load) so the
@@ -677,10 +691,8 @@ function makeDiagramRowEl(row){
 function renderDiagram(){
   const canvas=document.getElementById('dcanvas');
   if(!canvas) return;
-  // In RTL sessions, reserve 25% of the canvas width on the right side so
-  // labels always have room without the user needing to scroll immediately.
-  // Labels are position:absolute on the canvas and are unaffected by padding;
-  // blocks are pushed leftward by this padding, giving the label zone space.
+  // Apply current font size as a CSS custom property so all blocks inherit it
+  canvas.style.setProperty('--diagram-font', DIAGRAM_FONT_SIZE+'px');
   canvas.style.paddingRight = IS_RTL ? '25%' : '';
   // A full rebuild (triggered by row mutations elsewhere — adding a row,
   // editing text, etc. — while Diagram View happens to be showing) wipes
@@ -1267,21 +1279,18 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
   const absDx = Math.abs(dx);
   let d;
   if(absDx < 10){
-    // Hook at departure, then drop straight to landing.
-    // c1: offset right + in the travel direction from p1 (produces the outward curl)
-    // c2: directly above/below p2 with small vertical offset (straight arrival)
-    const hookDist = Math.max(14, Math.abs(dy) * 0.18);
-    const hookSide = 12; // horizontal offset for the departure curl — kept small so the
-                         // line visually starts close to the departure word
+    // Hook at departure, straight descent to landing.
+    // Keep hookSide small so the line stays visually close to the source word;
+    // hookDist proportional to dy but capped low so short connectors stay tight.
+    const hookDist = Math.max(10, Math.abs(dy) * 0.14);
+    const hookSide = 8;
     let c1x, c1y, c2x, c2y;
     if(dy >= 0){
-      // Going down: hook out from below-right of p1, arrive at p2 from above
       c1x = p1.x + hookSide; c1y = p1.y + hookDist;
-      c2x = p2.x;            c2y = p2.y - hookDist * 0.4;
+      c2x = p2.x;            c2y = p2.y - hookDist * 0.3;
     } else {
-      // Going up: hook out from above-right of p1, arrive at p2 from below
       c1x = p1.x + hookSide; c1y = p1.y - hookDist;
-      c2x = p2.x;            c2y = p2.y + hookDist * 0.4;
+      c2x = p2.x;            c2y = p2.y + hookDist * 0.3;
     }
     d = `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
   } else if(absDx < 30){
@@ -2405,6 +2414,14 @@ function mergeRowUp(rid){
   const curRow=rows[idx];
   const prevRow=rows[idx-1];
   const prevRid=prevRow.dataset.rid;
+
+  // Block merging across verse boundaries
+  const curVerse=(curRow.querySelector('.vin')?.value||'').trim();
+  const prevVerse=(prevRow.querySelector('.vin')?.value||'').trim();
+  if(curVerse && prevVerse && curVerse!==prevVerse){
+    toast(typeof t==='function'?t('toast.no-cross-verse-merge'):'Cannot merge across verse boundaries.');
+    return;
+  }
 
   const curOc=curRow.querySelector(`#oc-${rid} .cedit`);
   const prevOc=prevRow.querySelector(`#oc-${prevRid} .cedit`);
@@ -3645,6 +3662,7 @@ function collectData(){
     colWidths:{...COL_WIDTHS},
     editorView:EDITOR_VIEW,CNX,LBL,
     diagramEditMode:DIAGRAM_EDIT_MODE,
+    diagramFontSize:DIAGRAM_FONT_SIZE,
     diagramData:{connectors:[...DIAGRAM_DATA.connectors], labels:[...DIAGRAM_DATA.labels]},
     brackets: typeof collectBracketData==='function' ? collectBracketData() : [],
     annotations: ANNOTATIONS.map(a=>({...a})),
@@ -3773,6 +3791,8 @@ function loadData(data){
   // Restore diagram edit mode (persistent across saves)
   DIAGRAM_EDIT_MODE=data.diagramEditMode===true;
   if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 80);
+  // Restore diagram font size
+  if(data.diagramFontSize) setTimeout(()=>setDiagramFontSize(data.diagramFontSize), 0);
   if(typeof slLoadDeck==='function') slLoadDeck(data.deck||{slides:[]});
 }
 

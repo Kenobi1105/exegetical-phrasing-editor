@@ -2759,7 +2759,7 @@ sup.bfn:hover { opacity: .7; }
   background:transparent;
   border:none;
   border-radius:var(--rs);
-  font-family:var(--serif);font-size:14px;line-height:1.5;color:var(--ink);
+  font-family:var(--serif);font-size:var(--diagram-font,16px);line-height:1.5;color:var(--ink);
   cursor:grab;
   user-select:none;
 }
@@ -2786,7 +2786,10 @@ sup.bfn:hover { opacity: .7; }
   box-shadow:0 4px 14px rgba(0,0,0,.16);
 }
 .drow.rtl .dblock{direction:rtl;text-align:right;font-family:var(--serif)}
-.dblock-text{flex:1;min-width:0;word-break:break-word;position:relative;z-index:1}
+.dblock-text{flex:1;min-width:0;word-break:break-word;position:relative;z-index:1;
+  /* White halo around text so S-curve connectors passing through remain readable */
+  text-shadow:0 0 3px var(--surface,#fff),0 0 5px var(--surface,#fff),0 0 2px var(--surface,#fff);
+}
 .dblock-text:empty::before{content:attr(data-empty-ph);color:var(--muted);font-style:italic}
 .dblock-text :is(b,strong){font-weight:700}
 .dblock-text :is(i,em){font-style:italic}
