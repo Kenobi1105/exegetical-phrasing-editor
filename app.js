@@ -5800,9 +5800,15 @@ document.addEventListener('keyup', ev=>{
 document.addEventListener('keydown', ev=>{
   if(ev.key==='Escape'){
     if(BRACKET_PENDING){ _brkCancelPending(); toast(t('bracket.cancel')); }
-    // Also exit bracket locked mode and connector mode if active
     if(document.body.classList.contains('brk-locked')) _brkExitLockedMode();
     if(typeof _exitConnectorMode==='function') _exitConnectorMode();
+    // Exit diagram edit mode (both temporary Shift-hold and permanently locked)
+    if(DIAGRAM_EDIT_MODE || _demAltTemp){
+      _demAltTemp=false;
+      DIAGRAM_EDIT_MODE=false;
+      _applyDiagramEditMode(false);
+      autoSave();
+    }
     _brkDeselect();
   }
 }, true);
@@ -6580,20 +6586,23 @@ function toggleDiagramEditMode(){
   autoSave();
 }
 
-/* Alt keydown → enter edit mode temporarily (if not already locked on).
-   Alt keyup → exit temporary mode (if button hasn't locked it on permanently). */
-let _demAltTemp=false; // true = edit mode was entered by Alt keydown, not by button
+/* Shift keydown → enter edit mode temporarily (if not already locked on).
+   Shift keyup → exit temporary mode (if button hasn't locked it on permanently).
+   Shift was chosen over Alt because Alt triggers browser chrome menus on some
+   platforms. Shift+click on words is safe — the bracket system only responds
+   to Shift+click on pip dots, which are separate elements. */
+let _demAltTemp=false; // true = edit mode was entered by Shift keydown, not by button
 
 document.addEventListener('keydown', ev=>{
-  if(ev.key!=='Alt'||EDITOR_VIEW!=='diagram') return;
+  if(ev.key!=='Shift'||EDITOR_VIEW!=='diagram') return;
   if(DIAGRAM_EDIT_MODE) return; // already on (locked by button)
   _demAltTemp=true;
   _applyDiagramEditMode(true);
 });
 
 document.addEventListener('keyup', ev=>{
-  if(ev.key!=='Alt') return;
-  if(!_demAltTemp) return; // was locked by button, not by Alt — don't exit
+  if(ev.key!=='Shift') return;
+  if(!_demAltTemp) return; // was locked by button, not by Shift — don't exit
   _demAltTemp=false;
   _applyDiagramEditMode(false);
   DIAGRAM_EDIT_MODE=false;
@@ -6608,16 +6617,39 @@ function _applyDiagramEditMode(on){
   if(on){
     canvas.classList.add('dem-active');
     if(btn) btn.classList.add('on');
-    // Tokenize all visible blocks
     canvas.querySelectorAll('.dblock').forEach(blk=>_demTokenize(blk));
-    // Wire label cells for Alt+click merge
     canvas.querySelectorAll('.dl').forEach(lCell=>_demWireLabelCell(lCell));
+    // Wire red-slash hover on all dedit-word spans
+    canvas.querySelectorAll('.dedit-word').forEach(w=>_demWireWordHover(w));
   } else {
     canvas.classList.remove('dem-active');
     if(btn) btn.classList.remove('on');
-    // Untokenize all blocks
     canvas.querySelectorAll('.dblock').forEach(blk=>_demUntokenize(blk));
+    // Remove any lingering red slash
+    document.getElementById('dem-slash')?.remove();
   }
+}
+
+/* ── Red slash hover indicator ── */
+function _demWireWordHover(wordEl){
+  if(wordEl.dataset.demHoverWired) return;
+  wordEl.dataset.demHoverWired='1';
+
+  wordEl.addEventListener('mouseenter', ()=>{
+    if(!DIAGRAM_EDIT_MODE) return;
+    // Remove any existing slash
+    document.getElementById('dem-slash')?.remove();
+    // Create the slash element
+    const slash=document.createElement('span');
+    slash.id='dem-slash';
+    slash.setAttribute('aria-hidden','true');
+    // Position just before this word in the DOM
+    wordEl.parentNode.insertBefore(slash, wordEl);
+  });
+
+  wordEl.addEventListener('mouseleave', ()=>{
+    document.getElementById('dem-slash')?.remove();
+  });
 }
 
 /* ── Wire label cell for merge ── */

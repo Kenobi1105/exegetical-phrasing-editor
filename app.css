@@ -4210,19 +4210,38 @@ body.brk-locked .dbrk-pip:hover {
   outline: 1px dashed #C8A84B;
 }
 
-/* Word tokens in edit mode — slicer cursor to match BibleArc feel */
+/* Word tokens in edit mode */
 .dedit-word {
   display: inline;
   border-radius: 2px;
-  transition: background .1s, outline .1s;
+  transition: background .1s;
 }
 #dcanvas.dem-active .dedit-word {
-  cursor: col-resize; /* vertical bar "slicer" cursor */
+  cursor: default;
 }
 #dcanvas.dem-active .dedit-word:hover {
-  background: rgba(200,168,75,.22);
-  outline: 1.5px solid rgba(200,168,75,.8);
+  background: rgba(200,168,75,.12);
 }
 #dcanvas.dem-active .dedit-word:active {
-  background: rgba(200,168,75,.45);
+  background: rgba(200,168,75,.35);
+}
+
+/* Red slash — inserted as a sibling just before the hovered .dedit-word.
+   Inline-block so it sits in the text flow at the exact split point. */
+#dem-slash {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: #cc2222;
+  border-radius: 1px;
+  vertical-align: middle;
+  margin-right: 1px;
+  position: relative;
+  top: -0.05em;
+  pointer-events: none;
+  animation: dem-slash-in .08s ease;
+}
+@keyframes dem-slash-in {
+  from { opacity: 0; transform: scaleY(0.3); }
+  to   { opacity: 1; transform: scaleY(1); }
 }
