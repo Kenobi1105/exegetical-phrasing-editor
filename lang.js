@@ -134,6 +134,11 @@ const LANGS = {
     'diagram.zoom-reset':  'Reset zoom to 100% (Ctrl+0)',
     'help.zoom-reset':     'Reset diagram zoom to 100%',
     'diagram.add-label':   'Add label (Alt+L)',
+
+    'diagram.edit-mode':   'Diagram Edit Mode (Alt+E)',
+    'diagram.edit-hint':   'Alt+click a word to split it to a new row. Alt+click a row label to merge it with the row above.',
+    'diagram.edit-split':  'Word split — Alt+click another word to split again, or press Alt+E to exit edit mode.',
+    'diagram.edit-merge':  'Row merged.',
     'toolbar.add-cmt':     'Add comment (Ctrl+Shift+M)',
     'toolbar.cmt-pane':    'Toggle comment pane (Alt+3)',
     'toast.select-block-first': 'Select a block first.',
@@ -478,6 +483,11 @@ const LANGS = {
     'diagram.zoom-reset':  '重置缩放至 100% (Ctrl+0)',
     'help.zoom-reset':     '重置图示缩放至 100%',
     'diagram.add-label':   '添加标注 (Alt+L)',
+
+    'diagram.edit-mode':   '图示编辑模式 (Alt+E)',
+    'diagram.edit-hint':   'Alt+单击单词可将其拆分到新行。Alt+单击行标签可与上一行合并。',
+    'diagram.edit-split':  '单词已拆分。可继续 Alt+单击拆分，或按 Alt+E 退出编辑模式。',
+    'diagram.edit-merge':  '行已合并。',
     'toolbar.add-cmt':     '添加注释 (Ctrl+Shift+M)',
     'toolbar.cmt-pane':    '切换注释面板 (Alt+3)',
     'toast.select-block-first': '请先选择一个块。',

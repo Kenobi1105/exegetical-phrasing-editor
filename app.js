@@ -48,6 +48,7 @@ const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'
    affects paint and would double-scale connector coordinates since the
    SVG layers are siblings of the blocks under the same scaled parent. */
 let EDITOR_VIEW='phrasing';
+let DIAGRAM_EDIT_MODE=false; // true = diagram word-edit mode active
 let DIAGRAM_DATA={connectors:[], labels:[]};
 let CNX=0; // connector ID counter, same idiom as RC (row counter) / CC (comment counter)
 let LBL=0; // floating label ID counter
@@ -433,6 +434,7 @@ function setEditorView(view){
   document.getElementById('dzoom-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dlabel-sep')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-label')?.style.setProperty('display',isDiagram?'':'none');
+  document.getElementById('tb-dem')?.style.setProperty('display',isDiagram?'':'none');
   // Annotation buttons: divider only in phrasing, arrow + bracket only in diagram
   document.getElementById('tb-add-divider')?.style.setProperty('display',isPhrasing?'':'none');
   document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
@@ -726,6 +728,8 @@ function renderDiagram(){
   if(typeof _brkRenderDiagram==='function') setTimeout(()=>_brkRenderDiagram(), 20);
   // Re-render diagram annotations (arrows, spans, arcs)
   setTimeout(()=>renderAnnLayer(), 30);
+  // Re-apply diagram edit mode after rebuild so blocks are re-tokenized
+  if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 50);
 }
 
 /* Build and mount one .dlabel element from a data object.
@@ -3637,6 +3641,7 @@ function collectData(){
     rows,cmts,RC,CC,colors,
     colWidths:{...COL_WIDTHS},
     editorView:EDITOR_VIEW,CNX,LBL,
+    diagramEditMode:DIAGRAM_EDIT_MODE,
     diagramData:{connectors:[...DIAGRAM_DATA.connectors], labels:[...DIAGRAM_DATA.labels]},
     brackets: typeof collectBracketData==='function' ? collectBracketData() : [],
     annotations: ANNOTATIONS.map(a=>({...a})),
@@ -3762,6 +3767,9 @@ function loadData(data){
   ANNOTATIONS.forEach(a=>{ const n=parseInt(String(a.id||'').replace(/^ann-/,''),10); if(!isNaN(n)&&n>=ANN_CTR) ANN_CTR=n+1; });
   // Re-render dividers in phrasing view after rows exist in DOM
   setTimeout(()=>{ renderDividers(); if(EDITOR_VIEW==='diagram') renderAnnLayer(); }, 50);
+  // Restore diagram edit mode (persistent across saves)
+  DIAGRAM_EDIT_MODE=data.diagramEditMode===true;
+  if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 80);
   if(typeof slLoadDeck==='function') slLoadDeck(data.deck||{slides:[]});
 }
 
@@ -6415,6 +6423,234 @@ function slDrawAnnotationsIntoClone(cloneCanvas, visibleRids){
 
 
 /* ── State ── */
+/* ════════════════════════════════════════
+   DIAGRAM EDIT MODE
+   Allows splitting diagram blocks at the word level.
+   Alt+click a word  → split: word + everything after moves to a new row
+   Alt+click a label → merge: this row merges into the row above
+   Ctrl+Z / Ctrl+Y undo/redo exactly like phrasing-view splits/merges.
+   State: DIAGRAM_EDIT_MODE (bool), persisted in JSON.
+════════════════════════════════════════ */
+
+/* ── Tokenizer ── */
+
+/* Regex: a token is splittable if it contains at least one Unicode letter.
+   Non-splittable tokens: pure punctuation, symbols, emoji, digits, critical
+   marks (*, [TP], connector glyphs ‹›↔✓✕→←, person icons 👤, etc.).
+   We check for \p{L} (any Unicode letter) to decide. */
+const _DEM_SPLITTABLE = /\p{L}/u;
+
+/* Characters that are NEVER splittable regardless of letter content:
+   Standalone punctuation-only sequences. We skip these even if they somehow
+   contain a letter via a combining mark edge-case. */
+const _DEM_PUNCT_ONLY = /^[,\.·;:!\?\(\)\[\]{}\/<>@#\$%\^&\*\-_=\+~`\|'"«»‹›↔✓✕→←⇒⇐—–…\d\s]+$/u;
+
+function _demTokenize(blockEl){
+  /* Walk dblock-text with a TreeWalker (TEXT_NODE only).
+     Skip all <sup> subtrees entirely (they contain [TP], verse refs, etc.).
+     For each text node, split on whitespace into runs.
+     Each run that passes _DEM_SPLITTABLE and is NOT _DEM_PUNCT_ONLY gets
+     wrapped in <span class="dedit-word">. Others become plain text nodes.
+     Emoji (U+1F000+) within a word run are kept with the word. */
+  const textEl=blockEl.querySelector('.dblock-text');
+  if(!textEl||textEl.querySelector('.dedit-word')) return; // already tokenized
+
+  const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, {
+    acceptNode(node){
+      // Skip text inside <sup> — those are critical marks, not splittable words
+      let p=node.parentNode;
+      while(p&&p!==textEl){
+        if(p.nodeName==='SUP') return NodeFilter.FILTER_REJECT;
+        p=p.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+
+  const textNodes=[];
+  let node;
+  while((node=walker.nextNode())) textNodes.push(node);
+
+  textNodes.forEach(tn=>{
+    const text=tn.nodeValue;
+    if(!text) return;
+    const frag=document.createDocumentFragment();
+    // Split on whitespace boundaries, preserving whitespace as text nodes
+    const parts=text.split(/(\s+)/);
+    parts.forEach(part=>{
+      if(!part) return;
+      if(/^\s+$/.test(part)){
+        frag.appendChild(document.createTextNode(part));
+        return;
+      }
+      // Non-whitespace run — decide if it's a splittable word
+      if(_DEM_SPLITTABLE.test(part) && !_DEM_PUNCT_ONLY.test(part)){
+        const sp=document.createElement('span');
+        sp.className='dedit-word';
+        sp.textContent=part;
+        frag.appendChild(sp);
+      } else {
+        frag.appendChild(document.createTextNode(part));
+      }
+    });
+    tn.parentNode.replaceChild(frag, tn);
+  });
+}
+
+function _demUntokenize(blockEl){
+  /* Remove .dedit-word spans, replacing each with its text content. */
+  const textEl=blockEl.querySelector('.dblock-text');
+  if(!textEl) return;
+  textEl.querySelectorAll('.dedit-word').forEach(sp=>{
+    sp.replaceWith(document.createTextNode(sp.textContent));
+  });
+}
+
+/* ── Core toggle ── */
+
+function toggleDiagramEditMode(){
+  DIAGRAM_EDIT_MODE=!DIAGRAM_EDIT_MODE;
+  _applyDiagramEditMode(DIAGRAM_EDIT_MODE);
+  if(DIAGRAM_EDIT_MODE){
+    toast(typeof t==='function'?t('diagram.edit-hint'):'Alt+click a word to split it to a new row. Alt+click a row label to merge with the row above.');
+  }
+  autoSave();
+}
+
+function _applyDiagramEditMode(on){
+  DIAGRAM_EDIT_MODE=on;
+  const canvas=document.getElementById('dcanvas');
+  const btn=document.getElementById('tb-dem');
+  if(!canvas) return;
+
+  if(on){
+    canvas.classList.add('dem-active');
+    if(btn) btn.classList.add('on');
+    // Tokenize all visible blocks
+    canvas.querySelectorAll('.dblock').forEach(blk=>_demTokenize(blk));
+    // Wire label cells for Alt+click merge
+    canvas.querySelectorAll('.dl').forEach(lCell=>_demWireLabelCell(lCell));
+  } else {
+    canvas.classList.remove('dem-active');
+    if(btn) btn.classList.remove('on');
+    // Untokenize all blocks
+    canvas.querySelectorAll('.dblock').forEach(blk=>_demUntokenize(blk));
+  }
+}
+
+/* ── Wire label cell for merge ── */
+function _demWireLabelCell(lCell){
+  if(lCell.dataset.demWired) return;
+  lCell.dataset.demWired='1';
+  lCell.addEventListener('click', ev=>{
+    if(!ev.altKey) return;
+    if(!DIAGRAM_EDIT_MODE) return;
+    ev.preventDefault(); ev.stopPropagation();
+    // Find the drow and then its matching xrow by rid
+    const drow=lCell.closest('.drow');
+    if(!drow) return;
+    const rid=drow.dataset.rid;
+    // Switch to phrasing view momentarily to perform mergeRowUp
+    // Actually: we can call mergeRowUp directly since it operates on .xrow
+    mergeRowUp(rid);
+    // Rebuild diagram after merge
+    setTimeout(()=>{
+      if(EDITOR_VIEW==='diagram') renderDiagram();
+      if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 40);
+    }, 30);
+  });
+}
+
+/* ── Alt+click on .dedit-word: split ── */
+document.addEventListener('click', ev=>{
+  if(!ev.altKey||!DIAGRAM_EDIT_MODE) return;
+  const wordEl=ev.target.closest('.dedit-word');
+  if(!wordEl) return;
+  ev.preventDefault(); ev.stopPropagation();
+
+  const blockEl=wordEl.closest('.dblock');
+  if(!blockEl) return;
+  const textEl=blockEl.querySelector('.dblock-text');
+  if(!textEl) return;
+  const drow=blockEl.closest('.drow');
+  if(!drow) return;
+  const rid=drow.dataset.rid;
+
+  // Collect all .dedit-word spans in this block
+  const words=[...textEl.querySelectorAll('.dedit-word')];
+  const wordIdx=words.indexOf(wordEl);
+  if(wordIdx<0) return;
+
+  // Build HTML for what stays in the original block (words before wordIdx)
+  // and what moves to the new block (wordIdx and after).
+  // We need the raw innerHTML of the dblock-text, but with tokenization
+  // removed so we get clean HTML. Clone and untokenize to extract.
+  const cloneBefore=textEl.cloneNode(true);
+  const cloneAfter=textEl.cloneNode(true);
+
+  // In cloneBefore: remove from wordIdx onward
+  const wordsBefore=cloneBefore.querySelectorAll('.dedit-word');
+  for(let i=wordIdx;i<wordsBefore.length;i++){
+    // Remove wordsBefore[i] and any immediately preceding/following whitespace
+    const w=wordsBefore[i];
+    w.remove();
+  }
+  // In cloneAfter: remove before wordIdx
+  const wordsAfter=cloneAfter.querySelectorAll('.dedit-word');
+  for(let i=0;i<wordIdx;i++) wordsAfter[i].remove();
+
+  // Unwrap .dedit-word spans so we get clean HTML
+  [cloneBefore, cloneAfter].forEach(clone=>{
+    clone.querySelectorAll('.dedit-word').forEach(sp=>{
+      sp.replaceWith(document.createTextNode(sp.textContent));
+    });
+  });
+
+  const beforeHTML=cloneBefore.innerHTML.replace(/^\s+|\s+$/g,'');
+  const afterHTML =cloneAfter.innerHTML.replace(/^\s+|\s+$/g,'');
+
+  // Find the xrow and its cedit to update
+  const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+  if(!xrow) return;
+  const oc=xrow.querySelector(`#oc-${rid} .cedit`);
+  if(!oc) return;
+
+  const origHTMLFull=oc.innerHTML;
+  const verse=xrow.querySelector('.vin')?.value||'';
+
+  // Update the original row's cedit
+  oc.innerHTML=beforeHTML;
+
+  // Create new row after this one
+  const newRid=++RC;
+  const newRow=makeRowEl(newRid,'','','',null);
+  xrow.insertAdjacentElement('afterend',newRow);
+  const newOc=newRow.querySelector(`#oc-${newRid} .cedit`);
+  if(newOc) newOc.innerHTML=afterHTML;
+
+  // Push undo op (same type as phrasing-view Enter key split)
+  rowPush({
+    type:'split',
+    rid:String(rid), newRid:String(newRid),
+    verse,
+    origHTML:origHTMLFull,
+    afterHTML:beforeHTML,
+    newHTML:afterHTML,
+    splitOffset:0
+  });
+
+  recomputeIds();
+  autoSave();
+
+  // Rebuild diagram, re-apply edit mode so new block is also tokenized
+  setTimeout(()=>{
+    if(EDITOR_VIEW==='diagram') renderDiagram();
+    if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 40);
+  }, 30);
+}, true); // capture so it fires before block mousedown
+
+/* ── Re-apply tokenization after diagram rebuilds is handled inside renderDiagram ── */
+
 let SL_DECK       = { slides: [] };   // the deck
 let SL_ACTIVE_IDX = 0;                // currently selected slide index
 let SL_SEL_EL_ID  = null;             // selected element id on active slide
@@ -8320,7 +8556,7 @@ document.addEventListener('keydown',function(ev){
 /* ── Alt+1/2/3/T/L/P/D/A/B hotkeys ── */
 document.addEventListener('keydown',function(ev){
   if(!ev.altKey||ev.shiftKey||ev.ctrlKey||ev.metaKey)return;
-  if(!'123tTlLpPdDaAbBcC'.includes(ev.key))return;
+  if(!'123tTlLpPdDaAbBcCeE'.includes(ev.key))return;
   const tag=(ev.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea')return;
   const s2Visible=!document.getElementById('s2')?.classList.contains('hidden');
@@ -8348,8 +8584,8 @@ document.addEventListener('keydown',function(ev){
   if((ev.key==='a'||ev.key==='A')&&!s1Visible&&EDITOR_VIEW==='diagram'){
     startFreeArrow();
   }
-  if((ev.key==='c'||ev.key==='C')&&!s1Visible&&EDITOR_VIEW==='diagram'){
-    startConnectorMode();
+  if((ev.key==='e'||ev.key==='E')&&!s1Visible&&EDITOR_VIEW==='diagram'){
+    toggleDiagramEditMode();
   }
 });
 

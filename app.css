@@ -2771,7 +2771,7 @@ sup.bfn:hover { opacity: .7; }
   z-index:2;
 }
 .drow.rtl .dblock{direction:rtl;text-align:right;font-family:var(--serif)}
-.dblock-text{flex:1;min-width:0;word-break:break-word}
+.dblock-text{flex:1;min-width:0;word-break:break-word;position:relative;z-index:1}
 .dblock-text:empty::before{content:attr(data-empty-ph);color:var(--muted);font-style:italic}
 .dblock-text :is(b,strong){font-weight:700}
 .dblock-text :is(i,em){font-style:italic}
@@ -4186,3 +4186,40 @@ body.brk-locked .dbrk-pip:hover {
   transition: all .1s;
 }
 .ann-del-btn:hover { background: #cc0000; color: #fff; border-color: #cc0000; }
+
+/* ════════════════════════════════════════
+   DIAGRAM EDIT MODE
+════════════════════════════════════════ */
+
+/* Active block styling: semi-transparent background so mode feels different */
+#dcanvas.dem-active .dblock {
+  background: rgba(255,255,255,0.30);
+  border: 1.5px dashed rgba(73,53,72,.30);
+  box-shadow: none;
+}
+
+/* Label cells become click targets for merge (Alt+click) */
+#dcanvas.dem-active .dl {
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background .12s;
+}
+#dcanvas.dem-active .dl:hover {
+  background: rgba(200,168,75,.15);
+  outline: 1px dashed #C8A84B;
+}
+
+/* Word tokens in edit mode */
+.dedit-word {
+  display: inline;
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background .1s, outline .1s;
+}
+#dcanvas.dem-active .dedit-word:hover {
+  background: rgba(200,168,75,.25);
+  outline: 1px solid rgba(200,168,75,.7);
+}
+#dcanvas.dem-active .dedit-word:active {
+  background: rgba(200,168,75,.45);
+}
