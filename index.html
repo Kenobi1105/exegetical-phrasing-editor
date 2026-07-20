@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607200700"/>
+<meta name="app-version" content="202607201100"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -339,14 +339,10 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="12 5 19 5 19 12"/></svg>
       </button>
       <button class="tbtn" id="tb-add-connector" title="Draw connector — drag between blocks or words (Alt+C)" onclick="startConnectorMode()" style="display:none">
-        <!-- Two horizontal text-line bars connected by an S-curve with arrowhead -->
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <line x1="2" y1="6" x2="9" y2="6"/>
-          <line x1="2" y1="9" x2="7" y2="9"/>
-          <path d="M8 7.5 C8 12 16 12 16 16.5"/>
-          <line x1="15" y1="18" x2="22" y2="18"/>
-          <line x1="17" y1="15" x2="22" y2="15"/>
-          <polyline points="13.5 14.5 16 16.5 13.5 18.5"/>
+        <!-- S-curve arrow: cubic bezier from upper-left to lower-right with arrowhead -->
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 5 C5 12, 19 12, 19 19"/>
+          <polyline points="15 19 19 19 19 15"/>
         </svg>
       </button>
       <button class="tbtn" id="tb-add-bracket" title="Add bracket — Shift+click two pips (Alt+B)" onclick="addBracketHint()" style="display:none">

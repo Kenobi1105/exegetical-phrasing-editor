@@ -4196,6 +4196,7 @@ body.brk-locked .dbrk-pip:hover {
   background: rgba(255,255,255,0.30);
   border: 1.5px dashed rgba(73,53,72,.30);
   box-shadow: none;
+  cursor: default;
 }
 
 /* Label cells become click targets for merge (Alt+click) */
@@ -4209,16 +4210,18 @@ body.brk-locked .dbrk-pip:hover {
   outline: 1px dashed #C8A84B;
 }
 
-/* Word tokens in edit mode */
+/* Word tokens in edit mode — slicer cursor to match BibleArc feel */
 .dedit-word {
   display: inline;
   border-radius: 2px;
-  cursor: pointer;
   transition: background .1s, outline .1s;
 }
+#dcanvas.dem-active .dedit-word {
+  cursor: col-resize; /* vertical bar "slicer" cursor */
+}
 #dcanvas.dem-active .dedit-word:hover {
-  background: rgba(200,168,75,.25);
-  outline: 1px solid rgba(200,168,75,.7);
+  background: rgba(200,168,75,.22);
+  outline: 1.5px solid rgba(200,168,75,.8);
 }
 #dcanvas.dem-active .dedit-word:active {
   background: rgba(200,168,75,.45);

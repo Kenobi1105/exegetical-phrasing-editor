@@ -6434,30 +6434,42 @@ function slDrawAnnotationsIntoClone(cloneCanvas, visibleRids){
 
 /* ── Tokenizer ── */
 
-/* Regex: a token is splittable if it contains at least one Unicode letter.
-   Non-splittable tokens: pure punctuation, symbols, emoji, digits, critical
-   marks (*, [TP], connector glyphs ‹›↔✓✕→←, person icons 👤, etc.).
-   We check for \p{L} (any Unicode letter) to decide. */
-const _DEM_SPLITTABLE = /\p{L}/u;
+/* A token is a SPLITTABLE WORD only if it contains a character from the
+   target manuscript script (Greek, Hebrew) or a lowercase ASCII letter.
+   This excludes uppercase-only abbreviation labels like CP, TP, TR, fn
+   even when they appear adjacent to brackets: "[CP", "CP]", "[TP]", etc.
+   Emoji, symbols, pure punctuation, and all-caps abbreviations are excluded. */
+const _DEM_WORD = /[\u0370-\u03FF\u1F00-\u1FFF\u0590-\u05FF\u00E0-\u00FF]|[a-z]/;
 
-/* Characters that are NEVER splittable regardless of letter content:
-   Standalone punctuation-only sequences. We skip these even if they somehow
-   contain a letter via a combining mark edge-case. */
-const _DEM_PUNCT_ONLY = /^[,\.·;:!\?\(\)\[\]{}\/<>@#\$%\^&\*\-_=\+~`\|'"«»‹›↔✓✕→←⇒⇐—–…\d\s]+$/u;
+/* ── Group model ───────────────────────────────────────────────────────────
+   The tokenizer produces a series of GROUPS rather than individual word spans.
+   Each group owns: [non-word prefix tokens] + [one splittable word] + [non-word suffix tokens until next word].
+   This ensures that surrounding markers like "‹👤 ‹+" or "[CP ... CP]" always
+   travel together with their associated word when a split is performed.
+
+   A split at group N means:
+   - Everything in groups 0..N-1 stays in the original row
+   - Everything in group N onward (prefix+word+suffix) moves to the new row
+
+   Implementation:
+   1. Walk text nodes (skip <sup>) and classify each whitespace-delimited run as
+      WORD or NON-WORD.
+   2. Build a flat list of DOM nodes in source order: text nodes and inline elements.
+   3. Insert an invisible <span class="dedit-sp" data-idx="N"> marker just BEFORE
+      each word group's first node (i.e., just after the previous word's last node).
+      This marker is the actual cut point.
+   4. Wrap each splittable word token in <span class="dedit-word">.
+   5. On split: clone the textEl, split at the Nth .dedit-sp marker,
+      unwrap all .dedit-sp and .dedit-word spans to produce clean HTML.
+──────────────────────────────────────────────────────────────────────────── */
 
 function _demTokenize(blockEl){
-  /* Walk dblock-text with a TreeWalker (TEXT_NODE only).
-     Skip all <sup> subtrees entirely (they contain [TP], verse refs, etc.).
-     For each text node, split on whitespace into runs.
-     Each run that passes _DEM_SPLITTABLE and is NOT _DEM_PUNCT_ONLY gets
-     wrapped in <span class="dedit-word">. Others become plain text nodes.
-     Emoji (U+1F000+) within a word run are kept with the word. */
   const textEl=blockEl.querySelector('.dblock-text');
-  if(!textEl||textEl.querySelector('.dedit-word')) return; // already tokenized
+  if(!textEl||textEl.querySelector('.dedit-word')) return;
 
+  /* Phase 1: walk all text nodes (skipping <sup> subtrees) and collect them */
   const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, {
     acceptNode(node){
-      // Skip text inside <sup> — those are critical marks, not splittable words
       let p=node.parentNode;
       while(p&&p!==textEl){
         if(p.nodeName==='SUP') return NodeFilter.FILTER_REJECT;
@@ -6466,28 +6478,24 @@ function _demTokenize(blockEl){
       return NodeFilter.FILTER_ACCEPT;
     }
   });
-
   const textNodes=[];
   let node;
   while((node=walker.nextNode())) textNodes.push(node);
 
+  /* Phase 2: in each text node, wrap splittable word runs in .dedit-word spans */
   textNodes.forEach(tn=>{
     const text=tn.nodeValue;
     if(!text) return;
     const frag=document.createDocumentFragment();
-    // Split on whitespace boundaries, preserving whitespace as text nodes
     const parts=text.split(/(\s+)/);
     parts.forEach(part=>{
       if(!part) return;
       if(/^\s+$/.test(part)){
-        frag.appendChild(document.createTextNode(part));
-        return;
+        frag.appendChild(document.createTextNode(part)); return;
       }
-      // Non-whitespace run — decide if it's a splittable word
-      if(_DEM_SPLITTABLE.test(part) && !_DEM_PUNCT_ONLY.test(part)){
+      if(_DEM_WORD.test(part)){
         const sp=document.createElement('span');
-        sp.className='dedit-word';
-        sp.textContent=part;
+        sp.className='dedit-word'; sp.textContent=part;
         frag.appendChild(sp);
       } else {
         frag.appendChild(document.createTextNode(part));
@@ -6495,15 +6503,70 @@ function _demTokenize(blockEl){
     });
     tn.parentNode.replaceChild(frag, tn);
   });
+
+  /* Phase 3: insert split-point markers (.dedit-sp) just BEFORE each word's
+     "group start" = the first non-word node after the previous word (or start).
+     We walk the flat child list of textEl (and inline element children) in order,
+     tracking when we last saw a .dedit-word. The next .dedit-word after any
+     non-word content gets a split-point marker inserted before that non-word run. */
+  let groupIdx=0;
+  let prevWordNode=null; // the last .dedit-word seen
+
+  // Collect all top-level and inline children in DOM order using a flat walk
+  function _insertSplitPoints(parent){
+    const children=[...parent.childNodes];
+    for(let i=0;i<children.length;i++){
+      const ch=children[i];
+      if(ch.nodeType===Node.ELEMENT_NODE && ch.classList.contains('dedit-word')){
+        // This is a word node. Find its "group start" = the first node of this group.
+        // The group start is: the first node after prevWordNode (or start of parent) that
+        // is NOT a .dedit-word (non-word prefix nodes) OR this word itself if it
+        // immediately follows a word (no prefix).
+        // We insert the split marker just BEFORE the first prefix node of this group,
+        // which is: the node immediately after prevWordNode in DOM order (or first child).
+        // We already traversed those prefix nodes. The marker goes BEFORE ch's group start.
+        // We track groupStart as the first node after prevWordNode. But we've already
+        // passed those nodes. Instead, we use a different strategy: insert the marker
+        // just BEFORE ch, then reorder it backward to the group start.
+        // Simpler: insert marker before ch (the word) — then handle prefix association
+        // in the SPLIT HANDLER by using the marker's data-idx.
+        // For the group model, we insert the marker before ch.
+        const marker=document.createElement('span');
+        marker.className='dedit-sp'; marker.dataset.idx=String(groupIdx++);
+        marker.style.cssText='display:none;font-size:0;line-height:0;pointer-events:none;';
+        // Find the true group start: walk BACKWARD from ch to find the last .dedit-word
+        // or start of parent, then insert the marker at the first node of this group's prefix.
+        let groupStart=ch;
+        let prev=ch.previousSibling;
+        while(prev){
+          if(prev.nodeType===Node.ELEMENT_NODE && (prev.classList.contains('dedit-word')||prev.classList.contains('dedit-sp'))){
+            break; // found previous word or marker — group starts at the node after this
+          }
+          groupStart=prev;
+          prev=prev.previousSibling;
+        }
+        parent.insertBefore(marker, groupStart);
+        prevWordNode=ch;
+      } else if(ch.nodeType===Node.ELEMENT_NODE && ch.nodeName!=='SUP'){
+        // Recurse into inline elements (color spans, <b>, <i>, etc.) but not <sup>
+        _insertSplitPoints(ch);
+      }
+    }
+  }
+  _insertSplitPoints(textEl);
 }
 
 function _demUntokenize(blockEl){
-  /* Remove .dedit-word spans, replacing each with its text content. */
   const textEl=blockEl.querySelector('.dblock-text');
   if(!textEl) return;
+  // Remove .dedit-word spans (replace with text content)
   textEl.querySelectorAll('.dedit-word').forEach(sp=>{
     sp.replaceWith(document.createTextNode(sp.textContent));
   });
+  // Remove .dedit-sp markers
+  textEl.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
+  // Normalize adjacent text nodes
+  textEl.normalize();
 }
 
 /* ── Core toggle ── */
@@ -6512,10 +6575,29 @@ function toggleDiagramEditMode(){
   DIAGRAM_EDIT_MODE=!DIAGRAM_EDIT_MODE;
   _applyDiagramEditMode(DIAGRAM_EDIT_MODE);
   if(DIAGRAM_EDIT_MODE){
-    toast(typeof t==='function'?t('diagram.edit-hint'):'Alt+click a word to split it to a new row. Alt+click a row label to merge with the row above.');
+    toast(typeof t==='function'?t('diagram.edit-hint'):'Click a word to split it to a new row. Alt+click a row label to merge. Press Alt or Alt+E to exit.');
   }
   autoSave();
 }
+
+/* Alt keydown → enter edit mode temporarily (if not already locked on).
+   Alt keyup → exit temporary mode (if button hasn't locked it on permanently). */
+let _demAltTemp=false; // true = edit mode was entered by Alt keydown, not by button
+
+document.addEventListener('keydown', ev=>{
+  if(ev.key!=='Alt'||EDITOR_VIEW!=='diagram') return;
+  if(DIAGRAM_EDIT_MODE) return; // already on (locked by button)
+  _demAltTemp=true;
+  _applyDiagramEditMode(true);
+});
+
+document.addEventListener('keyup', ev=>{
+  if(ev.key!=='Alt') return;
+  if(!_demAltTemp) return; // was locked by button, not by Alt — don't exit
+  _demAltTemp=false;
+  _applyDiagramEditMode(false);
+  DIAGRAM_EDIT_MODE=false;
+});
 
 function _applyDiagramEditMode(on){
   DIAGRAM_EDIT_MODE=on;
@@ -6561,9 +6643,9 @@ function _demWireLabelCell(lCell){
   });
 }
 
-/* ── Alt+click on .dedit-word: split ── */
+/* ── Click on .dedit-word: split at that word's group ── */
 document.addEventListener('click', ev=>{
-  if(!ev.altKey||!DIAGRAM_EDIT_MODE) return;
+  if(!DIAGRAM_EDIT_MODE) return;
   const wordEl=ev.target.closest('.dedit-word');
   if(!wordEl) return;
   ev.preventDefault(); ev.stopPropagation();
@@ -6576,38 +6658,62 @@ document.addEventListener('click', ev=>{
   if(!drow) return;
   const rid=drow.dataset.rid;
 
-  // Collect all .dedit-word spans in this block
-  const words=[...textEl.querySelectorAll('.dedit-word')];
-  const wordIdx=words.indexOf(wordEl);
+  // Find the split-point marker (.dedit-sp) for this word's group.
+  // The marker was inserted just before this word's group start (including prefix non-words).
+  // Walk backward from wordEl to find its .dedit-sp marker (it's the last one before wordEl).
+  const allMarkers=[...textEl.querySelectorAll('.dedit-sp')];
+  const allWords  =[...textEl.querySelectorAll('.dedit-word')];
+  const wordIdx   =allWords.indexOf(wordEl);
   if(wordIdx<0) return;
 
-  // Build HTML for what stays in the original block (words before wordIdx)
-  // and what moves to the new block (wordIdx and after).
-  // We need the raw innerHTML of the dblock-text, but with tokenization
-  // removed so we get clean HTML. Clone and untokenize to extract.
-  const cloneBefore=textEl.cloneNode(true);
-  const cloneAfter=textEl.cloneNode(true);
+  // The split marker for this word is the one with data-idx === wordIdx
+  const marker=allMarkers.find(m=>m.dataset.idx===String(wordIdx));
 
-  // In cloneBefore: remove from wordIdx onward
-  const wordsBefore=cloneBefore.querySelectorAll('.dedit-word');
-  for(let i=wordIdx;i<wordsBefore.length;i++){
-    // Remove wordsBefore[i] and any immediately preceding/following whitespace
-    const w=wordsBefore[i];
-    w.remove();
+  // Build beforeHTML / afterHTML by cloning and splitting at the marker.
+  // "Before" = everything in textEl UP TO but not including the marker.
+  // "After"  = everything FROM the marker onward (includes prefix non-words of this group).
+  const clone=textEl.cloneNode(true);
+  // Find the corresponding marker in the clone
+  const cloneMarker=clone.querySelector(`.dedit-sp[data-idx="${wordIdx}"]`);
+
+  let beforeHTML='', afterHTML='';
+  if(!cloneMarker || wordIdx===0){
+    // No previous content or clicking first word — everything goes to new row
+    beforeHTML='';
+    // afterHTML = full content (minus tokenization markup)
+    const tmp=clone.cloneNode(true);
+    tmp.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    tmp.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
+    tmp.normalize();
+    afterHTML=tmp.innerHTML.replace(/^\s+|\s+$/g,'');
+  } else {
+    // Split into two ranges using the marker as the boundary
+    // Before: from start of textEl to just before the marker
+    const rangeBefore=document.createRange();
+    rangeBefore.setStart(clone, 0);
+    rangeBefore.setStartBefore(clone.firstChild);
+    rangeBefore.setEndBefore(cloneMarker);
+    const beforeFrag=rangeBefore.cloneContents();
+    const beforeDiv=document.createElement('div');
+    beforeDiv.appendChild(beforeFrag);
+    // Unwrap tokenization spans
+    beforeDiv.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    beforeDiv.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
+    beforeDiv.normalize();
+    beforeHTML=beforeDiv.innerHTML.replace(/^\s+|\s+$/g,'');
+
+    // After: from the marker to end of textEl
+    const rangeAfter=document.createRange();
+    rangeAfter.setStartBefore(cloneMarker);
+    rangeAfter.setEnd(clone, clone.childNodes.length);
+    const afterFrag=rangeAfter.cloneContents();
+    const afterDiv=document.createElement('div');
+    afterDiv.appendChild(afterFrag);
+    afterDiv.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    afterDiv.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
+    afterDiv.normalize();
+    afterHTML=afterDiv.innerHTML.replace(/^\s+|\s+$/g,'');
   }
-  // In cloneAfter: remove before wordIdx
-  const wordsAfter=cloneAfter.querySelectorAll('.dedit-word');
-  for(let i=0;i<wordIdx;i++) wordsAfter[i].remove();
-
-  // Unwrap .dedit-word spans so we get clean HTML
-  [cloneBefore, cloneAfter].forEach(clone=>{
-    clone.querySelectorAll('.dedit-word').forEach(sp=>{
-      sp.replaceWith(document.createTextNode(sp.textContent));
-    });
-  });
-
-  const beforeHTML=cloneBefore.innerHTML.replace(/^\s+|\s+$/g,'');
-  const afterHTML =cloneAfter.innerHTML.replace(/^\s+|\s+$/g,'');
 
   // Find the xrow and its cedit to update
   const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
@@ -6618,17 +6724,14 @@ document.addEventListener('click', ev=>{
   const origHTMLFull=oc.innerHTML;
   const verse=xrow.querySelector('.vin')?.value||'';
 
-  // Update the original row's cedit
   oc.innerHTML=beforeHTML;
 
-  // Create new row after this one
   const newRid=++RC;
   const newRow=makeRowEl(newRid,'','','',null);
   xrow.insertAdjacentElement('afterend',newRow);
   const newOc=newRow.querySelector(`#oc-${newRid} .cedit`);
   if(newOc) newOc.innerHTML=afterHTML;
 
-  // Push undo op (same type as phrasing-view Enter key split)
   rowPush({
     type:'split',
     rid:String(rid), newRid:String(newRid),
@@ -6642,12 +6745,11 @@ document.addEventListener('click', ev=>{
   recomputeIds();
   autoSave();
 
-  // Rebuild diagram, re-apply edit mode so new block is also tokenized
   setTimeout(()=>{
     if(EDITOR_VIEW==='diagram') renderDiagram();
     if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 40);
   }, 30);
-}, true); // capture so it fires before block mousedown
+}, true);
 
 /* ── Re-apply tokenization after diagram rebuilds is handled inside renderDiagram ── */
 
