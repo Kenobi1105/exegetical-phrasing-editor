@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607202300"/>
+<meta name="app-version" content="202607210200"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -268,8 +268,8 @@
             <div class="hl-bar" id="hl-bar" style="background:#F0D08F"></div>
           </button>
       </div>
-      <div class="tsep"></div>
-      <div class="tg">
+      <div class="tsep" id="phrasing-fmt-sep1"></div>
+      <div class="tg" id="phrasing-sz-grp">
         <select class="tsel" id="tb-sz" onchange="applySize(this.value)" data-i18n-title="toolbar.size" title="Font size">
           <option value="" disabled data-i18n="toolbar.size">Size</option>
           <option>10</option><option>11</option><option>12</option><option>13</option>
@@ -277,15 +277,15 @@
           <option>24</option><option>28</option><option>32</option>
         </select>
       </div>
-      <div class="tsep"></div>
-      <div class="tg">
+      <div class="tsep" id="phrasing-fmt-sep2"></div>
+      <div class="tg" id="phrasing-color-grp">
         <button class="tbtn" id="tb-txt-color" data-i18n-title="toolbar.text-color" title="Text color" onclick="openColorPalette('textColor', this, txtColor)">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 19H5l7-14 7 14h-4"/><line x1="7.5" y1="13" x2="16.5" y2="13"/><rect x="4" y="20" width="16" height="2" rx="1" fill="currentColor" stroke="none"/></svg>
             <div class="hl-bar" id="txt-color-bar" style="background:#1F1E1E"></div>
           </button>
       </div>
-      <div class="tsep"></div>
-      <div class="tg">
+      <div class="tsep" id="phrasing-fmt-sep3"></div>
+      <div class="tg" id="phrasing-indent-grp">
         <button class="tbtn" data-i18n-title="toolbar.indent"  title="Indent (Tab)"        onclick="doIndent(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><polyline points="8,9.5 12,12 8,14.5" fill="none"/></svg></button>
         <button class="tbtn" data-i18n-title="toolbar.outdent" title="Outdent (Shift+Tab)"  onclick="doIndent(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><polyline points="16,9.5 12,12 16,14.5" fill="none"/></svg></button>
       </div>
@@ -315,13 +315,9 @@
         </button>
       </div>
       <div class="tg" id="dfont-grp" style="display:none">
-        <button class="tbtn" title="Decrease diagram font size" onclick="diagramFontDec()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="12" x2="19" y2="12"/><text x="4" y="19" font-size="7" fill="currentColor" stroke="none" font-family="sans-serif">A</text><text x="14" y="21" font-size="10" fill="currentColor" stroke="none" font-family="sans-serif">A</text></svg>
-        </button>
+        <button class="tbtn" title="Decrease diagram font size" onclick="diagramFontDec()" style="font-size:16px;font-weight:700;line-height:1;">−</button>
         <span id="dfont-sz" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:34px;padding:0 4px;text-align:center;user-select:none;cursor:pointer" title="Reset font size to 16px" onclick="setDiagramFontSize(16)">16px</span>
-        <button class="tbtn" title="Increase diagram font size" onclick="diagramFontInc()">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/><text x="2" y="20" font-size="7" fill="currentColor" stroke="none" font-family="sans-serif">A</text><text x="12" y="22" font-size="10" fill="currentColor" stroke="none" font-family="sans-serif">A</text></svg>
-        </button>
+        <button class="tbtn" title="Increase diagram font size" onclick="diagramFontInc()" style="font-size:16px;font-weight:700;line-height:1;">+</button>
       </div>
       <div class="tsep" id="dlabel-sep" style="display:none"></div>
       <button class="tbtn" id="tb-add-label" data-i18n-title="diagram.add-label" title="Add label (Alt+L)" onclick="addDiagramLabel()" style="display:none">

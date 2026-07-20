@@ -433,6 +433,11 @@ function setEditorView(view){
   document.getElementById('view-btn-diagram')?.classList.toggle('active',isDiagram);
   document.getElementById('view-btn-slides')?.classList.toggle('active',isSlides);
   document.getElementById('dzoom-sep')?.style.setProperty('display',isDiagram?'':'none');
+  // Phrasing-only formatting controls (font size, text colour, indent/outdent)
+  const phrasingFmt=isPhrasing?'':'none';
+  ['phrasing-sz-grp','phrasing-color-grp','phrasing-indent-grp',
+   'phrasing-fmt-sep1','phrasing-fmt-sep2','phrasing-fmt-sep3']
+    .forEach(id=>document.getElementById(id)?.style.setProperty('display',phrasingFmt));
   document.getElementById('dzoom-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dfont-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dlabel-sep')?.style.setProperty('display',isDiagram?'':'none');
@@ -1056,28 +1061,46 @@ const PATTERN_DASH={solid:'none', dotted:'4,4'};
    left in RTL, mirroring the rest of Diagram View's RTL conventions. */
 function _connectorPathD(p1,p2,fromY,toY){
   const dx=p2.x-p1.x, dy=p2.y-p1.y;
-  // Escape distance for the curl — large enough to clear a typical block
-  // (min-height 30px, so a bottom-inset endpoint at block.bottom-6 needs
-  // the control point at least ~30px further out to visibly clear the
-  // block's top edge on a short connector, not just poke a few px past
-  // its own bottom edge) while still scaling up for longer connectors.
-  const hookDist=Math.max(18, Math.min(70, Math.abs(dy)*0.5));
-  const MIN_HOOK_HORIZ_PULL=26;
-  let horizPull=dx*0.3;
-  if(Math.abs(horizPull)<MIN_HOOK_HORIZ_PULL){
-    const sign = dx!==0 ? Math.sign(dx) : (IS_RTL ? -1 : 1);
-    horizPull = sign*MIN_HOOK_HORIZ_PULL;
-  }
+
+  // For a true S-curve: the two control points should be placed symmetrically
+  // about the midpoint, each displaced in opposite vertical directions.
+  // The horizontal pull gives the S its width; the vertical escape keeps
+  // the tangent vertical at each endpoint (for hook-style connectors).
+  const absDy=Math.abs(dy), absDx=Math.abs(dx);
+
+  // Vertical escape distance (how far control point goes past the endpoint
+  // in the vertical direction to produce a clean hook exit/arrival)
+  const vEscape=Math.max(20, Math.min(80, absDy*0.45));
+
+  // Horizontal pull (how wide the S belly is)
+  const MIN_H=28;
+  let hPull=absDx*0.5;
+  if(hPull<MIN_H){ hPull=MIN_H; }
+  // Direction of horizontal pull: away from p1 toward p2 then back
+  const hDir= dx!==0 ? Math.sign(dx) : (IS_RTL ? -1 : 1);
 
   let c1x,c1y;
-  if(fromY===0){        c1x=p1.x+horizPull; c1y=p1.y-hookDist; }
-  else if(fromY===1){   c1x=p1.x+horizPull; c1y=p1.y+hookDist; }
-  else {                c1x=p1.x+dx*.55;    c1y=p1.y;          }
+  if(fromY===0){
+    // Depart upward from p1, then curve right toward p2
+    c1x=p1.x + hDir*hPull; c1y=p1.y - vEscape;
+  } else if(fromY===1){
+    // Depart downward from p1, then curve right
+    c1x=p1.x + hDir*hPull; c1y=p1.y + vEscape;
+  } else {
+    // No hook — plain horizontal blend
+    c1x=p1.x + dx*0.5; c1y=p1.y;
+  }
 
   let c2x,c2y;
-  if(toY===0){           c2x=p2.x-horizPull; c2y=p2.y-hookDist; }
-  else if(toY===1){       c2x=p2.x-horizPull; c2y=p2.y+hookDist; }
-  else {                  c2x=p2.x-dx*.25;    c2y=p2.y;          }
+  if(toY===0){
+    // Arrive at p2 from above — control point above p2, offset back
+    c2x=p2.x - hDir*hPull; c2y=p2.y - vEscape;
+  } else if(toY===1){
+    // Arrive at p2 from below — control point below p2, offset back
+    c2x=p2.x - hDir*hPull; c2y=p2.y + vEscape;
+  } else {
+    c2x=p2.x - dx*0.25; c2y=p2.y;
+  }
 
   return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
 }
@@ -3472,14 +3495,19 @@ function restartSess(){
   document.getElementById('conn-edit-popup')?.style.setProperty('display','none');
   cancelRightAngleArm();
   setDiagramZoom(100);
-  EDITOR_VIEW='phrasing';
-  document.getElementById('tzone').style.display='';
-  document.getElementById('dzone').style.display='none';
-  document.getElementById('szone').style.display='none';
-  document.getElementById('sl-presenter').style.display='none';
-  document.getElementById('view-btn-phrasing')?.classList.add('active');
-  document.getElementById('view-btn-diagram')?.classList.remove('active');
-  document.getElementById('view-btn-slides')?.classList.remove('active');
+  // Reset diagram edit mode cleanly — Ctrl+Shift+R's Shift keydown would have
+  // triggered temporary edit mode; must be cleared before navigating away.
+  if(typeof _applyDiagramEditMode==='function') _applyDiagramEditMode(false);
+  DIAGRAM_EDIT_MODE=false;
+  if(typeof _demAltTemp!=='undefined') _demAltTemp=false;
+  // Reset bracket locked mode
+  document.body.classList.remove('brk-locked','brk-shift','brk-active');
+  if(typeof _brkExitLockedMode==='function') _brkExitLockedMode();
+  // Reset connector mode
+  if(typeof _exitConnectorMode==='function') _exitConnectorMode();
+  // Use setEditorView so ALL toolbar state (annotation buttons etc.) resets cleanly
+  EDITOR_VIEW='';
+  setEditorView('phrasing');
   const cmtBtnRS=document.getElementById('btn-cmt-pane');
   if(cmtBtnRS) cmtBtnRS.disabled=false;
   // Reset bracket, annotation, and slide state
