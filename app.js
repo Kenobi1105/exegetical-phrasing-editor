@@ -1371,8 +1371,11 @@ function renderDiagramConnectors(){
   const backSvg=document.getElementById('dconns-back');
   const canvas=document.getElementById('dcanvas');
   if(!svg||!backSvg||!canvas) return;
-  // Place #dconns right after #dconns-back (both behind all .dblock children)
-  canvas.insertBefore(svg, backSvg.nextSibling);
+  // Place #dconns as the LAST child of #dcanvas so it paints ABOVE the block
+  // ::before backgrounds. .dblock-text has position:relative; z-index:1 which
+  // keeps text above the connector lines. #dconns-back stays first (right-angle
+  // connectors remain behind blocks as structural lines).
+  canvas.appendChild(svg);
   const canvasRect=canvas.getBoundingClientRect();
   svg.setAttribute('width', canvas.scrollWidth);
   svg.setAttribute('height', canvas.scrollHeight);

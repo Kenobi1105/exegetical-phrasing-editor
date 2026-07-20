@@ -2753,22 +2753,37 @@ sup.bfn:hover { opacity: .7; }
   display:flex;align-items:center;
   min-height:30px;width:fit-content;max-width:560px;
   padding:3px 8px;
+  /* Background, border and shadow are on ::before so the #dconns SVG layer
+     can paint between the block background and the text content (.dblock-text
+     has z-index:1 and sits above #dconns which is last in the canvas DOM). */
+  background:transparent;
+  border:none;
+  border-radius:var(--rs);
+  font-family:var(--serif);font-size:14px;line-height:1.5;color:var(--ink);
+  cursor:grab;
+  user-select:none;
+}
+/* The visual block background lives here — z-index:0 within .dblock's stacking context */
+.dblock::before{
+  content:'';
+  position:absolute;inset:0;
   background:var(--surface,#fff);
   border:1.5px solid rgba(73,53,72,.22);
   border-radius:var(--rs);
   box-shadow:0 1px 3px rgba(0,0,0,.06);
-  font-family:var(--serif);font-size:14px;line-height:1.5;color:var(--ink);
   transition:border-color .12s,box-shadow .12s;
-  cursor:grab;
-  user-select:none;
+  z-index:0;
+  pointer-events:none;
 }
-.dblock:hover{border-color:rgba(73,53,72,.4);box-shadow:0 2px 8px rgba(0,0,0,.1)}
-.dblock.selected{border-color:#C8A84B;box-shadow:0 0 0 2px rgba(200,168,75,.3);}
+.dblock:hover::before{border-color:rgba(73,53,72,.4);box-shadow:0 2px 8px rgba(0,0,0,.1)}
+.dblock.selected::before{border-color:#C8A84B;box-shadow:0 0 0 2px rgba(200,168,75,.3);}
 .dblock.dragging{
   cursor:grabbing;
+  z-index:2;
+}
+.dblock.dragging::before{
   border-color:var(--active,#C8A84B);
   box-shadow:0 4px 14px rgba(0,0,0,.16);
-  z-index:2;
 }
 .drow.rtl .dblock{direction:rtl;text-align:right;font-family:var(--serif)}
 .dblock-text{flex:1;min-width:0;word-break:break-word;position:relative;z-index:1}
@@ -4192,11 +4207,10 @@ body.brk-locked .dbrk-pip:hover {
 ════════════════════════════════════════ */
 
 /* Active block styling: semi-transparent background so mode feels different */
-#dcanvas.dem-active .dblock {
+#dcanvas.dem-active .dblock::before {
   background: rgba(255,255,255,0.30);
   border: 1.5px dashed rgba(73,53,72,.30);
   box-shadow: none;
-  cursor: default;
 }
 
 /* Label cells become click targets for merge (Alt+click) */
