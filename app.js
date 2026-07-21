@@ -1031,68 +1031,36 @@ function _connectorPoint(el, fracX, fracY, canvasRect, wordIdx){
 
 const PATTERN_DASH={solid:'none', dotted:'4,4'};
 
-/* Cubic-Bézier curve between two connector endpoints, with a "hooked"
-   approach at each end that's snapped to a block's top or bottom edge:
-   the curve launches (or arrives) moving mostly VERTICALLY at that point —
-   away from a top edge, or away from a bottom edge — before bending
-   toward the other point, which produces the curling/hook look of the
-   reference design (a line that swoops down, hooks back, and rejoins a
-   block's bottom edge from underneath) rather than one that simply aims
-   straight at the other point from an oblique angle.
-   fromY/toY are the snapped fractions for each end (0 = top edge,
-   1 = bottom edge, per _snapFracY). Pass null/undefined for an end that
-   isn't snapped yet (e.g. the live cursor end of an in-progress
-   rubber-band drag, before it has landed on a target block) to fall back
-   to a plain horizontal-blend control point for that end only.
-   The endpoint itself stays exactly at its inset position (6px inside
-   the block — see CONN_EDGE_INSET — so the touch point still directly
-   associates with the specific word it points to). Only the CURVE SHAPE
-   needs to clear the block: hookDist (how far the control point sits
-   from the endpoint, in the escaping direction) is large enough that the
-   rendered curve visibly bulges outside the block's boundary before
-   hooking back in to the inset touch point, at both ends.
-   When both endpoints share (or nearly share) the same X — e.g. a
-   connector running straight down to the bottom of a block directly
-   below — the proportional horizontal pull (dx*0.22) would be at or near
-   zero, making the hook curl invisible (indistinguishable from a plain
-   straight line). A minimum pull magnitude keeps the hook visually
-   apparent in that case; when dx itself has no direction (essentially
-   zero), the pull defaults to a consistent direction — right in LTR,
-   left in RTL, mirroring the rest of Diagram View's RTL conventions. */
+/* BibleArc-style S-curve (one cubic Bézier with a single inflection).
+   Both control points sit DIRECTLY ABOVE/BELOW their endpoints — c1
+   below the source, c2 above the target (mirrored when travelling
+   upward) — giving purely VERTICAL tangents at both ends: the line
+   departs the source heading straight down, sweeps diagonally across
+   with one smooth inflection at the middle, then straightens back to
+   vertical so the arrowhead drops straight into the target word, like
+   the reference design's hand-drawn arrows. No sideways belly.
+   Because the shape is horizontally symmetric it needs no RTL
+   special-casing, and when dx≈0 it degrades gracefully to a clean
+   straight vertical drop — so this one formula also covers the
+   near-vertical cases that previously needed separate variants.
+   V (how far each vertical run extends before the diagonal) scales
+   with the vertical span, capped so very long connectors keep a
+   readable diagonal rather than two enormous vertical tails.
+   fromY/toY are accepted for signature compatibility with callers (and
+   the rubber-band preview passes toY=null for the live cursor end) but
+   the tangent direction is derived from dy directly, which handles
+   snapped and unsnapped ends identically. */
 function _connectorPathD(p1,p2,fromY,toY){
   const dy=p2.y-p1.y;
   const absDy=Math.abs(dy);
-  const sign=dy>=0?1:-1;
+  const vSign=dy>=0?1:-1;
 
-  // Two cubic bezier segments joined at the midpoint.
-  // Both segments belly to the RIGHT (always positive H offset).
-  // Departure and arrival are nearly vertical (small vPush).
-  // The belly is widest at the midpoint, giving the BibleArc-style S shape.
-  const H=Math.max(40, absDy*0.35);  // belly width — moderate, scales with span
-  const V=Math.max(10, absDy*0.15);  // vertical nudge at departure/arrival
+  const V=Math.min(150, Math.max(30, absDy*0.4)); // vertical run at departure/arrival
 
-  const mx=(p1.x+p2.x)/2;
-  const my=(p1.y+p2.y)/2;
+  const c1x=p1.x, c1y=p1.y+vSign*V; // straight down (or up) out of the source
+  const c2x=p2.x, c2y=p2.y-vSign*V; // straight down (or up) into the target
 
-  // First half: p1 → midpoint, bellying right
-  const c1x=p1.x+H, c1y=p1.y+sign*V;  // departs slightly down-right
-  const c2x=mx+H,   c2y=my;             // arrives at midpoint from the right
-
-  // Second half: midpoint → p2, returning from the right
-  const c3x=mx+H,   c3y=my;             // departs midpoint going right
-  const c4x=p2.x+H, c4y=p2.y-sign*V;   // arrives at p2 from upper-right
-
-  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${mx},${my} C${c3x},${c3y} ${c4x},${c4y} ${p2.x},${p2.y}`;
-}
-
-function _connectorPathDTight(p1,p2,fromY,toY){
-  const dy=p2.y-p1.y;
-  const absDy=Math.abs(dy);
-  const sign=dy>=0?1:-1;
-  const H=Math.max(18,absDy*0.22);
-  const V=Math.max(6, absDy*0.08);
-  const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
-  return `M${p1.x},${p1.y} C${p1.x+H},${p1.y+sign*V} ${mx+H},${my} ${mx},${my} C${mx+H},${my} ${p2.x+H},${p2.y-sign*V} ${p2.x},${p2.y}`;
+  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
 }
 
 /* Item-1 redesign: EVERY right-angle connector routes through the SAME
@@ -1283,34 +1251,11 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
     toY = cnx.toY;
   }
 
-  // Three path strategies based on horizontal offset:
-  // • |dx| < 10  — truly vertical: hook at departure, then straight down to landing.
-  //                Uses a cubic bezier where c1 curves outward from p1 and c2 sits
-  //                just above/below p2 so the path arrives nearly straight.
-  // • 10 ≤ |dx| < 30 — slightly offset: tight S-curve with minimal horizPull
-  // • |dx| ≥ 30  — normal: full hooked S-curve
-  const absDx = Math.abs(dx);
-  let d;
-  if(absDx < 10){
-    // Hook at departure, straight descent to landing.
-    // Keep hookSide small so the line stays visually close to the source word;
-    // hookDist proportional to dy but capped low so short connectors stay tight.
-    const hookDist = Math.max(10, Math.abs(dy) * 0.14);
-    const hookSide = 8;
-    let c1x, c1y, c2x, c2y;
-    if(dy >= 0){
-      c1x = p1.x + hookSide; c1y = p1.y + hookDist;
-      c2x = p2.x;            c2y = p2.y - hookDist * 0.3;
-    } else {
-      c1x = p1.x + hookSide; c1y = p1.y - hookDist;
-      c2x = p2.x;            c2y = p2.y + hookDist * 0.3;
-    }
-    d = `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
-  } else if(absDx < 30){
-    d = _connectorPathDTight(p1, p2, fromY, toY);
-  } else {
-    d = _connectorPathD(p1, p2, fromY, toY);
-  }
+  // One path strategy for all horizontal offsets: the vertical-tangent
+  // S-curve (_connectorPathD). It sweeps diagonally for normal offsets
+  // and degrades smoothly to a straight vertical drop as |dx|→0, so the
+  // old three-way branch (hook / tight / full) is no longer needed.
+  const d = _connectorPathD(p1, p2, fromY, toY);
 
   const isSelected=(SELECTED_CNX_ID===cnx.id);
   const g=document.createElementNS('http://www.w3.org/2000/svg','g');
@@ -1329,16 +1274,12 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
   return g;
 }
 
-/* Tight variant of _connectorPathD for near-vertical connectors (|dx| < 30).
-   Uses a much smaller horizPull so the curve stays narrow and vertical
-   rather than bowing sideways. The hook still exits/arrives correctly
-   based on fromY/toY (typically both=1 for going-down, both=0 for going-up). */
+/* Formerly a small-belly variant for near-vertical connectors. The
+   vertical-tangent S formula degrades gracefully to a straight drop as
+   dx→0, so no separate shape is needed anymore — kept as a delegate so
+   existing call sites (live diagram + slides clone) need no changes. */
 function _connectorPathDTight(p1,p2,fromY,toY){
-  // Same BibleArc formula as _connectorPathD with a smaller belly
-  // for nearly-vertical connectors (|dx| < 30).
-  const absDy=Math.abs(p2.y-p1.y);
-  const hPull=Math.max(20, absDy*0.3);
-  return `M${p1.x},${p1.y} C${p1.x+hPull},${p1.y} ${p2.x+hPull},${p2.y} ${p2.x},${p2.y}`;
+  return _connectorPathD(p1,p2,fromY,toY);
 }
 
 /* Build one RIGHT-ANGLE connector — single 90° bend, left/right-edge
@@ -7354,29 +7295,15 @@ function slDrawConnectorsIntoClone(cloneCanvas, visibleRids){
       const rp2=clonePoint(toBlock,   cnx.toX??0,   cnx.toY??0.5);
       d=`M${rp1.x},${rp1.y} H${trunkX} V${rp2.y} H${rp2.x}`;
     } else {
-      // Replicate _connectorPathD exactly — same hook/curve logic as live diagram
+      // Delegate to the SAME shared path functions as the live diagram
+      // (_connectorPathD / _connectorPathDTight) so slides/PDF output can
+      // never drift out of sync with the on-screen arc shape again. Same
+      // |dx| threshold as _makeCurveConnectorEl for the tight variant.
       const dx=p2.x-p1.x, dy=p2.y-p1.y;
-      const hookDist=Math.max(30, Math.min(70, Math.abs(dy)*0.5));
-      const MIN_HOOK_HORIZ_PULL=26;
-      let horizPull=dx*0.3;
-      if(Math.abs(horizPull)<MIN_HOOK_HORIZ_PULL){
-        const sign=dx!==0?Math.sign(dx):(IS_RTL?-1:1);
-        horizPull=sign*MIN_HOOK_HORIZ_PULL;
-      }
-      // Use stored fromY/toY if they're snapped edge values (0 or 1).
-      // If undefined/0.5 (midpoint default), infer from relative block positions
-      // so that top→bottom connectors get proper vertical hooks.
-      let fromY = (cnx.fromY===0||cnx.fromY===1) ? cnx.fromY : (dy>0 ? 1 : 0);
-      let toY   = (cnx.toY  ===0||cnx.toY  ===1) ? cnx.toY   : (dy>0 ? 0 : 1);
-      let c1x,c1y;
-      if(fromY===0)      { c1x=p1.x+horizPull; c1y=p1.y-hookDist; }
-      else if(fromY===1) { c1x=p1.x+horizPull; c1y=p1.y+hookDist; }
-      else               { c1x=p1.x+dx*.55;    c1y=p1.y; }
-      let c2x,c2y;
-      if(toY===0)        { c2x=p2.x-horizPull; c2y=p2.y-hookDist; }
-      else if(toY===1)   { c2x=p2.x-horizPull; c2y=p2.y+hookDist; }
-      else               { c2x=p2.x-dx*.25;    c2y=p2.y; }
-      d=`M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+      const fromY = (cnx.fromY===0||cnx.fromY===1) ? cnx.fromY : (dy>0 ? 1 : 0);
+      const toY   = (cnx.toY  ===0||cnx.toY  ===1) ? cnx.toY   : (dy>0 ? 0 : 1);
+      d = Math.abs(dx)<30 ? _connectorPathDTight(p1,p2,fromY,toY)
+                          : _connectorPathD(p1,p2,fromY,toY);
     }
 
     const color=cnx.color||'#493548';
