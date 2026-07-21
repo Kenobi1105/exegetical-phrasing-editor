@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607210500"/>
+<meta name="app-version" content="202607210800"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -258,6 +258,21 @@
         </button>
       </div>
       <div class="tsep"></div>
+      <div class="tg" id="view-toggle-grp">
+        <button class="vtbtn active" id="view-btn-phrasing" data-i18n-title="view.phrasing.title" title="Phrasing View (Alt+T)" onclick="setEditorView('phrasing')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/></svg>
+          <span data-i18n="view.phrasing">Phrasing</span>
+        </button>
+        <button class="vtbtn" id="view-btn-diagram" data-i18n-title="view.diagram.title" title="Diagram View (Alt+T)" onclick="setEditorView('diagram')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="5" rx="1"/><rect x="13" y="9" width="7" height="5" rx="1"/><rect x="6" y="15" width="7" height="5" rx="1"/></svg>
+          <span data-i18n="view.diagram">Diagram</span>
+        </button>
+        <button class="vtbtn" id="view-btn-slides" title="Slides View (Alt+P)" onclick="setEditorView('slides')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
+          <span data-i18n="slides.title">Slides</span>
+        </button>
+      </div>
+      <div class="tsep"></div>
       <div class="tg">
         <button class="tbtn" id="tb-b"   data-i18n-title="toolbar.bold"   title="Bold (Ctrl+B)"    onclick="fmtCmd('bold')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 5h5a3.5 3.5 0 0 1 0 7H7z"/><path d="M7 12h6a3.5 3.5 0 0 1 0 7H7z"/></svg></button>
         <button class="tbtn" id="tb-i"   data-i18n-title="toolbar.italic" title="Italic (Ctrl+I)"  onclick="fmtCmd('italic')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="17" y1="5" x2="11" y2="5"/><line x1="13" y1="19" x2="7" y2="19"/><line x1="14" y1="5" x2="10" y2="19"/></svg></button>
@@ -289,21 +304,6 @@
         <button class="tbtn" data-i18n-title="toolbar.indent"  title="Indent (Tab)"        onclick="doIndent(1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><polyline points="8,9.5 12,12 8,14.5" fill="none"/></svg></button>
         <button class="tbtn" data-i18n-title="toolbar.outdent" title="Outdent (Shift+Tab)"  onclick="doIndent(-1)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><polyline points="16,9.5 12,12 16,14.5" fill="none"/></svg></button>
       </div>
-      <div class="tsep"></div>
-      <div class="tg" id="view-toggle-grp">
-        <button class="vtbtn active" id="view-btn-phrasing" data-i18n-title="view.phrasing.title" title="Phrasing View (Alt+T)" onclick="setEditorView('phrasing')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="6" x2="20" y2="6"/><line x1="8" y1="12" x2="20" y2="12"/><line x1="12" y1="18" x2="20" y2="18"/></svg>
-          <span data-i18n="view.phrasing">Phrasing</span>
-        </button>
-        <button class="vtbtn" id="view-btn-diagram" data-i18n-title="view.diagram.title" title="Diagram View (Alt+T)" onclick="setEditorView('diagram')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="5" rx="1"/><rect x="13" y="9" width="7" height="5" rx="1"/><rect x="6" y="15" width="7" height="5" rx="1"/></svg>
-          <span data-i18n="view.diagram">Diagram</span>
-        </button>
-        <button class="vtbtn" id="view-btn-slides" title="Slides View (Alt+P)" onclick="setEditorView('slides')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
-          <span data-i18n="slides.title">Slides</span>
-        </button>
-      </div>
       <div class="tsep" id="dzoom-sep" style="display:none"></div>
       <div class="tg" id="dzoom-grp" style="display:none">
         <button class="tbtn" data-i18n-title="diagram.zoom-out" title="Zoom out (Ctrl+-)" onclick="diagramZoomOut()">
@@ -323,7 +323,10 @@
       <button class="tbtn" id="tb-add-label" data-i18n-title="diagram.add-label" title="Add label (Alt+L)" onclick="addDiagramLabel()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
       </button>
-      <button class="tbtn" id="tb-dem" title="Diagram Edit Mode — Alt+click word to split, Alt+click label to merge (Alt+E)" onclick="toggleDiagramEditMode()" style="display:none">
+      <button class="tbtn" id="tb-add-cmt" data-i18n-title="toolbar.add-cmt" title="Add comment (Ctrl+Shift+M)" onclick="addCommentOnFocusedRow()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </button>
+      <button class="tbtn" id="tb-dem" title="Diagram Edit Mode — Hold Shift or press Alt+E to toggle. Click a word to split to a new row. Hover a row label and click ↑ to merge. Escape to exit." onclick="toggleDiagramEditMode()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <!-- Two text rows with a scissor-cut indicator between them -->
           <line x1="4" y1="7" x2="14" y2="7"/>
@@ -332,9 +335,6 @@
           <line x1="4" y1="18" x2="10" y2="18"/>
           <path d="M17 4 L20 12 L17 20" stroke-width="1.5"/>
         </svg>
-      </button>
-      <button class="tbtn" id="tb-add-cmt" data-i18n-title="toolbar.add-cmt" title="Add comment (Ctrl+Shift+M)" onclick="addCommentOnFocusedRow()" style="display:none">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
       </button>
       <!-- ── Annotation buttons ── -->
       <button class="tbtn" id="tb-add-divider" title="Add Proposition Divider (Alt+D)" onclick="addDivider()" style="display:none">

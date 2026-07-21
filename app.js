@@ -1062,21 +1062,41 @@ const PATTERN_DASH={solid:'none', dotted:'4,4'};
 function _connectorPathD(p1,p2,fromY,toY){
   const dx=p2.x-p1.x, dy=p2.y-p1.y;
   const absDy=Math.abs(dy);
+  const absDx=Math.abs(dx);
 
-  // BibleArc-style S/C curve:
-  // Both control points sit to the RIGHT of their respective endpoints
-  // at the SAME HEIGHT (horizontal tangent at each end).
-  // This produces a smooth single-belly curve that exits rightward from p1
-  // and arrives from the right at p2 — the characteristic BibleArc arc shape.
-  // hPull scales with vertical distance so longer connectors have a wider belly.
-  const hPull = Math.max(50, absDy * 0.6);
+  // Vertical departure: c1 is directly below (or above) p1 in the travel direction.
+  // This makes the curve DEPART VERTICALLY from p1 before bending — matching BibleArc.
+  const vPush = Math.max(30, absDy * 0.45);
 
-  const c1x = p1.x + hPull;
-  const c1y = p1.y;
+  // Horizontal belly: c2 is to the RIGHT of p2 at the same height.
+  // This makes the curve ARRIVE FROM THE RIGHT at p2 — the BibleArc arrival style.
+  // The belly width scales with vertical distance so longer connectors look proportional.
+  const hPull = Math.max(50, absDy * 0.55);
+
+  let c1x, c1y;
+  if(dy >= 0){
+    // Going down: depart from below p1 (straight down first)
+    c1x = p1.x; c1y = p1.y + vPush;
+  } else {
+    // Going up: depart from above p1
+    c1x = p1.x; c1y = p1.y - vPush;
+  }
+
+  // Arrival: always from the right of p2 at p2's height
   const c2x = p2.x + hPull;
   const c2y = p2.y;
 
   return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+}
+
+function _connectorPathDTight(p1,p2,fromY,toY){
+  // Same vertical-departure + rightward-arrival formula, tighter belly
+  // for nearly-vertical connectors (|dx| < 30).
+  const absDy=Math.abs(p2.y-p1.y);
+  const vPush=Math.max(12, absDy*0.25);
+  const hPull=Math.max(20, absDy*0.3);
+  const c1y = p2.y >= p1.y ? p1.y+vPush : p1.y-vPush;
+  return `M${p1.x},${p1.y} C${p1.x},${c1y} ${p2.x+hPull},${p2.y} ${p2.x},${p2.y}`;
 }
 
 /* Item-1 redesign: EVERY right-angle connector routes through the SAME
