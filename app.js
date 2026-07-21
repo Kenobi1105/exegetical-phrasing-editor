@@ -1061,46 +1061,20 @@ const PATTERN_DASH={solid:'none', dotted:'4,4'};
    left in RTL, mirroring the rest of Diagram View's RTL conventions. */
 function _connectorPathD(p1,p2,fromY,toY){
   const dx=p2.x-p1.x, dy=p2.y-p1.y;
+  const absDy=Math.abs(dy);
 
-  // For a true S-curve: the two control points should be placed symmetrically
-  // about the midpoint, each displaced in opposite vertical directions.
-  // The horizontal pull gives the S its width; the vertical escape keeps
-  // the tangent vertical at each endpoint (for hook-style connectors).
-  const absDy=Math.abs(dy), absDx=Math.abs(dx);
+  // BibleArc-style S/C curve:
+  // Both control points sit to the RIGHT of their respective endpoints
+  // at the SAME HEIGHT (horizontal tangent at each end).
+  // This produces a smooth single-belly curve that exits rightward from p1
+  // and arrives from the right at p2 — the characteristic BibleArc arc shape.
+  // hPull scales with vertical distance so longer connectors have a wider belly.
+  const hPull = Math.max(50, absDy * 0.6);
 
-  // Vertical escape distance (how far control point goes past the endpoint
-  // in the vertical direction to produce a clean hook exit/arrival)
-  const vEscape=Math.max(20, Math.min(80, absDy*0.45));
-
-  // Horizontal pull (how wide the S belly is)
-  const MIN_H=28;
-  let hPull=absDx*0.5;
-  if(hPull<MIN_H){ hPull=MIN_H; }
-  // Direction of horizontal pull: away from p1 toward p2 then back
-  const hDir= dx!==0 ? Math.sign(dx) : (IS_RTL ? -1 : 1);
-
-  let c1x,c1y;
-  if(fromY===0){
-    // Depart upward from p1, then curve right toward p2
-    c1x=p1.x + hDir*hPull; c1y=p1.y - vEscape;
-  } else if(fromY===1){
-    // Depart downward from p1, then curve right
-    c1x=p1.x + hDir*hPull; c1y=p1.y + vEscape;
-  } else {
-    // No hook — plain horizontal blend
-    c1x=p1.x + dx*0.5; c1y=p1.y;
-  }
-
-  let c2x,c2y;
-  if(toY===0){
-    // Arrive at p2 from above — control point above p2, offset back
-    c2x=p2.x - hDir*hPull; c2y=p2.y - vEscape;
-  } else if(toY===1){
-    // Arrive at p2 from below — control point below p2, offset back
-    c2x=p2.x - hDir*hPull; c2y=p2.y + vEscape;
-  } else {
-    c2x=p2.x - dx*0.25; c2y=p2.y;
-  }
+  const c1x = p1.x + hPull;
+  const c1y = p1.y;
+  const c2x = p2.x + hPull;
+  const c2y = p2.y;
 
   return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
 }
@@ -1344,21 +1318,11 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
    rather than bowing sideways. The hook still exits/arrives correctly
    based on fromY/toY (typically both=1 for going-down, both=0 for going-up). */
 function _connectorPathDTight(p1,p2,fromY,toY){
-  const dy=p2.y-p1.y;
-  const hookDist=Math.max(14, Math.abs(dy)*0.22);
-  const horizPull=8; // very small — just enough to show it's a curve not a straight line
-
-  let c1x,c1y;
-  if(fromY===0){        c1x=p1.x+horizPull; c1y=p1.y-hookDist; }
-  else if(fromY===1){   c1x=p1.x+horizPull; c1y=p1.y+hookDist; }
-  else{                 c1x=p1.x+horizPull; c1y=p1.y;           }
-
-  let c2x,c2y;
-  if(toY===0){          c2x=p2.x-horizPull; c2y=p2.y-hookDist; }
-  else if(toY===1){     c2x=p2.x-horizPull; c2y=p2.y+hookDist; }
-  else{                 c2x=p2.x-horizPull; c2y=p2.y;           }
-
-  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+  // Same BibleArc formula as _connectorPathD with a smaller belly
+  // for nearly-vertical connectors (|dx| < 30).
+  const absDy=Math.abs(p2.y-p1.y);
+  const hPull=Math.max(20, absDy*0.3);
+  return `M${p1.x},${p1.y} C${p1.x+hPull},${p1.y} ${p2.x+hPull},${p2.y} ${p2.x},${p2.y}`;
 }
 
 /* Build one RIGHT-ANGLE connector — single 90° bend, left/right-edge
