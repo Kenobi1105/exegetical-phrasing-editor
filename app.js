@@ -1060,43 +1060,34 @@ const PATTERN_DASH={solid:'none', dotted:'4,4'};
    zero), the pull defaults to a consistent direction — right in LTR,
    left in RTL, mirroring the rest of Diagram View's RTL conventions. */
 function _connectorPathD(p1,p2,fromY,toY){
-  const dx=p2.x-p1.x, dy=p2.y-p1.y;
+  const dy=p2.y-p1.y;
   const absDy=Math.abs(dy);
-  const absDx=Math.abs(dx);
 
-  // Vertical departure: c1 is directly below (or above) p1 in the travel direction.
-  // This makes the curve DEPART VERTICALLY from p1 before bending — matching BibleArc.
+  // True S-curve with vertical tangents at both endpoints:
+  // c1 is offset RIGHT and DOWN from p1 (departure goes down-right)
+  // c2 is offset LEFT and UP from p2  (arrival comes from below-right, i.e. down into p2)
+  // These are mirror-symmetric about the midpoint, producing an S-shape
+  // with a rightward belly. Both tangent directions are vertical.
   const vPush = Math.max(30, absDy * 0.45);
+  const hPull = Math.max(40, absDy * 0.5);
 
-  // Horizontal belly: c2 is to the RIGHT of p2 at the same height.
-  // This makes the curve ARRIVE FROM THE RIGHT at p2 — the BibleArc arrival style.
-  // The belly width scales with vertical distance so longer connectors look proportional.
-  const hPull = Math.max(50, absDy * 0.55);
-
-  let c1x, c1y;
-  if(dy >= 0){
-    // Going down: depart from below p1 (straight down first)
-    c1x = p1.x; c1y = p1.y + vPush;
-  } else {
-    // Going up: depart from above p1
-    c1x = p1.x; c1y = p1.y - vPush;
-  }
-
-  // Arrival: always from the right of p2 at p2's height
-  const c2x = p2.x + hPull;
-  const c2y = p2.y;
+  const c1x = p1.x + hPull;
+  const c1y = p1.y + (dy >= 0 ? vPush : -vPush);
+  const c2x = p2.x - hPull;
+  const c2y = p2.y - (dy >= 0 ? vPush : -vPush);
 
   return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
 }
 
 function _connectorPathDTight(p1,p2,fromY,toY){
-  // Same vertical-departure + rightward-arrival formula, tighter belly
-  // for nearly-vertical connectors (|dx| < 30).
-  const absDy=Math.abs(p2.y-p1.y);
-  const vPush=Math.max(12, absDy*0.25);
-  const hPull=Math.max(20, absDy*0.3);
-  const c1y = p2.y >= p1.y ? p1.y+vPush : p1.y-vPush;
-  return `M${p1.x},${p1.y} C${p1.x},${c1y} ${p2.x+hPull},${p2.y} ${p2.x},${p2.y}`;
+  // Same S-curve formula, tighter for near-vertical connectors (|dx| < 30)
+  const dy=p2.y-p1.y;
+  const absDy=Math.abs(dy);
+  const vPush=Math.max(12, absDy*0.3);
+  const hPull=Math.max(16, absDy*0.25);
+  const c1x=p1.x+hPull, c1y=p1.y+(dy>=0?vPush:-vPush);
+  const c2x=p2.x-hPull, c2y=p2.y-(dy>=0?vPush:-vPush);
+  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
 }
 
 /* Item-1 redesign: EVERY right-angle connector routes through the SAME
