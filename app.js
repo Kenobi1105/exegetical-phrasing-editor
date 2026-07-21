@@ -136,6 +136,13 @@ function skipPaste(){
    each with { verse, html } where html preserves inline spans/colors.
    A line whose plain-text starts with a digit sequence = new verse.
    All subsequent lines without a number inherit the last verse. */
+/* Proposition labels recognised at the start of an outline-format line
+   (Lexham "Propositional Outlines" export). Matching is case-insensitive;
+   the original casing is preserved in the divider label. Extend this list
+   as further label types are encountered. */
+const PROP_LABELS=['sentence','complex','elaboration','sub-point','bullet',
+                   'principle','support','application'];
+
 function parsePasteIntoRows(div){
   // Collect line elements: browsers put each pasted line in a <div> or <p>.
   // If the content is flat (no block children), treat it as one line.
@@ -152,53 +159,67 @@ function parsePasteIntoRows(div){
   }
 
   const parsed=[];
-  let wantDividers=false;
   let refTitle='';
 
-  // ── Format detection: structured "SENTENCE" export? ──
-  const isSentenceFormat=lineEls.some(el=>/^\s*SENTENCE\b/.test(el.innerText||el.textContent||''));
+  // ── Format detection: labeled outline export? ──
+  // A paste is outline-format when any line's first token is a known
+  // proposition label (Complex, Elaboration, Sub-Point, Bullet, ...).
+  const _firstLatinToken=el=>{
+    const m=(el.textContent||'').match(/^\s*([A-Za-z][A-Za-z-]*)/);
+    return m?m[1]:null;
+  };
+  const isOutlineFormat=lineEls.some(el=>{
+    const tk=_firstLatinToken(el);
+    return !!tk && PROP_LABELS.indexOf(tk.toLowerCase())>=0;
+  });
 
-  if(isSentenceFormat){
-    /* Structured format, one proposition per line:
-         SENTENCE   Jn 1:1 [TM Ἐν ἀρχῇ TM] ἦν ὁ λόγος,
-         SENTENCE   καὶ [TP ὁ λόγος TP] ἦν πρὸς τὸν θεόν,
-         SENTENCE   2 [TP οὗτος TP] ἦν ἐν ἀρχῇ…
-       • the SENTENCE keyword is stripped and marks the row boundary;
-         each row also gets a Proposition Divider annotation above it
-       • a full reference (Jn 1:1) sets the verse and, if the passage
-         title is still empty, the title
-       • a bare leading number (2) starts that verse
-       • lines with neither continue the current verse (recomputeIds
-         letters same-verse rows 1a/1b/1c automatically) */
-    wantDividers=true;
+  if(isOutlineFormat){
+    /* Labeled outline, one proposition per line:
+         Complex        Ro 1:1 Παῦλος
+         Elaboration    δοῦλος ⸉Χριστοῦ Ἰησοῦ⸊,
+         Sub-Point      2 ὃ προεπηγγείλατο …
+                        3 περὶ τοῦ υἱοῦ …        (no label → continuation)
+       • a recognised leading label is stripped from the text and becomes
+         the LABEL of a Proposition Divider above that row; lines without
+         a label are continuations and get no divider
+       • after the label, three reference forms are recognised:
+           book chapter:verse  (Ro 1:1) → verse 1, and the passage title
+                               if none is set yet
+           chapter:verse       (2:1)    → verse 1 (chapter dropped)
+           bare verse          (3)      → verse 3
+         no reference → continue the current verse (recomputeIds letters
+         same-verse rows 1a/1b/1c automatically) */
     let currentVerse='';
     for(const el of lineEls){
-      const plain=el.innerText||el.textContent||'';
-      if(!plain.trim()) continue;
-      // Strip leading whitespace + SENTENCE keyword + following whitespace.
-      // Offsets are measured against textContent because that is what
-      // stripLeadingVerseFromHTML walks (innerText may collapse whitespace).
-      const tcPlain=el.textContent||'';
-      const pre=tcPlain.match(/^\s*SENTENCE\s*/);
-      let html=pre ? stripLeadingVerseFromHTML(el, pre[0].length) : el.innerHTML.trim();
-      // Inspect what remains
+      const tc=el.textContent||'';
+      if(!tc.trim()) continue;
+      // Optional leading proposition label
+      let divLabel='';
+      let html;
+      const lm=tc.match(/^\s*([A-Za-z][A-Za-z-]*)\s*/);
+      if(lm && PROP_LABELS.indexOf(lm[1].toLowerCase())>=0){
+        divLabel=lm[1];
+        html=stripLeadingVerseFromHTML(el, lm[0].length);
+      } else {
+        html=el.innerHTML.trim();
+      }
+      // Optional reference after the label
       const tmp=document.createElement('div');
       tmp.innerHTML=html;
       const rest=tmp.textContent;
-      // Full reference: "Jn 1:1", "1 Jn 2:3", "Rom. 8:1" …
       let m=rest.match(/^\s*((?:[1-3]\s?)?[A-Za-z]+\.?)\s*(\d+):(\d+)\s+/);
       if(m){
         currentVerse=m[3];
         if(!refTitle) refTitle=m[1].trim()+' '+m[2]+':'+m[3];
         html=stripLeadingVerseFromHTML(tmp, m[0].length);
-      } else {
-        m=rest.match(/^\s*(\d+)\s+/);
-        if(m){
-          currentVerse=m[1];
-          html=stripLeadingVerseFromHTML(tmp, m[0].length);
-        }
+      } else if((m=rest.match(/^\s*(\d+):(\d+)\s+/))){
+        currentVerse=m[2]; // chapter:verse with the chapter dropped
+        html=stripLeadingVerseFromHTML(tmp, m[0].length);
+      } else if((m=rest.match(/^\s*(\d+)\s+/))){
+        currentVerse=m[1];
+        html=stripLeadingVerseFromHTML(tmp, m[0].length);
       }
-      parsed.push({verse:currentVerse, html});
+      parsed.push({verse:currentVerse, html, divLabel});
     }
   } else {
     /* Free-form paste. A line whose plain-text starts with a digit
@@ -242,13 +263,17 @@ function parsePasteIntoRows(div){
     }
     madeRows.push(row);
   });
-  // One Proposition Divider above every SENTENCE row
-  if(wantDividers){
-    madeRows.forEach(row=>{
-      ANNOTATIONS.push({id:_annId(), type:'divider', beforeRid:row.dataset.rid, label:'', color:'#C8A84B'});
-    });
-    renderDividers();
-  }
+  // A labeled Proposition Divider above each row that carried an outline
+  // label; unlabeled (continuation) rows get none.
+  let madeDivider=false;
+  madeRows.forEach((row,i)=>{
+    const lbl=parsed[i]&&parsed[i].divLabel;
+    if(lbl){
+      ANNOTATIONS.push({id:_annId(), type:'divider', beforeRid:row.dataset.rid, label:lbl, color:'#C8A84B'});
+      madeDivider=true;
+    }
+  });
+  if(madeDivider) renderDividers();
   // Adopt the pasted reference as the passage title if none is set yet
   if(refTitle){
     const ri=document.getElementById('refin');
@@ -8667,15 +8692,40 @@ const CRIT_MARK_KEYS={
   '˸':'punct',
   '*':'asterisk',
 };
-/* Single-char signs above, plus multi-char Logos export substitutes
-   ([TM…TM], [TP…TP]). A sign may absorb immediately-attached numerals
-   (superscript or plain, e.g. °1, ˸2) which distinguish multiple
-   occurrences of the same variant kind within one apparatus unit. */
-const _CRIT_RE=/(\[T[MP]|T[MP]\]|[°⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋⸌⸍⸓˸*])((?:[\u2070-\u2079\u00B9\u00B2\u00B3]|\d)*)/g;
+/* Lexham discourse-feature symbols used inside ‹…› delimiter pairs.
+   The open token is ‹ + symbol, the close token is symbol + ›. Note that
+   👤, 👥, 💬 and 🕐 are exactly what _substitutePUAChars
+   produces from the Logos PUA glyphs, and that substitution runs BEFORE
+   _markupCriticalSigns, so the pipeline ordering is already correct. */
+const DISC_MARK_KEYS={
+  '✓':'disc-point',       '✕':'disc-counterpoint',
+  '👤':'disc-rd',      '👥':'disc-cr',
+  '+':'disc-add',              '☉':'disc-target',
+  '→':'disc-ref',         '💬':'disc-meta',
+  '🕐':'disc-hp',      '!':'disc-attn',
+};
+/* One combined matcher, longest alternatives first:
+   • frame markers [TM/TM] [TP/TP] [CP/CP] [CD/CD] [LD/LD] [SP/SP]
+     — colored AND superscripted (extra crit-frame class)
+   • discourse pairs ‹✓ … ✓› etc. (open = ‹+symbol, close = symbol+›)
+   • reported speech ‶ … ″ (double primes, per the Lexham export)
+   • NA28 apparatus signs, absorbing immediately-attached numerals (°1, ˸2) */
+const _CRIT_RE=new RegExp(
+  '\\[(?:TM|TP|CP|CD|LD|SP)|(?:TM|TP|CP|CD|LD|SP)\\]'+
+  '|‹[✓✕👤👥+☉→💬🕐!]'+
+  '|[✓✕👤👥+☉→💬🕐!]›'+
+  '|[‶″]'+
+  '|[°⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋⸌⸍⸓˸*](?:[⁰-⁹¹²³]|\\d)*',
+  'gu');
 
-function _critKeyFor(sign){
-  if(sign.length>1) return 'logos-sub';           // [TM / TM] / [TP / TP]
-  return CRIT_MARK_KEYS[sign]||null;
+function _critKeyFor(tok){
+  if(tok[0]==='[')           return 'frame-'+tok.slice(1).toLowerCase();    // [TM ...
+  if(tok.endsWith(']'))      return 'frame-'+tok.slice(0,-1).toLowerCase(); // ... TM]
+  if(tok[0]==='‹')      return DISC_MARK_KEYS[[...tok].slice(1).join('')]||null;
+  if(tok.endsWith('›')) return DISC_MARK_KEYS[[...tok].slice(0,-1).join('')]||null;
+  if(tok==='‶'||tok==='″') return 'disc-speech';
+  const base=tok.replace(/[⁰-⁹¹²³0-9]+$/,'');
+  return CRIT_MARK_KEYS[base]||null;
 }
 
 /* Wrap every critical sign inside el in <span class="crit-mark" data-crit="key">.
@@ -8696,11 +8746,11 @@ function _markupCriticalSigns(el){
     let last=0, m;
     _CRIT_RE.lastIndex=0;
     while((m=_CRIT_RE.exec(text))){
-      const key=_critKeyFor(m[1]);
+      const key=_critKeyFor(m[0]);
       if(!key) continue;
       if(m.index>last) frag.appendChild(document.createTextNode(text.slice(last,m.index)));
       const sp=document.createElement('span');
-      sp.className='crit-mark';
+      sp.className='crit-mark'+(key.indexOf('frame-')===0?' crit-frame':'');
       sp.dataset.crit=key;
       sp.textContent=m[0];
       frag.appendChild(sp);

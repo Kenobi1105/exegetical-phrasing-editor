@@ -29,7 +29,7 @@ const LANGS = {
     's1.app-version':      'Version',
     /* ── Critical apparatus marks (NA28) ── */
     'settings.crit':       'Critical Marks',
-    'settings.crit.desc':  'NA28 apparatus signs in imported text.',
+    'settings.crit.desc':  'Apparatus and discourse markers in imported text.',
     'crit.omit-word':      'The word following this sign is omitted by the witnesses cited.',
     'crit.omit-words':     'The words between these signs are omitted by the witnesses cited.',
     'crit.replace-word':   'The word following this sign is replaced with one or more words by the witnesses cited.',
@@ -40,6 +40,25 @@ const LANGS = {
     'crit.punct':          'A raised colon indicates a variant form of punctuation.',
     'crit.asterisk':       'Marks a reading discussed in the critical apparatus.',
     'crit.logos-sub':      'Encloses words marked in the critical apparatus (export substitute sign).',
+    /* Frame markers — colored + superscripted */
+    'crit.frame-tm':       'Temporal Frame',
+    'crit.frame-tp':       'Topical Frame',
+    'crit.frame-cp':       'Comparative Frame',
+    'crit.frame-cd':       'Conditional Frame',
+    'crit.frame-ld':       'Left Dislocation',
+    'crit.frame-sp':       'Spatial Frame',
+    /* Discourse markers — colored */
+    'crit.disc-point':     'Point',
+    'crit.disc-counterpoint':'Counterpoint',
+    'crit.disc-rd':        'Right Dislocation',
+    'crit.disc-cr':        'Changed Reference',
+    'crit.disc-add':       'Thematic Addition',
+    'crit.disc-target':    'Forward-pointing Target',
+    'crit.disc-ref':       'Forward-pointing Reference',
+    'crit.disc-meta':      'Meta-comment',
+    'crit.disc-hp':        'Historical Present',
+    'crit.disc-attn':      'Attention-getter',
+    'crit.disc-speech':    'Reported Speech',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': 'Add your ',
@@ -392,7 +411,7 @@ const LANGS = {
     's1.app-version':      '版本',
     /* ── 校勘符号（NA28）── */
     'settings.crit':       '校勘符号',
-    'settings.crit.desc':  '导入经文中 NA28 校勘符号的颜色。',
+    'settings.crit.desc':  '导入经文中校勘与语篇符号的颜色。',
     'crit.omit-word':      '所引证的抄本省略此符号后的单词。',
     'crit.omit-words':     '所引证的抄本省略这两个符号之间的词语。',
     'crit.replace-word':   '所引证的抄本以一个或多个词替换此符号后的单词。',
@@ -403,6 +422,25 @@ const LANGS = {
     'crit.punct':          '高位冒号表示标点的异文形式。',
     'crit.asterisk':       '标示校勘栏中讨论的经文读法。',
     'crit.logos-sub':      '括注校勘栏所标记的词语（导出替代符号）。',
+    /* 框架标记 — 着色并上标 */
+    'crit.frame-tm':       '时间框架',
+    'crit.frame-tp':       '话题框架',
+    'crit.frame-cp':       '比较框架',
+    'crit.frame-cd':       '条件框架',
+    'crit.frame-ld':       '左移位',
+    'crit.frame-sp':       '空间框架',
+    /* 语篇标记 — 着色 */
+    'crit.disc-point':     '论点',
+    'crit.disc-counterpoint':'反论点',
+    'crit.disc-rd':        '右移位',
+    'crit.disc-cr':        '指称转换',
+    'crit.disc-add':       '主题性添加',
+    'crit.disc-target':    '前指目标',
+    'crit.disc-ref':       '前指指涉',
+    'crit.disc-meta':      '元评论',
+    'crit.disc-hp':        '历史现在时',
+    'crit.disc-attn':      '唤起注意语',
+    'crit.disc-speech':    '直接引语',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': '添加你的',
