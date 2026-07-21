@@ -1060,34 +1060,35 @@ const PATTERN_DASH={solid:'none', dotted:'4,4'};
    zero), the pull defaults to a consistent direction — right in LTR,
    left in RTL, mirroring the rest of Diagram View's RTL conventions. */
 function _connectorPathD(p1,p2,fromY,toY){
-  const dy=p2.y-p1.y;
+  const dy=p2.y-p1.y, dx=p2.x-p1.x;
   const absDy=Math.abs(dy);
 
-  // True S-curve with vertical tangents at both endpoints:
-  // c1 is offset RIGHT and DOWN from p1 (departure goes down-right)
-  // c2 is offset LEFT and UP from p2  (arrival comes from below-right, i.e. down into p2)
-  // These are mirror-symmetric about the midpoint, producing an S-shape
-  // with a rightward belly. Both tangent directions are vertical.
-  const vPush = Math.max(30, absDy * 0.45);
-  const hPull = Math.max(40, absDy * 0.5);
+  // S-curve matching the reference image:
+  // - Large hPull (wide horizontal belly) relative to vPush (gentle vertical component)
+  // - c1 is far to the RIGHT and slightly DOWN from p1  → departure sweeps right
+  // - c2 is far to the LEFT  and slightly UP   from p2  → arrival sweeps in from upper-left
+  // Ratio: hPull ≈ 2× vPush gives the elongated graceful S in the reference.
+  // Both scale with the vertical span so short and long connectors stay proportional.
+  const hPull = Math.max(60, absDy * 0.7);  // wide belly
+  const vPush = Math.max(15, absDy * 0.25); // gentle departure/arrival angle
 
+  const sign = dy >= 0 ? 1 : -1;
   const c1x = p1.x + hPull;
-  const c1y = p1.y + (dy >= 0 ? vPush : -vPush);
+  const c1y = p1.y + sign * vPush;
   const c2x = p2.x - hPull;
-  const c2y = p2.y - (dy >= 0 ? vPush : -vPush);
+  const c2y = p2.y - sign * vPush;
 
   return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
 }
 
 function _connectorPathDTight(p1,p2,fromY,toY){
-  // Same S-curve formula, tighter for near-vertical connectors (|dx| < 30)
+  // Same proportions, smaller belly for near-vertical connectors (|dx| < 30)
   const dy=p2.y-p1.y;
   const absDy=Math.abs(dy);
-  const vPush=Math.max(12, absDy*0.3);
-  const hPull=Math.max(16, absDy*0.25);
-  const c1x=p1.x+hPull, c1y=p1.y+(dy>=0?vPush:-vPush);
-  const c2x=p2.x-hPull, c2y=p2.y-(dy>=0?vPush:-vPush);
-  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+  const hPull=Math.max(24, absDy*0.4);
+  const vPush=Math.max(8,  absDy*0.12);
+  const sign=dy>=0?1:-1;
+  return `M${p1.x},${p1.y} C${p1.x+hPull},${p1.y+sign*vPush} ${p2.x-hPull},${p2.y-sign*vPush} ${p2.x},${p2.y}`;
 }
 
 /* Item-1 redesign: EVERY right-angle connector routes through the SAME
