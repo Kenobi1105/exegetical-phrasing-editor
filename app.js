@@ -16,7 +16,7 @@ let CURRENT_FILENAME=null; // set when a JSON file is loaded — Ctrl+S updates 
 // Tracks user-adjusted column widths (null = use flex/default)
 const COL_WIDTHS={v:null, o:null, t:null};
 
-const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B'};
+const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',crit:'#1E6AFE'};
 
 /* ── Diagram View state ──
    EDITOR_VIEW: 'phrasing' | 'diagram' — which canvas is currently shown.
@@ -151,35 +151,109 @@ function parsePasteIntoRows(div){
     lineEls=parts.map(html=>{const d=document.createElement('div');d.innerHTML=html;return d;});
   }
 
-  let currentVerse='';
   const parsed=[];
+  let wantDividers=false;
+  let refTitle='';
 
-  for(const el of lineEls){
-    const plainText=el.innerText||el.textContent||'';
-    const trimmedText=plainText.trimStart();
-    if(!trimmedText) continue; // skip blank lines
+  // ── Format detection: structured "SENTENCE" export? ──
+  const isSentenceFormat=lineEls.some(el=>/^\s*SENTENCE\b/.test(el.innerText||el.textContent||''));
 
-    // Get the inner HTML, but strip leading whitespace text nodes
-    let html=el.innerHTML.trim();
-    // Detect verse number at the very start of plain text (after trimming leading whitespace)
-    const m=trimmedText.match(/^(\d+)\s+/);
-    if(m){
-      currentVerse=m[1];
-      // Calculate how many leading characters to strip:
-      // = leading whitespace before the number + the number itself + trailing space(s)
-      const leadingSpaces=plainText.length - plainText.trimStart().length;
-      const fullPrefix=leadingSpaces + m[0].length;
-      html=stripLeadingVerseFromHTML(el, fullPrefix);
+  if(isSentenceFormat){
+    /* Structured format, one proposition per line:
+         SENTENCE   Jn 1:1 [TM Ἐν ἀρχῇ TM] ἦν ὁ λόγος,
+         SENTENCE   καὶ [TP ὁ λόγος TP] ἦν πρὸς τὸν θεόν,
+         SENTENCE   2 [TP οὗτος TP] ἦν ἐν ἀρχῇ…
+       • the SENTENCE keyword is stripped and marks the row boundary;
+         each row also gets a Proposition Divider annotation above it
+       • a full reference (Jn 1:1) sets the verse and, if the passage
+         title is still empty, the title
+       • a bare leading number (2) starts that verse
+       • lines with neither continue the current verse (recomputeIds
+         letters same-verse rows 1a/1b/1c automatically) */
+    wantDividers=true;
+    let currentVerse='';
+    for(const el of lineEls){
+      const plain=el.innerText||el.textContent||'';
+      if(!plain.trim()) continue;
+      // Strip leading whitespace + SENTENCE keyword + following whitespace.
+      // Offsets are measured against textContent because that is what
+      // stripLeadingVerseFromHTML walks (innerText may collapse whitespace).
+      const tcPlain=el.textContent||'';
+      const pre=tcPlain.match(/^\s*SENTENCE\s*/);
+      let html=pre ? stripLeadingVerseFromHTML(el, pre[0].length) : el.innerHTML.trim();
+      // Inspect what remains
+      const tmp=document.createElement('div');
+      tmp.innerHTML=html;
+      const rest=tmp.textContent;
+      // Full reference: "Jn 1:1", "1 Jn 2:3", "Rom. 8:1" …
+      let m=rest.match(/^\s*((?:[1-3]\s?)?[A-Za-z]+\.?)\s*(\d+):(\d+)\s+/);
+      if(m){
+        currentVerse=m[3];
+        if(!refTitle) refTitle=m[1].trim()+' '+m[2]+':'+m[3];
+        html=stripLeadingVerseFromHTML(tmp, m[0].length);
+      } else {
+        m=rest.match(/^\s*(\d+)\s+/);
+        if(m){
+          currentVerse=m[1];
+          html=stripLeadingVerseFromHTML(tmp, m[0].length);
+        }
+      }
+      parsed.push({verse:currentVerse, html});
     }
-    parsed.push({verse:currentVerse, html});
+  } else {
+    /* Free-form paste. A line whose plain-text starts with a digit
+       sequence = new verse; lines without a number inherit the last
+       verse. NEW: within each line, standalone whitespace-delimited
+       numbers that continue the ascending sequence (currentVerse+1,
+       then +1 again…) split the line into further per-verse rows —
+       see _splitInlineVerses for the guards that keep apparatus
+       numerals (˸1, °2) out. */
+    let currentVerse='';
+    for(const el of lineEls){
+      const plainText=el.innerText||el.textContent||'';
+      const trimmedText=plainText.trimStart();
+      if(!trimmedText) continue; // skip blank lines
+
+      let html=el.innerHTML.trim();
+      // Detect verse number at the very start of plain text
+      const m=trimmedText.match(/^(\d+)\s+/);
+      if(m){
+        currentVerse=m[1];
+        const leadingSpaces=plainText.length - plainText.trimStart().length;
+        html=stripLeadingVerseFromHTML(el, leadingSpaces + m[0].length);
+      }
+      // Split the remainder at inline ascending verse numbers
+      const segs=_splitInlineVerses(html, currentVerse);
+      for(const sg of segs){
+        if(sg.verse) currentVerse=sg.verse;
+        parsed.push({verse:currentVerse, html:sg.html});
+      }
+    }
   }
 
   if(!parsed.length){addEmptyRow();return;}
+  const madeRows=[];
   parsed.forEach(p=>{
     const row=addRow(p.verse,'','',null,null);
     const oc=row.querySelector(`#oc-${row.dataset.rid} .cedit`);
-    if(oc) oc.innerHTML=p.html;
+    if(oc){
+      oc.innerHTML=p.html;
+      _markupCriticalSigns(oc); // color NA28 apparatus signs (--crit)
+    }
+    madeRows.push(row);
   });
+  // One Proposition Divider above every SENTENCE row
+  if(wantDividers){
+    madeRows.forEach(row=>{
+      ANNOTATIONS.push({id:_annId(), type:'divider', beforeRid:row.dataset.rid, label:'', color:'#C8A84B'});
+    });
+    renderDividers();
+  }
+  // Adopt the pasted reference as the passage title if none is set yet
+  if(refTitle){
+    const ri=document.getElementById('refin');
+    if(ri&&!ri.value.trim()) ri.value=refTitle;
+  }
   recomputeIds();
   toast(parsed.length+' line'+(parsed.length!==1?'s':'')+' imported');
 }
@@ -3512,6 +3586,7 @@ function openSettings(){
     sig:document.getElementById('sc-sig')?.value,
     label:document.getElementById('sc-label')?.value,
     active:document.getElementById('sc-active')?.value,
+    crit:document.getElementById('sc-crit')?.value,
   };
   // Click outside to close (with change detection)
   setTimeout(()=>{
@@ -3526,7 +3601,7 @@ function openSettings(){
 function settingsHasChanges(){
   const snap=window._settingsSnapshot;
   if(!snap)return false;
-  return ['bg','accent','ink','sig','label','active'].some(k=>{
+  return ['bg','accent','ink','sig','label','active','crit'].some(k=>{
     const el=document.getElementById('sc-'+k);
     return el&&el.value!==snap[k];
   });
@@ -3537,7 +3612,7 @@ function settingsEscOrClickOutside(){
     // Restore snapshot values
     const snap=window._settingsSnapshot;
     if(snap){
-      ['bg','accent','ink','sig','label','active'].forEach(k=>{
+      ['bg','accent','ink','sig','label','active','crit'].forEach(k=>{
         const el=document.getElementById('sc-'+k);
         if(el&&snap[k])el.value=snap[k];
       });
@@ -3566,7 +3641,7 @@ function cssHex(css){
 }
 function applySettings(){
   const R=document.documentElement;
-  const map={bg:'--bg',accent:'--accent',ink:'--ink',sig:'--sig',label:'--label',active:'--active'};
+  const map={bg:'--bg',accent:'--accent',ink:'--ink',sig:'--sig',label:'--label',active:'--active',crit:'--crit'};
   Object.entries(map).forEach(([k,cssVar])=>{
     const el=document.getElementById('sc-'+k);
     if(el)R.style.setProperty(cssVar,el.value);
@@ -3603,7 +3678,7 @@ function collectData(){
       top:card.style.top,left:card.style.left,width:card.style.width,height:card.style.height,hidden:card.style.display==='none'});
   });
   const R=getComputedStyle(document.documentElement);
-  const colors={};['bg','accent','ink','sig','label','active'].forEach(k=>{colors[k]=R.getPropertyValue('--'+k).trim();});
+  const colors={};['bg','accent','ink','sig','label','active','crit'].forEach(k=>{colors[k]=R.getPropertyValue('--'+k).trim();});
   return{lang:SESS,langLabel:LANG,isRTL:IS_RTL,isSingle:IS_SINGLE,
     verseRef:document.getElementById('refin').value,
     versionLabel:sessionVersionLabel||document.getElementById('version-sub-input')?.value.trim()||'',
@@ -8575,6 +8650,134 @@ function _plainToHTML(text){
   return text.split('\n').map(line=>`<div>${line||'<br>'}</div>`).join('');
 }
 
+/* ════════════════════════════════════════
+   NA28 CRITICAL APPARATUS MARKS
+   Signs from the NA28 introduction, colored via the --crit CSS variable
+   (Settings → Critical Marks) and given a hover tooltip whose text lives
+   in lang.js under crit.* keys (both en and zh).
+════════════════════════════════════════ */
+const CRIT_MARK_KEYS={
+  '°':'omit-word',
+  '⸋':'omit-words','⸌':'omit-words','⸍':'omit-words',
+  '⸀':'replace-word','⸁':'replace-word',
+  '⸂':'replace-words','⸃':'replace-words','⸄':'replace-words','⸅':'replace-words',
+  '⸆':'insert','⸇':'insert',
+  '⸉':'transpose-words','⸊':'transpose-words','⸈':'transpose-words',
+  '⸓':'transposed',
+  '˸':'punct',
+  '*':'asterisk',
+};
+/* Single-char signs above, plus multi-char Logos export substitutes
+   ([TM…TM], [TP…TP]). A sign may absorb immediately-attached numerals
+   (superscript or plain, e.g. °1, ˸2) which distinguish multiple
+   occurrences of the same variant kind within one apparatus unit. */
+const _CRIT_RE=/(\[T[MP]|T[MP]\]|[°⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋⸌⸍⸓˸*])((?:[\u2070-\u2079\u00B9\u00B2\u00B3]|\d)*)/g;
+
+function _critKeyFor(sign){
+  if(sign.length>1) return 'logos-sub';           // [TM / TM] / [TP / TP]
+  return CRIT_MARK_KEYS[sign]||null;
+}
+
+/* Wrap every critical sign inside el in <span class="crit-mark" data-crit="key">.
+   Walks text nodes only, so existing inline formatting is untouched, and
+   skips text that is already inside a .crit-mark span (idempotent). */
+function _markupCriticalSigns(el){
+  const walker=document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  const nodes=[];
+  let node;
+  while((node=walker.nextNode())){
+    if(node.parentElement&&node.parentElement.closest('.crit-mark')) continue;
+    if(_CRIT_RE.test(node.textContent)){nodes.push(node);}
+    _CRIT_RE.lastIndex=0;
+  }
+  nodes.forEach(tn=>{
+    const text=tn.textContent;
+    const frag=document.createDocumentFragment();
+    let last=0, m;
+    _CRIT_RE.lastIndex=0;
+    while((m=_CRIT_RE.exec(text))){
+      const key=_critKeyFor(m[1]);
+      if(!key) continue;
+      if(m.index>last) frag.appendChild(document.createTextNode(text.slice(last,m.index)));
+      const sp=document.createElement('span');
+      sp.className='crit-mark';
+      sp.dataset.crit=key;
+      sp.textContent=m[0];
+      frag.appendChild(sp);
+      last=m.index+m[0].length;
+    }
+    if(last<text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    if(last>0) tn.replaceWith(frag);
+  });
+}
+
+/* Extract the HTML between two plain-text offsets of a (detached) element,
+   preserving inline formatting via Range.cloneContents — partially covered
+   spans are cloned with only the in-range portion of their text. Offsets
+   are in el.textContent coordinates. */
+function _sliceHTMLByText(root,start,end){
+  function pos(off){
+    const walker=document.createTreeWalker(root,NodeFilter.SHOW_TEXT,null);
+    let acc=0,n;
+    while((n=walker.nextNode())){
+      const len=n.textContent.length;
+      if(acc+len>=off) return [n,off-acc];
+      acc+=len;
+    }
+    return null;
+  }
+  const p1=pos(start), p2=pos(end);
+  if(!p1||!p2) return '';
+  const r=document.createRange();
+  r.setStart(p1[0],p1[1]); r.setEnd(p2[0],p2[1]);
+  const d=document.createElement('div');
+  d.appendChild(r.cloneContents());
+  return d.innerHTML.trim();
+}
+
+/* Split one line's HTML at inline verse numbers, e.g.
+     "…λόγος.* 2 οὗτος ἦν… 3 πάντα…"  (currentVerse=1)
+   A standalone number only counts as a verse boundary if it
+   (a) is delimited by whitespace (or string edge) on BOTH sides, and
+   (b) continues the ascending sequence (=== currentVerse+1, then +1 again…).
+   Apparatus numerals (˸1, °2, :1 — attached to a sign, or out of sequence)
+   fail these tests and stay in the text, where _markupCriticalSigns then
+   colors them. Returns [{verse, html}]: first segment has verse:'' meaning
+   "continue the current verse"; later segments carry their new verse. */
+function _splitInlineVerses(html,currentVerse){
+  const host=document.createElement('div');
+  host.innerHTML=html;
+  const text=host.textContent;
+  let expect=parseInt(currentVerse,10);
+  if(isNaN(expect)) return [{verse:'',html}]; // no anchor verse — cannot validate ascending
+  expect+=1;
+  const cuts=[];
+  const re=/\d{1,3}/g;
+  let mm;
+  while((mm=re.exec(text))){
+    const s=mm.index, e=s+mm[0].length;
+    const okBefore=(s===0)||/\s/.test(text[s-1]);
+    const okAfter =(e===text.length)||/\s/.test(text[e]);
+    if(okBefore&&okAfter&&(+mm[0])===expect){
+      cuts.push({s,e,verse:mm[0]});
+      expect++;
+    }
+  }
+  if(!cuts.length) return [{verse:'',html}];
+  const segs=[];
+  let prevEnd=0, prevVerse='';
+  for(const c of cuts){
+    segs.push({verse:prevVerse, html:_sliceHTMLByText(host,prevEnd,c.s)});
+    prevVerse=c.verse; prevEnd=c.e;
+  }
+  segs.push({verse:prevVerse, html:_sliceHTMLByText(host,prevEnd,text.length)});
+  // Drop empty segments (e.g. a line that begins right at a cut)
+  return segs.filter(sg=>{
+    const t2=document.createElement('div'); t2.innerHTML=sg.html;
+    return t2.textContent.trim().length>0;
+  });
+}
+
 document.addEventListener('DOMContentLoaded',()=>{
   // Restore saved colors
   try{
@@ -8612,6 +8815,23 @@ document.addEventListener('DOMContentLoaded',()=>{
     _substitutePUAChars(pasteTA);
   });
   renderS1Recent();
+  // ── Critical-mark hover tooltip (one shared element, event delegation) ──
+  const critTip=document.createElement('div');
+  critTip.id='crit-tip';
+  document.body.appendChild(critTip);
+  document.addEventListener('mouseover',e=>{
+    const mk=e.target&&e.target.closest ? e.target.closest('.crit-mark') : null;
+    if(!mk){critTip.classList.remove('show');return;}
+    const key=mk.dataset.crit||'';
+    const txt=(typeof t==='function'?t('crit.'+key):'')||'';
+    if(!txt||txt==='crit.'+key){critTip.classList.remove('show');return;}
+    critTip.textContent=txt;
+    const r=mk.getBoundingClientRect();
+    critTip.style.left=Math.max(8, Math.min(window.innerWidth-268, r.left))+'px';
+    critTip.style.top=(r.bottom+8)+'px';
+    critTip.classList.add('show');
+  });
+  document.addEventListener('scroll',()=>critTip.classList.remove('show'),true);
   const vEl=document.getElementById('s1-version-num');
   if(vEl){
     const v=document.querySelector('meta[name="app-version"]')?.content||'';

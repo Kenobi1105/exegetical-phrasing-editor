@@ -27,6 +27,19 @@ const LANGS = {
     's1.recent':           'Recent Projects',
     's1.no-projects':      'No saved projects yet.',
     's1.app-version':      'Version',
+    /* ── Critical apparatus marks (NA28) ── */
+    'settings.crit':       'Critical Marks',
+    'settings.crit.desc':  'NA28 apparatus signs in imported text.',
+    'crit.omit-word':      'The word following this sign is omitted by the witnesses cited.',
+    'crit.omit-words':     'The words between these signs are omitted by the witnesses cited.',
+    'crit.replace-word':   'The word following this sign is replaced with one or more words by the witnesses cited.',
+    'crit.replace-words':  'The words between these signs are replaced with other words by the witnesses cited; frequently this involves transposition.',
+    'crit.insert':         'One or more words, sometimes a whole verse, are inserted at this location by the witnesses cited.',
+    'crit.transpose-words':'The words between these signs are transposed by the witnesses cited.',
+    'crit.transposed':     'The word or verse is transposed as indicated in the apparatus.',
+    'crit.punct':          'A raised colon indicates a variant form of punctuation.',
+    'crit.asterisk':       'Marks a reading discussed in the critical apparatus.',
+    'crit.logos-sub':      'Encloses words marked in the critical apparatus (export substitute sign).',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': 'Add your ',
@@ -377,6 +390,19 @@ const LANGS = {
     's1.recent':           '最近项目',
     's1.no-projects':      '还没有已保存的项目。',
     's1.app-version':      '版本',
+    /* ── 校勘符号（NA28）── */
+    'settings.crit':       '校勘符号',
+    'settings.crit.desc':  '导入经文中 NA28 校勘符号的颜色。',
+    'crit.omit-word':      '所引证的抄本省略此符号后的单词。',
+    'crit.omit-words':     '所引证的抄本省略这两个符号之间的词语。',
+    'crit.replace-word':   '所引证的抄本以一个或多个词替换此符号后的单词。',
+    'crit.replace-words':  '所引证的抄本以其他词语替换这两个符号之间的词语，常涉及词序调换。',
+    'crit.insert':         '所引证的抄本在此处插入一个或多个词，有时为整节经文。',
+    'crit.transpose-words':'所引证的抄本调换这两个符号之间词语的顺序。',
+    'crit.transposed':     '该词或该节经文按校勘栏所示被调换位置。',
+    'crit.punct':          '高位冒号表示标点的异文形式。',
+    'crit.asterisk':       '标示校勘栏中讨论的经文读法。',
+    'crit.logos-sub':      '括注校勘栏所标记的词语（导出替代符号）。',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': '添加你的',
