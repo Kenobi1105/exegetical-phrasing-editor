@@ -1063,32 +1063,36 @@ function _connectorPathD(p1,p2,fromY,toY){
   const dy=p2.y-p1.y, dx=p2.x-p1.x;
   const absDy=Math.abs(dy);
 
-  // S-curve matching the reference image:
-  // - Large hPull (wide horizontal belly) relative to vPush (gentle vertical component)
-  // - c1 is far to the RIGHT and slightly DOWN from p1  → departure sweeps right
-  // - c2 is far to the LEFT  and slightly UP   from p2  → arrival sweeps in from upper-left
-  // Ratio: hPull ≈ 2× vPush gives the elongated graceful S in the reference.
-  // Both scale with the vertical span so short and long connectors stay proportional.
-  const hPull = Math.max(60, absDy * 0.7);  // wide belly
-  const vPush = Math.max(15, absDy * 0.25); // gentle departure/arrival angle
+  // Use TWO cubic segments joined smoothly at the midpoint via SVG's S command.
+  // The S command mirrors the previous control point, giving a seamless join
+  // with no loop — even when p1 and p2 are vertically aligned (dx≈0).
+  //
+  // First segment:  M p1 C (p1.x+H, p1.y) (mx+H, my) mid
+  //   → departs from p1 going right, arrives at midpoint from the right
+  // Second segment: S (p2.x-H, p2.y) p2   (auto-mirrors c2 of first segment)
+  //   → departs midpoint going left, arrives at p2 from the left
+  //
+  // H (belly width) scales with the total vertical span.
+  const H = Math.max(50, absDy * 0.6);
+  const mx = (p1.x + p2.x) / 2;
+  const my = (p1.y + p2.y) / 2;
 
-  const sign = dy >= 0 ? 1 : -1;
-  const c1x = p1.x + hPull;
-  const c1y = p1.y + sign * vPush;
-  const c2x = p2.x - hPull;
-  const c2y = p2.y - sign * vPush;
+  // First C: c1 = right of p1, c2 = right of midpoint
+  const c1x = p1.x + H, c1y = p1.y;
+  const c2x = mx    + H, c2y = my;
+  // S mirrors c2 → effective c3 = left of midpoint, c4 = left of p2
+  const c4x = p2.x - H, c4y = p2.y;
 
-  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${p2.x},${p2.y}`;
+  return `M${p1.x},${p1.y} C${c1x},${c1y} ${c2x},${c2y} ${mx},${my} S${c4x},${c4y} ${p2.x},${p2.y}`;
 }
 
 function _connectorPathDTight(p1,p2,fromY,toY){
-  // Same proportions, smaller belly for near-vertical connectors (|dx| < 30)
+  // Same two-segment approach, smaller belly for near-vertical connectors
   const dy=p2.y-p1.y;
   const absDy=Math.abs(dy);
-  const hPull=Math.max(24, absDy*0.4);
-  const vPush=Math.max(8,  absDy*0.12);
-  const sign=dy>=0?1:-1;
-  return `M${p1.x},${p1.y} C${p1.x+hPull},${p1.y+sign*vPush} ${p2.x-hPull},${p2.y-sign*vPush} ${p2.x},${p2.y}`;
+  const H=Math.max(20, absDy*0.35);
+  const mx=(p1.x+p2.x)/2, my=(p1.y+p2.y)/2;
+  return `M${p1.x},${p1.y} C${p1.x+H},${p1.y} ${mx+H},${my} ${mx},${my} S${p2.x-H},${p2.y} ${p2.x},${p2.y}`;
 }
 
 /* Item-1 redesign: EVERY right-angle connector routes through the SAME
