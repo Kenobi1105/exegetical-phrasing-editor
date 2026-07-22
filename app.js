@@ -551,8 +551,7 @@ function setEditorView(view){
   document.getElementById('tb-add-label')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-dem')?.style.setProperty('display',isDiagram?'':'none');
   // Annotation buttons: divider only in phrasing, arrow + bracket only in diagram
-  document.getElementById('tb-add-divider')?.style.setProperty('display',isPhrasing?'':'none');
-  document.getElementById('tb-tgl-dividers')?.style.setProperty('display',isPhrasing?'':'none');
+  document.getElementById('divider-grp')?.style.setProperty('display',isPhrasing?'flex':'none');
   document.getElementById('tb-tgl-dgtrans')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-connector')?.style.setProperty('display',isDiagram?'':'none');
@@ -3729,6 +3728,22 @@ function collectData(){
     deck: typeof slCollectDeck==='function' ? slCollectDeck() : {slides:[]}};
 }
 
+/* Strips any background-color from inline style="" attributes in saved
+   HTML. Projects saved before 202607221100 may still carry source-app
+   background tints (Logos/BibleArc page backgrounds) baked into their
+   stored origHTML/transHTML; new pastes never get this style in the
+   first place (see _PASTE_SAFE_STYLES), but old saved rows need it
+   stripped every time they're loaded. Regex-based (not DOM-based) since
+   this also runs inside the batch diagram-PDF export loop across many
+   projects. */
+function _stripBgFromHTML(html){
+  if(!html) return html;
+  return html.replace(/style="([^"]*)"/gi, (m,decls)=>{
+    const kept=decls.split(';').map(d=>d.trim()).filter(d=>d && !/^background(-color)?\s*:/i.test(d));
+    return kept.length ? `style="${kept.join('; ')}"` : '';
+  });
+}
+
 function loadData(data){
   document.getElementById('rows-body').innerHTML='';
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
@@ -3756,10 +3771,10 @@ function loadData(data){
     row.className='xrow'+(rd.cid?' has-cmt':'');row.dataset.rid=rid;if(rd.cid)row.dataset.cid=rd.cid;
     row.innerHTML=`<div class="xcell mid" style="width:60px;min-width:60px"><input class="vin" type="text" maxlength="8" placeholder="v" spellcheck="false" value="${escH(rd.verse||'')}" oninput="recomputeIds();autoSave()" onkeydown="onVerseKey(event,${rid})"/></div><div class="xcell mid" style="width:52px;min-width:52px"><div class="lid">—</div></div><div class="vdiv"></div><div class="xcell grow" id="oc-${rid}"><div class="cedit${rtl}" contenteditable="true" spellcheck="false" data-ph="${origPH}" onfocus="trackFocus(this,${rid})" onblur="autoSave()" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'o',${rid})"></div></div>${transCell}<div class="xcell mid" style="width:40px;min-width:40px"><button class="cmtbtn${rd.cid?' on':''}" title="Comment" onclick="toggleCmt(this,${rid})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button></div>`;
     const oc=row.querySelector(`#oc-${rid} .cedit`);
-    if(oc&&rd.origHTML)oc.innerHTML=rd.origHTML;
+    if(oc&&rd.origHTML)oc.innerHTML=_stripBgFromHTML(rd.origHTML);
     if(oc&&rd.origIndent){oc.dataset.indent=rd.origIndent;}
     const tc=row.querySelector(`#tc-${rid} .cedit`);
-    if(tc&&rd.transHTML)tc.innerHTML=rd.transHTML;
+    if(tc&&rd.transHTML)tc.innerHTML=_stripBgFromHTML(rd.transHTML);
     if(tc&&rd.transIndent){tc.dataset.indent=rd.transIndent;}
     document.getElementById('rows-body').appendChild(row);
   });
@@ -4327,14 +4342,14 @@ async function _renderProjectPDF(data, name){
     // Orig column
     const oEl=document.createElement('div');
     oEl.style.cssText='flex:1;font-size:13px;line-height:1.7;'+(isRTL?'direction:rtl;text-align:right;':'');
-    oEl.innerHTML=rd.origHTML||'';
+    oEl.innerHTML=_stripBgFromHTML(rd.origHTML)||'';
     row.appendChild(vEl);
     row.appendChild(lEl);
     row.appendChild(oEl);
     if(!isSingle&&rd.transHTML){
       const tEl=document.createElement('div');
       tEl.style.cssText='flex:1;font-size:13px;line-height:1.7;';
-      tEl.innerHTML=rd.transHTML||'';
+      tEl.innerHTML=_stripBgFromHTML(rd.transHTML)||'';
       row.appendChild(tEl);
     }
     host.appendChild(row);
