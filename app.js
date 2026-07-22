@@ -2601,6 +2601,8 @@ function applyRowUndo(op){
   if(typeof _brkApplyUndo==='function' && _brkApplyUndo(op)) return;
   // Annotation ops (dividers, arrows, spans, arcs)
   if(typeof _annApplyUndo==='function' && _annApplyUndo(op)) return;
+  if(op.type==='tgl-dividers'){ _setDividersVisible(op.prev); return; }
+  if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.prev); return; }
   if(op.type==='indent'){
     // Re-query the cell from the DOM (op.el reference may be stale)
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
@@ -2753,6 +2755,8 @@ function applyRowRedo(op){
   if(typeof _brkApplyRedo==='function' && _brkApplyRedo(op)) return;
   // Annotation ops
   if(typeof _annApplyRedo==='function' && _annApplyRedo(op)) return;
+  if(op.type==='tgl-dividers'){ _setDividersVisible(op.next); return; }
+  if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.next); return; }
   if(op.type==='indent'){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     const ce=row?row.querySelector('.cedit[data-indent]')||row.querySelector('.cedit'):op.el;
@@ -6001,27 +6005,29 @@ function addDivider(){
    inside <body>, so the CSS still matches; the phrasing PDF exporter
    renders cell-by-cell and never included dividers to begin with).
    States persist in localStorage. */
+/* Both view toggles ALWAYS start ON (content visible) on every page load —
+   no localStorage persistence, by design: a hard refresh should give a
+   clean slate rather than replaying whatever state a previous session
+   left behind. Each flip is pushed onto the same ROW_STACK used for
+   indent/split/etc., so Ctrl+Z / Ctrl+Y step through toggle changes
+   exactly like any other editor action (see applyRowUndo/applyRowRedo). */
+function _setDividersVisible(visible){
+  document.body.classList.toggle('hide-dividers', !visible);
+  document.getElementById('tb-tgl-dividers')?.classList.toggle('tgl-on', visible);
+}
+function _setDgTransVisible(visible){
+  document.body.classList.toggle('dg-hide-trans', !visible);
+  document.getElementById('tb-tgl-dgtrans')?.classList.toggle('tgl-on', visible);
+}
 function toggleDividersVisible(){
-  const hidden=document.body.classList.toggle('hide-dividers');
-  try{localStorage.setItem('exeg-hide-dividers', hidden?'1':'0');}catch(e){}
-  document.getElementById('tb-tgl-dividers')?.classList.toggle('tgl-on', !hidden);
+  const wasVisible=!document.body.classList.contains('hide-dividers');
+  _setDividersVisible(!wasVisible);
+  rowPush({type:'tgl-dividers', prev:wasVisible, next:!wasVisible});
 }
 function toggleDgTransVisible(){
-  const hidden=document.body.classList.toggle('dg-hide-trans');
-  try{localStorage.setItem('exeg-hide-dgtrans', hidden?'1':'0');}catch(e){}
-  document.getElementById('tb-tgl-dgtrans')?.classList.toggle('tgl-on', !hidden);
-}
-function restoreViewToggles(){
-  try{
-    if(localStorage.getItem('exeg-hide-dividers')==='1'){
-      document.body.classList.add('hide-dividers');
-      document.getElementById('tb-tgl-dividers')?.classList.remove('tgl-on');
-    }
-    if(localStorage.getItem('exeg-hide-dgtrans')==='1'){
-      document.body.classList.add('dg-hide-trans');
-      document.getElementById('tb-tgl-dgtrans')?.classList.remove('tgl-on');
-    }
-  }catch(e){}
+  const wasVisible=!document.body.classList.contains('dg-hide-trans');
+  _setDgTransVisible(!wasVisible);
+  rowPush({type:'tgl-dgtrans', prev:wasVisible, next:!wasVisible});
 }
 
 function renderDividers(){
@@ -8939,7 +8945,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     _substitutePUAChars(pasteTA);
   });
   renderS1Recent();
-  restoreViewToggles();
   // ── Critical-mark hover tooltip (one shared element, event delegation) ──
   const critTip=document.createElement('div');
   critTip.id='crit-tip';
