@@ -541,6 +541,14 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 /* Paste panel */
 #s2-paste-panel{display:flex;flex-direction:column;gap:10px}
 #s2-version-row{display:flex;align-items:center;gap:10px}
+#s2-title-row{display:flex;align-items:center;gap:10px}
+#s2-title-label{font-size:11px;color:var(--muted);white-space:nowrap}
+#s2-title-input{
+  flex:1;height:32px;padding:0 10px;border:1.5px solid rgba(73,53,72,.18);
+  border-radius:var(--rs);background:var(--bg);font-family:var(--ui);font-size:12px;
+  color:var(--ink);outline:none
+}
+#s2-title-input:focus{border-color:var(--sig)}
 #s2-version-label{font-size:11px;color:var(--muted);white-space:nowrap}
 #s2-version-input{
   flex:1;height:32px;padding:0 10px;border:1.5px solid rgba(73,53,72,.18);
