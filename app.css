@@ -4296,3 +4296,8 @@ body.brk-locked .dbrk-pip:hover {
 
 /* ── Frame markers ([TM]…[SP]) — superscripted, added 202607220900 ── */
 .crit-mark.crit-frame{vertical-align:super;font-size:.72em;line-height:1}
+
+/* ── View toggles: hide dividers (phrasing) / translations (diagram) — added 202607221000 ── */
+body.hide-dividers .ann-divider{display:none}
+body.dg-hide-trans .dblock-trans{display:none}
+.tbtn.tgl-hidden svg{opacity:.35}

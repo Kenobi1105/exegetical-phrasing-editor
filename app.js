@@ -120,9 +120,16 @@ function goBack(){
 function confirmPaste(){
   const div=document.getElementById('paste-ta');
   const hasContent=div.innerText.trim().length>0;
+  // Adopt the optional Screen 2 title as the passage title
+  const titleIn=document.getElementById('s2-title-input');
   openEditor();
+  if(titleIn&&titleIn.value.trim()){
+    const ri=document.getElementById('refin');
+    if(ri){ ri.value=titleIn.value.trim(); }
+  }
   if(hasContent) parsePasteIntoRows(div);
   else addEmptyRow();
+  if(titleIn) titleIn.value='';
 }
 function skipPaste(){
   openEditor();
@@ -159,7 +166,6 @@ function parsePasteIntoRows(div){
   }
 
   const parsed=[];
-  let refTitle='';
 
   // ── Format detection: labeled outline export? ──
   // A paste is outline-format when any line's first token is a known
@@ -189,7 +195,6 @@ function parsePasteIntoRows(div){
            bare verse          (3)      → verse 3
          no reference → continue the current verse (recomputeIds letters
          same-verse rows 1a/1b/1c automatically) */
-    let currentVerse='';
     for(const el of lineEls){
       const tc=el.textContent||'';
       if(!tc.trim()) continue;
@@ -203,23 +208,26 @@ function parsePasteIntoRows(div){
       } else {
         html=el.innerHTML.trim();
       }
-      // Optional reference after the label
+      // Optional reference after the label. Only the row that DECLARES a
+      // verse carries the number; continuation rows keep a blank verse
+      // cell (recomputeIds inherits the running verse for the 1a/1b/1c
+      // line IDs, so lettering is unaffected).
+      let lineVerse='';
       const tmp=document.createElement('div');
       tmp.innerHTML=html;
       const rest=tmp.textContent;
       let m=rest.match(/^\s*((?:[1-3]\s?)?[A-Za-z]+\.?)\s*(\d+):(\d+)\s+/);
       if(m){
-        currentVerse=m[3];
-        if(!refTitle) refTitle=m[1].trim()+' '+m[2]+':'+m[3];
+        lineVerse=m[3]; // book + chapter dropped from the text; title is NOT auto-set
         html=stripLeadingVerseFromHTML(tmp, m[0].length);
       } else if((m=rest.match(/^\s*(\d+):(\d+)\s+/))){
-        currentVerse=m[2]; // chapter:verse with the chapter dropped
+        lineVerse=m[2]; // chapter:verse with the chapter dropped
         html=stripLeadingVerseFromHTML(tmp, m[0].length);
       } else if((m=rest.match(/^\s*(\d+)\s+/))){
-        currentVerse=m[1];
+        lineVerse=m[1];
         html=stripLeadingVerseFromHTML(tmp, m[0].length);
       }
-      parsed.push({verse:currentVerse, html, divLabel});
+      parsed.push({verse:lineVerse, html, divLabel});
     }
   } else {
     /* Free-form paste. A line whose plain-text starts with a digit
@@ -237,18 +245,23 @@ function parsePasteIntoRows(div){
 
       let html=el.innerHTML.trim();
       // Detect verse number at the very start of plain text
+      let lineVerse='';
       const m=trimmedText.match(/^(\d+)\s+/);
       if(m){
         currentVerse=m[1];
+        lineVerse=m[1];
         const leadingSpaces=plainText.length - plainText.trimStart().length;
         html=stripLeadingVerseFromHTML(el, leadingSpaces + m[0].length);
       }
-      // Split the remainder at inline ascending verse numbers
+      // Split the remainder at inline ascending verse numbers. Only the
+      // segment that STARTS a verse carries the number; continuation
+      // segments/lines keep a blank verse cell and recomputeIds inherits
+      // the running verse for lettering (1a/1b/1c).
       const segs=_splitInlineVerses(html, currentVerse);
-      for(const sg of segs){
+      segs.forEach((sg,si)=>{
         if(sg.verse) currentVerse=sg.verse;
-        parsed.push({verse:currentVerse, html:sg.html});
-      }
+        parsed.push({verse: si===0 ? lineVerse : sg.verse, html:sg.html});
+      });
     }
   }
 
@@ -274,11 +287,6 @@ function parsePasteIntoRows(div){
     }
   });
   if(madeDivider) renderDividers();
-  // Adopt the pasted reference as the passage title if none is set yet
-  if(refTitle){
-    const ri=document.getElementById('refin');
-    if(ri&&!ri.value.trim()) ri.value=refTitle;
-  }
   recomputeIds();
   toast(parsed.length+' line'+(parsed.length!==1?'s':'')+' imported');
 }
@@ -544,6 +552,8 @@ function setEditorView(view){
   document.getElementById('tb-dem')?.style.setProperty('display',isDiagram?'':'none');
   // Annotation buttons: divider only in phrasing, arrow + bracket only in diagram
   document.getElementById('tb-add-divider')?.style.setProperty('display',isPhrasing?'':'none');
+  document.getElementById('tb-tgl-dividers')?.style.setProperty('display',isPhrasing?'':'none');
+  document.getElementById('tb-tgl-dgtrans')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-connector')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-bracket')?.style.setProperty('display',isDiagram?'':'none');
@@ -5954,6 +5964,37 @@ function addDivider(){
   }, 60);
 }
 
+/* ── View toggles ──
+   Phrasing: show/hide all Proposition Dividers.
+   Diagram:  show/hide all block translations.
+   Both are body-level classes so the state also applies to export clones
+   (diagram exports clone #dcanvas into an off-screen host that is still
+   inside <body>, so the CSS still matches; the phrasing PDF exporter
+   renders cell-by-cell and never included dividers to begin with).
+   States persist in localStorage. */
+function toggleDividersVisible(){
+  const hidden=document.body.classList.toggle('hide-dividers');
+  try{localStorage.setItem('exeg-hide-dividers', hidden?'1':'0');}catch(e){}
+  document.getElementById('tb-tgl-dividers')?.classList.toggle('tgl-hidden', hidden);
+}
+function toggleDgTransVisible(){
+  const hidden=document.body.classList.toggle('dg-hide-trans');
+  try{localStorage.setItem('exeg-hide-dgtrans', hidden?'1':'0');}catch(e){}
+  document.getElementById('tb-tgl-dgtrans')?.classList.toggle('tgl-hidden', hidden);
+}
+function restoreViewToggles(){
+  try{
+    if(localStorage.getItem('exeg-hide-dividers')==='1'){
+      document.body.classList.add('hide-dividers');
+      document.getElementById('tb-tgl-dividers')?.classList.add('tgl-hidden');
+    }
+    if(localStorage.getItem('exeg-hide-dgtrans')==='1'){
+      document.body.classList.add('dg-hide-trans');
+      document.getElementById('tb-tgl-dgtrans')?.classList.add('tgl-hidden');
+    }
+  }catch(e){}
+}
+
 function renderDividers(){
   // Remove all existing divider elements
   document.querySelectorAll('.ann-divider').forEach(e=>e.remove());
@@ -8865,6 +8906,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     _substitutePUAChars(pasteTA);
   });
   renderS1Recent();
+  restoreViewToggles();
   // ── Critical-mark hover tooltip (one shared element, event delegation) ──
   const critTip=document.createElement('div');
   critTip.id='crit-tip';

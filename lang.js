@@ -59,6 +59,11 @@ const LANGS = {
     'crit.disc-hp':        'Historical Present',
     'crit.disc-attn':      'Attention-getter',
     'crit.disc-speech':    'Reported Speech',
+    /* Screen 2 title field + view toggles */
+    's2.title.label':      'Title',
+    's2.title.ph':         'Optional — becomes the passage title, e.g. Romans 1:18–32',
+    'toolbar.tgl-dividers':'Show/hide proposition dividers',
+    'toolbar.tgl-dgtrans': 'Show/hide translations',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': 'Add your ',
@@ -441,6 +446,11 @@ const LANGS = {
     'crit.disc-hp':        '历史现在时',
     'crit.disc-attn':      '唤起注意语',
     'crit.disc-speech':    '直接引语',
+    /* 第二屏标题字段与视图开关 */
+    's2.title.label':      '标题',
+    's2.title.ph':         '可选——将作为经文标题，如 罗马书 1:18–32',
+    'toolbar.tgl-dividers':'显示/隐藏命题分隔线',
+    'toolbar.tgl-dgtrans': '显示/隐藏翻译',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': '添加你的',

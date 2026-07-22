@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607220900"/>
+<meta name="app-version" content="202607221000"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -90,6 +90,10 @@
     </div>
     <!-- Paste panel -->
     <div id="s2-paste-panel">
+      <div id="s2-version-row" style="margin-bottom:6px">
+        <span id="s2-title-label" data-i18n="s2.title.label">Title</span>
+        <input type="text" id="s2-title-input" data-i18n-ph="s2.title.ph" placeholder="Optional — becomes the passage title, e.g. Romans 1:18–32"/>
+      </div>
       <div id="s2-version-row">
         <span id="s2-version-label" data-i18n="s2.version.label">Translation / Version</span>
         <input type="text" id="s2-version-input" data-i18n-ph="s2.version.ph" placeholder="e.g. NIV, ESV, NA28 — leave blank for default" oninput="sessionVersionLabel=this.value.trim()"/>
@@ -340,6 +344,12 @@
       <!-- ── Annotation buttons ── -->
       <button class="tbtn" id="tb-add-divider" title="Add Proposition Divider (Alt+D)" onclick="addDivider()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="3,2"/><line x1="3" y1="8" x2="7" y2="8"/><line x1="3" y1="16" x2="7" y2="16"/></svg>
+      </button>
+      <button class="tbtn" id="tb-tgl-dividers" data-i18n-title="toolbar.tgl-dividers" title="Show/hide proposition dividers" onclick="toggleDividersVisible()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12" stroke-dasharray="3,2"/><path d="M2 5c3 4 7 6 10 6s7-2 10-6"/><circle cx="12" cy="9" r="1.6"/></svg>
+      </button>
+      <button class="tbtn" id="tb-tgl-dgtrans" data-i18n-title="toolbar.tgl-dgtrans" title="Show/hide translations" onclick="toggleDgTransVisible()" style="display:none">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 5h7M7.5 5v2.5c0 3-1.5 5.5-3.5 7"/><path d="M5.5 9c1 2.5 3 4.5 5.5 5.5"/><path d="M13 19l3.5-8 3.5 8M14.2 16.4h4.6"/></svg>
       </button>
       <button class="tbtn" id="tb-add-arrow" title="Draw free arrow (Alt+A)" onclick="startFreeArrow()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="12 5 19 5 19 12"/></svg>
