@@ -8908,6 +8908,10 @@ const CRIT_MARK_KEYS={
   '⸓':'transposed',
   '˸':'punct',
   '*':'asterisk',
+  '[':'sq-bracket',']':'sq-bracket',
+  '⟦':'dbl-bracket','⟧':'dbl-bracket',
+  '♦':'diamond',
+  '✽':'chapter-mark',
 };
 /* Lexham discourse-feature symbols used inside ‹…› delimiter pairs.
    The open token is ‹ + symbol, the close token is symbol + ›. Note that
@@ -8925,25 +8929,51 @@ const DISC_MARK_KEYS={
 /* One combined matcher, longest alternatives first:
    • frame markers [TM/TM] [TP/TP] [CP/CP] [CD/CD] [LD/LD] [SP/SP]
      — colored AND superscripted (extra crit-frame class)
+   • standalone [ ] — NA28 uncertain-authenticity brackets (kept separate
+     from the frame-marker alternative above, and deliberately NOT given
+     numeral absorption, since "[1" could otherwise be misread as a stray
+     frame token by _critKeyFor's length check)
    • discourse pairs ‹✓ … ✓› etc. (open = ‹+symbol, close = symbol+›)
    • reported speech ‶ … ″ (double primes, per the Lexham export)
    • NA28 apparatus signs, absorbing immediately-attached numerals (°1, ˸2) */
 const _CRIT_RE=new RegExp(
   '\\[(?:TM|TP|CP|CD|LD|SP)|(?:TM|TP|CP|CD|LD|SP)\\]'+
+  '|\\[|\\]'+
   '|‹[✓✕👤👥+☉→💬🕐!📢]'+
   '|[✓✕👤👥+☉→💬🕐!📢]›'+
   '|[‶″]'+
-  '|[°⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋⸌⸍⸓˸*](?:[⁰-⁹¹²³]|\\d)*',
+  '|[°⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋⸌⸍⸓˸*⟦⟧♦✽](?:[⁰-⁹¹²³]|\\d)*',
   'gu');
 
 function _critKeyFor(tok){
-  if(tok[0]==='[')           return 'frame-'+tok.slice(1).toLowerCase();    // [TM ...
-  if(tok.endsWith(']'))      return 'frame-'+tok.slice(0,-1).toLowerCase(); // ... TM]
+  // length>1 guards against a lone "[" or "]" (added above) being
+  // mistaken for a frame-marker token, which is always 3+ chars ("[TM").
+  if(tok.length>1 && tok[0]==='[')      return 'frame-'+tok.slice(1).toLowerCase();    // [TM ...
+  if(tok.length>1 && tok.endsWith(']')) return 'frame-'+tok.slice(0,-1).toLowerCase(); // ... TM]
   if(tok[0]==='‹')      return DISC_MARK_KEYS[[...tok].slice(1).join('')]||null;
   if(tok.endsWith('›')) return DISC_MARK_KEYS[[...tok].slice(0,-1).join('')]||null;
   if(tok==='‶'||tok==='″') return 'disc-speech';
   const base=tok.replace(/[⁰-⁹¹²³0-9]+$/,'');
   return CRIT_MARK_KEYS[base]||null;
+}
+
+/* Resolves which source citation to show under a crit-mark tooltip:
+     1. a per-mark override, if one exists (e.g. the asterisk and the
+        chapter-division mark each cite a specific NTG28 page number)
+     2. Runge's LDGNT Glossary, for frame-* and disc-* keys (the
+        discourse-feature markers)
+     3. Aland's Novum Testamentum Graece, for every other (apparatus) sign
+   Returns '' if none of the above resolve to real text. */
+function _critSourceFor(key){
+  if(typeof t!=='function') return '';
+  const perMark=t('crit.source-'+key);
+  if(perMark && perMark!=='crit.source-'+key) return perMark;
+  if(key.indexOf('frame-')===0 || key.indexOf('disc-')===0){
+    const runge=t('crit.source');
+    return (runge&&runge!=='crit.source') ? runge : '';
+  }
+  const aland=t('crit.source-apparatus');
+  return (aland&&aland!=='crit.source-apparatus') ? aland : '';
 }
 
 /* Wrap every critical sign inside el in <span class="crit-mark" data-crit="key">.
@@ -9146,12 +9176,12 @@ document.addEventListener('DOMContentLoaded',()=>{
       const key=mk.dataset.crit||'';
       const txt=(typeof t==='function'?t('crit.'+key):'')||'';
       if(!txt||txt==='crit.'+key){critTip.classList.remove('show');return;}
-      const srcLine=(typeof t==='function'?t('crit.source'):'')||'';
+      const srcLine=_critSourceFor(key);
       critTip.classList.add('wide');
       critTip.textContent='';
       const d1=document.createElement('div'); d1.className='crit-tip-desc'; d1.textContent=txt;
       critTip.appendChild(d1);
-      if(srcLine&&srcLine!=='crit.source'){
+      if(srcLine){
         const d2=document.createElement('div'); d2.className='crit-tip-src'; d2.textContent=srcLine;
         critTip.appendChild(d2);
       }
