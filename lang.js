@@ -64,6 +64,16 @@ const LANGS = {
     's2.title.ph':         'Optional — becomes the passage title, e.g. Romans 1:18–32',
     'toolbar.tgl-dividers':'Show/hide proposition dividers',
     'toolbar.tgl-dgtrans': 'Show/hide translations',
+    /* Proposition divider glossary (hover tooltips) */
+    'prop.sentence':      'Sentence — One or more clauses that have a coordinate relationship to the preceding discourse. Sentences which begin a speech reported within the discourse are labeled as ‘sentences’, but are indented one level in the outline to reflect that they are technically dependent upon (i.e. subordinate to) the verb of speaking that introduces them. Sentences are coordinated to the preceding discourse using καὶ, δὲ, or asyndeton (the absence of a conjunction).',
+    'prop.principle':     'Principle — A sentence that is marked as drawing an inference or assertion from the preceding discourse. Principles are normally signaled by οὖν, διὸ, διὰ τοῦτο or πλὴν.',
+    'prop.support':       'Support — A sentence that is marked as strengthening or supporting the preceding discourse. Support sentences do not extend or develop an argument, but serve instead to reinforce the preceding point.',
+    'prop.complex':       'Complex — This label indicates that the sentence that follows contains subordinate clause components (i.e. sub-points, circumstances) preceding the main clause. The main clause of the sentence is indented one level from the ‘complex’ label, even though it is not grammatically dependent. Dependent elements are indented two or more levels from the ‘complex’ label.',
+    'prop.sub-point':     'Sub-point — A clause that is grammatically dependent upon another one. In most cases, the clause upon which it depends precedes the sub-point. In ‘Complex’ constructions, the sub-point may precede the clause upon which it depends. Sub-points are normally signaled in Greek by ὅτι, ἵνα, εἰ, ἐὰν, καθὼς, or by a relative pronoun. Sentences which build upon the sub-point are indented and labeled as sub-points.',
+    'prop.elaboration':   'Elaboration — A participial clause that expands upon the action of the main clause on which it depends. Elaboration follows the clause it elaborates.',
+    'prop.circumstance':  'Circumstance — A participial clause that introduces the state of affairs surrounding the main clause that follows. Circumstantial constructions have the effect of backgrounding the action they introduce with respect to the action of the main proposition.',
+    'prop.bullet':        'Bullet — A part of a clause that has been placed on its own line to attract attention to parallelism, a list, or a point-counterpoint set. The bullet is a dependent component of another clause.',
+    'prop.source':        'Steven E. Runge, The Lexham Discourse Greek New Testament: Glossary (Lexham Press, 2008).',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': 'Add your ',
@@ -451,6 +461,16 @@ const LANGS = {
     's2.title.ph':         '可选——将作为经文标题，如 罗马书 1:18–32',
     'toolbar.tgl-dividers':'显示/隐藏命题分隔线',
     'toolbar.tgl-dgtrans': '显示/隐藏翻译',
+    /* 命题分隔条术语表（悬停提示） */
+    'prop.sentence':      '句子——与前文构成并列关系的一个或多个分句。开启文中转述话语的句子仍标为“句子”，但在大纲中缩进一级，以反映其在语法上从属于引出它们的言说动词。句子通过 καὶ、δὲ 或连词省略（无连词）与前文并列衔接。',
+    'prop.principle':     '原则——被标记为从前文引出推论或断言的句子。原则通常由 οὖν、διὸ、διὰ τοῦτο 或 πλὴν 标示。',
+    'prop.support':       '支持——被标记为加强或支持前文的句子。支持句不推进或发展论证，而是强化前面的论点。',
+    'prop.complex':       '复合——此标签表示随后的句子在主句之前含有从属分句成分（如子论点、情境）。句子的主句相对“复合”标签缩进一级，尽管它在语法上并不从属；从属成分则缩进两级或更多。',
+    'prop.sub-point':     '子论点——在语法上从属于另一分句的分句。多数情况下，其所依附的分句位于子论点之前；在“复合”结构中，子论点可位于其所依附的分句之前。子论点在希腊文中通常由 ὅτι、ἵνα、εἰ、ἐὰν、καθὼς 或关系代词标示。建立在子论点之上的句子同样缩进并标为子论点。',
+    'prop.elaboration':   '铺陈——扩展其所依附主句动作的分词分句。铺陈位于其所铺陈的分句之后。',
+    'prop.circumstance':  '情境——引入随后主句周围事态的分词分句。情境结构使其引入的动作相对于主命题的动作退居背景。',
+    'prop.bullet':        '列点——被单独置于一行以突出平行结构、列表或正反论点组的分句片段。列点是另一分句的从属成分。',
+    'prop.source':        'Steven E. Runge, The Lexham Discourse Greek New Testament: Glossary (Lexham Press, 2008).',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': '添加你的',

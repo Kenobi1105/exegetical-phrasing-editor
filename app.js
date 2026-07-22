@@ -148,21 +148,33 @@ function skipPaste(){
    the original casing is preserved in the divider label. Extend this list
    as further label types are encountered. */
 const PROP_LABELS=['sentence','complex','elaboration','sub-point','bullet',
-                   'principle','support','application'];
+                   'principle','support','application','circumstance'];
 
 function parsePasteIntoRows(div){
-  // Collect line elements: browsers put each pasted line in a <div> or <p>.
-  // If the content is flat (no block children), treat it as one line.
-  let lineEls=Array.from(div.querySelectorAll(':scope > div, :scope > p'));
-  if(!lineEls.length){
-    // Flat paste — split on <br> manually
-    // Clone, replace <br> with sentinel, split
-    const clone=div.cloneNode(true);
-    clone.querySelectorAll('br').forEach(br=>{
-      br.replaceWith(document.createTextNode('\n__BR__\n'));
+  // Collect line elements. Block children (<div>/<p>) are lines; any loose
+  // inline/text nodes at the top level — including trailing content the
+  // source app left outside a block wrapper — are grouped into synthetic
+  // line elements, split at <br>. Nothing at the top level is dropped.
+  const lineEls=[];
+  {
+    let buf=null;
+    const flush=()=>{
+      if(buf&&(buf.textContent||'').trim()) lineEls.push(buf);
+      buf=null;
+    };
+    Array.from(div.childNodes).forEach(n=>{
+      const isEl=n.nodeType===Node.ELEMENT_NODE;
+      if(isEl&&(n.tagName==='DIV'||n.tagName==='P')){
+        flush();
+        lineEls.push(n);
+      } else if(isEl&&n.tagName==='BR'){
+        flush();
+      } else {
+        if(!buf) buf=document.createElement('div');
+        buf.appendChild(n.cloneNode(true));
+      }
     });
-    const parts=clone.innerHTML.split('\n__BR__\n');
-    lineEls=parts.map(html=>{const d=document.createElement('div');d.innerHTML=html;return d;});
+    flush();
   }
 
   const parsed=[];
@@ -271,8 +283,8 @@ function parsePasteIntoRows(div){
     const row=addRow(p.verse,'','',null,null);
     const oc=row.querySelector(`#oc-${row.dataset.rid} .cedit`);
     if(oc){
-      oc.innerHTML=p.html;
-      _markupCriticalSigns(oc); // color NA28 apparatus signs (--crit)
+      oc.innerHTML=_stripBgFromHTML(p.html); // no source-app backgrounds, ever
+      _markupCriticalSigns(oc); // color apparatus + discourse signs (--crit)
     }
     madeRows.push(row);
   });
@@ -3738,10 +3750,12 @@ function collectData(){
    projects. */
 function _stripBgFromHTML(html){
   if(!html) return html;
-  return html.replace(/style="([^"]*)"/gi, (m,decls)=>{
-    const kept=decls.split(';').map(d=>d.trim()).filter(d=>d && !/^background(-color)?\s*:/i.test(d));
-    return kept.length ? `style="${kept.join('; ')}"` : '';
-  });
+  return html
+    .replace(/style="([^"]*)"/gi, (m,decls)=>{
+      const kept=decls.split(';').map(d=>d.trim()).filter(d=>d && !/^background(-color)?\s*:/i.test(d));
+      return kept.length ? `style="${kept.join('; ')}"` : '';
+    })
+    .replace(/\sbgcolor="[^"]*"/gi, ''); // legacy attribute form
 }
 
 function loadData(data){
@@ -8931,16 +8945,43 @@ document.addEventListener('DOMContentLoaded',()=>{
   critTip.id='crit-tip';
   document.body.appendChild(critTip);
   document.addEventListener('mouseover',e=>{
-    const mk=e.target&&e.target.closest ? e.target.closest('.crit-mark') : null;
-    if(!mk){critTip.classList.remove('show');return;}
-    const key=mk.dataset.crit||'';
-    const txt=(typeof t==='function'?t('crit.'+key):'')||'';
-    if(!txt||txt==='crit.'+key){critTip.classList.remove('show');return;}
-    critTip.textContent=txt;
-    const r=mk.getBoundingClientRect();
-    critTip.style.left=Math.max(8, Math.min(window.innerWidth-268, r.left))+'px';
-    critTip.style.top=(r.bottom+8)+'px';
-    critTip.classList.add('show');
+    const tgt=e.target&&e.target.closest ? e.target : null;
+    const mk=tgt ? tgt.closest('.crit-mark') : null;
+    if(mk){
+      const key=mk.dataset.crit||'';
+      const txt=(typeof t==='function'?t('crit.'+key):'')||'';
+      if(!txt||txt==='crit.'+key){critTip.classList.remove('show');return;}
+      critTip.classList.remove('wide');
+      critTip.textContent=txt;
+      const r=mk.getBoundingClientRect();
+      critTip.style.left=Math.max(8, Math.min(window.innerWidth-268, r.left))+'px';
+      critTip.style.top=(r.bottom+8)+'px';
+      critTip.classList.add('show');
+      return;
+    }
+    // Proposition divider glossary tooltip (Runge, LDGNT Glossary)
+    const dv=tgt ? tgt.closest('.ann-divider') : null;
+    if(dv){
+      const lblEl=dv.querySelector('.ann-div-label');
+      const lbl=(lblEl?lblEl.textContent:'').trim().toLowerCase();
+      const desc=lbl&&typeof t==='function' ? t('prop.'+lbl) : '';
+      if(!desc||desc==='prop.'+lbl){critTip.classList.remove('show');return;}
+      const srcLine=(typeof t==='function'?t('prop.source'):'')||'';
+      critTip.classList.add('wide');
+      critTip.textContent='';
+      const d1=document.createElement('div'); d1.textContent=desc;
+      critTip.appendChild(d1);
+      if(srcLine&&srcLine!=='prop.source'){
+        const d2=document.createElement('div'); d2.className='crit-tip-src'; d2.textContent=srcLine;
+        critTip.appendChild(d2);
+      }
+      const r=(lblEl||dv).getBoundingClientRect();
+      critTip.style.left=Math.max(8, Math.min(window.innerWidth-378, r.left))+'px';
+      critTip.style.top=(r.bottom+8)+'px';
+      critTip.classList.add('show');
+      return;
+    }
+    critTip.classList.remove('show');
   });
   document.addEventListener('scroll',()=>critTip.classList.remove('show'),true);
   const vEl=document.getElementById('s1-version-num');

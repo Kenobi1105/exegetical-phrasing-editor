@@ -4321,3 +4321,8 @@ body.dg-hide-trans .dblock-trans{display:none}
 /* ── Icon-less toggle switches (bare switch only) — added 202607221130 ── */
 .tbtn.tglsw{width:auto;padding:0 6px}
 .tbtn.tglsw .tsw{margin:0}
+
+/* ── Divider glossary tooltip (wide variant + source line) — added 202607221200 ── */
+#crit-tip.wide{max-width:370px}
+.crit-tip-src{margin-top:6px;font-style:italic;opacity:.75;font-size:11px}
+.ann-divider{cursor:help}
