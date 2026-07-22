@@ -9134,6 +9134,13 @@ document.addEventListener('DOMContentLoaded',()=>{
     const tgt=e.target&&e.target.closest ? e.target : null;
     const mk=tgt ? tgt.closest('.crit-mark') : null;
     if(mk){
+      // The apparatus/frame/discourse glossary (crit.*) is sourced from the
+      // Lexham Discourse GREEK New Testament and doesn't necessarily hold
+      // for Hebrew usage of the same bracket notation, so the popup only
+      // appears in Greek sessions. The marks themselves stay colored and
+      // bidi-isolated in every language \u2014 only the English glossary text
+      // is Greek-specific and gated here.
+      if(SESS!=='greek'){ critTip.classList.remove('show'); return; }
       const key=mk.dataset.crit||'';
       const txt=(typeof t==='function'?t('crit.'+key):'')||'';
       if(!txt||txt==='crit.'+key){critTip.classList.remove('show');return;}
@@ -9145,19 +9152,23 @@ document.addEventListener('DOMContentLoaded',()=>{
       critTip.classList.add('show');
       return;
     }
-    // Proposition divider glossary tooltip (Runge, LDGNT Glossary)
+    // Proposition divider glossary tooltip: same label set (Sentence,
+    // Complex, ...), but two separate glossaries by language \u2014 LDGNT for
+    // Greek (also used as the fallback for Chinese/Custom sessions, since
+    // no Chinese-specific glossary exists), LDHB for Hebrew.
     const dv=tgt ? tgt.closest('.ann-divider') : null;
     if(dv){
       const lblEl=dv.querySelector('.ann-div-label');
       const lbl=(lblEl?lblEl.textContent:'').trim().toLowerCase();
-      const desc=lbl&&typeof t==='function' ? t('prop.'+lbl) : '';
-      if(!desc||desc==='prop.'+lbl){critTip.classList.remove('show');return;}
-      const srcLine=(typeof t==='function'?t('prop.source'):'')||'';
+      const propPrefix=SESS==='hebrew' ? 'prop-he.' : 'prop.';
+      const desc=lbl&&typeof t==='function' ? t(propPrefix+lbl) : '';
+      if(!desc||desc===propPrefix+lbl){critTip.classList.remove('show');return;}
+      const srcLine=(typeof t==='function'?t(propPrefix+'source'):'')||'';
       critTip.classList.add('wide');
       critTip.textContent='';
       const d1=document.createElement('div'); d1.textContent=desc;
       critTip.appendChild(d1);
-      if(srcLine&&srcLine!=='prop.source'){
+      if(srcLine&&srcLine!==propPrefix+'source'){
         const d2=document.createElement('div'); d2.className='crit-tip-src'; d2.textContent=srcLine;
         critTip.appendChild(d2);
       }

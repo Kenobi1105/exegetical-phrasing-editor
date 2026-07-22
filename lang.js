@@ -74,6 +74,15 @@ const LANGS = {
     'prop.circumstance':  'Circumstance — A participial clause that introduces the state of affairs surrounding the main clause that follows. Circumstantial constructions have the effect of backgrounding the action they introduce with respect to the action of the main proposition.',
     'prop.bullet':        'Bullet — A part of a clause that has been placed on its own line to attract attention to parallelism, a list, or a point-counterpoint set. The bullet is a dependent component of another clause.',
     'prop.source':        'Steven E. Runge, The Lexham Discourse Greek New Testament: Glossary (Lexham Press, 2008).',
+    /* Proposition divider glossary — HEBREW (Lexham Discourse Hebrew Bible) */
+    'prop-he.sentence':     'Sentence — One or more clauses that have a coordinate relationship to the preceding discourse. Sentences that begin a speech reported within the discourse are labeled as “sentences,” but are indented one level in the outline to reflect that they are technically dependent on (i.e., subordinate to) the verb of speaking that introduces them. Sentences are most often coordinated to the preceding discourse using ו‎ְ or the absence of a conjunction.',
+    'prop-he.principle':    'Principle — A sentence that is marked as drawing an inference or assertion from the preceding discourse based on the use of an inferential particle.',
+    'prop-he.support':      'Support — Some sentence introduced by כִ‎ּי that reinforces or supports the preceding discourse. Support sentences do not extend or develop an argument. The support sentence and the ones it governs are indented one level to represent their logical support of what precedes.',
+    'prop-he.complex':      'Complex — This label indicates that the following sentence contains subordinate clause components preceding the main clause. The main clause of the sentence is indented one level from the “complex” label even though it is not grammatically dependent. Dependent elements are indented two or more levels from the complex label.',
+    'prop-he.sub-point':    'Sub-point — A clause that is grammatically dependent on another one. In most cases, the clause on which it depends precedes the sub-point. In “complex” constructions, the sub-point may precede the clause on which it depends. Sub-points are normally signaled in Hebrew by a subordinating conjunction or a relative pronoun. Sentences that build on the sub-point are indented and labeled as sub-points.',
+    'prop-he.elaboration':  'Elaboration — A clause or a phrase usually consisting of a participle or an infinitive that expands on the action of the main verb on which it depends. Elaboration is also used to mark utterances which are grammatically incomplete due to an omission of some phrase which is to be inferred from the previous clause (i.e. Elision). Elaboration always follows the clause it modifies.',
+    'prop-he.bullet':       'Bullet — A part of a clause that has been placed on its own line to attract attention to parallelism, a list, or a point-counterpoint set. The bullet is a dependent component of another clause.',
+    'prop-he.source':       'Steven Runge and Joshua Westbury, eds., The Lexham Discourse Hebrew Bible: Glossary, Lexham Discourse Hebrew Bible (Bellingham, WA: Lexham Press, 2012).',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': 'Add your ',
@@ -477,6 +486,15 @@ const LANGS = {
     'prop.circumstance':  '情境——引入随后主句周围事态的分词分句。情境结构使其引入的动作相对于主命题的动作退居背景。',
     'prop.bullet':        '列点——被单独置于一行以突出平行结构、列表或正反论点组的分句片段。列点是另一分句的从属成分。',
     'prop.source':        'Steven E. Runge, The Lexham Discourse Greek New Testament: Glossary (Lexham Press, 2008).',
+    /* 命题分隔条术语表 — 希伯来文（Lexham 话语希伯来圣经） */
+    'prop-he.sentence':     '句子——与前文构成并列关系的一个或多个分句。开启文中转述话语的句子仍标为“句子”，但在大纲中缩进一级，以反映其在语法上从属于引出它们的言说动词。句子最常通过 ו‎ 或连词省略与前文并列衔接。',
+    'prop-he.principle':    '原则——基于推断连词的使用，被标记为从前文引出推论或断言的句子。',
+    'prop-he.support':      '支持——由 כִ‎ּי 引导、加强或支持前文的某个句子。支持句不推进或发展论证。支持句及其所支配的句子缩进一级，以表示它们对前文的逻辑支持。',
+    'prop-he.complex':      '复合——此标签表示随后的句子在主句之前含有从属分句成分。句子的主句相对“复合”标签缩进一级，尽管它在语法上并不从属；从属成分则缩进两级或更多。',
+    'prop-he.sub-point':    '子论点——在语法上从属于另一分句的分句。多数情况下，其所依附的分句位于子论点之前；在“复合”结构中，子论点可位于其所依附的分句之前。子论点在希伯来文中通常由从属连词或关系代词标示。建立在子论点之上的句子同样缩进并标为子论点。',
+    'prop-he.elaboration':  '铺陈——通常由分词或不定式构成的分句或短语，扩展其所依附主动词的动作。铺陈也用于标记因省略了可从前句推断出的某短语而在语法上不完整的话语（即省略）。铺陈总是位于其所修饰的分句之后。',
+    'prop-he.bullet':       '列点——被单独置于一行以突出平行结构、列表或正反论点组的分句片段。列点是另一分句的从属成分。',
+    'prop-he.source':       'Steven Runge and Joshua Westbury, eds., The Lexham Discourse Hebrew Bible: Glossary, Lexham Discourse Hebrew Bible (Bellingham, WA: Lexham Press, 2012).',
 
     /* ── Screen 2 ── */
     's2.add-passage-prefix': '添加你的',
