@@ -5975,22 +5975,22 @@ function addDivider(){
 function toggleDividersVisible(){
   const hidden=document.body.classList.toggle('hide-dividers');
   try{localStorage.setItem('exeg-hide-dividers', hidden?'1':'0');}catch(e){}
-  document.getElementById('tb-tgl-dividers')?.classList.toggle('tgl-hidden', hidden);
+  document.getElementById('tb-tgl-dividers')?.classList.toggle('tgl-on', !hidden);
 }
 function toggleDgTransVisible(){
   const hidden=document.body.classList.toggle('dg-hide-trans');
   try{localStorage.setItem('exeg-hide-dgtrans', hidden?'1':'0');}catch(e){}
-  document.getElementById('tb-tgl-dgtrans')?.classList.toggle('tgl-hidden', hidden);
+  document.getElementById('tb-tgl-dgtrans')?.classList.toggle('tgl-on', !hidden);
 }
 function restoreViewToggles(){
   try{
     if(localStorage.getItem('exeg-hide-dividers')==='1'){
       document.body.classList.add('hide-dividers');
-      document.getElementById('tb-tgl-dividers')?.classList.add('tgl-hidden');
+      document.getElementById('tb-tgl-dividers')?.classList.remove('tgl-on');
     }
     if(localStorage.getItem('exeg-hide-dgtrans')==='1'){
       document.body.classList.add('dg-hide-trans');
-      document.getElementById('tb-tgl-dgtrans')?.classList.add('tgl-hidden');
+      document.getElementById('tb-tgl-dgtrans')?.classList.remove('tgl-on');
     }
   }catch(e){}
 }
@@ -8576,7 +8576,11 @@ const _PASTE_KEEP_TAGS = new Set(['b','strong','i','em','u','s','strike','sup','
 /* Block tags to convert to <div> (for line-break detection) */
 const _PASTE_BLOCK_TAGS = new Set(['p','div','li','tr','td','th','h1','h2','h3','h4','h5','h6','blockquote','dd','dt']);
 /* Safe CSS properties to allow through on style= attributes */
-const _PASTE_SAFE_STYLES = new Set(['color','background-color','font-weight','font-style','text-decoration','font-size','vertical-align']);
+/* Note: background-color is deliberately NOT allowed through — source
+   apps (Logos, BibleArc, Word) often wrap lines in spans carrying page
+   background tints, which would wash whole rows gray against the app's
+   cream cells. Font colors, weights, and styles still come through. */
+const _PASTE_SAFE_STYLES = new Set(['color','font-weight','font-style','text-decoration','font-size','vertical-align']);
 
 function _sanitizePasteHTML(rawHTML){
   // Parse into a document fragment via DOMParser (safe — doesn't execute scripts)
