@@ -4333,3 +4333,6 @@ body.dg-hide-trans .dblock-trans{display:none}
 .fsz-val{font-family:var(--ui);font-size:11px;color:var(--ink);min-width:34px;text-align:center;user-select:none}
 #fsz-popover .tbtn{width:26px;height:26px;color:var(--ink)}
 #fsz-popover .tbtn:hover{background:rgba(73,53,72,.1)}
+
+/* ── Screen 2 paste box follows session direction — added 202607221330 ── */
+#paste-ta.rtl{direction:rtl;text-align:right}

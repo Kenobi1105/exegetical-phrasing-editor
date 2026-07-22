@@ -9,7 +9,8 @@ let SESS='', LANG='', IS_RTL=false, IS_SINGLE=false;
 // the session's default every time a session/project is (re)loaded,
 // same philosophy as the Phrasing/Diagram view toggles.
 let CEDIT_O_SIZE=14, CEDIT_T_SIZE=14;
-const FSZ_MIN=8, FSZ_MAX=40, FSZ_STEP=2;
+let DEFAULT_O_SIZE=14, DEFAULT_T_SIZE=14; // this session's reset targets
+const FSZ_MIN=8, FSZ_MAX=40, FSZ_STEP=1;
 // NOTE: sessionVersionLabel is declared in bible.js as a shared global.
 // Do not redeclare it here with let/var — that would throw a SyntaxError
 // when both scripts are loaded in the same non-module scope.
@@ -63,7 +64,7 @@ let LBL=0; // floating label ID counter
 let SELECTED_CNX_ID=null;
 let DIAGRAM_ZOOM=100;
 const DIAGRAM_ZOOM_MIN=50, DIAGRAM_ZOOM_MAX=200, DIAGRAM_ZOOM_STEP=10;
-let DIAGRAM_FONT_SIZE=16; // px — default larger than the original 14px
+let DIAGRAM_FONT_SIZE=18; // px — default larger than the original 14px
 const DIAGRAM_FONT_MIN=10, DIAGRAM_FONT_MAX=28, DIAGRAM_FONT_STEP=1;
 
 /* ── Annotations ──
@@ -108,6 +109,11 @@ function chooseLang(lang,customLabel,cuvVersion){
   if(cuvVersion) window._cuvVersion=cuvVersion; else window._cuvVersion=null;
   SESS=lang; IS_RTL=lang==='hebrew'; IS_SINGLE=lang==='custom';
   _applySessionFontDefaults();
+  // Match the Screen 2 paste box's direction to the chosen session, so
+  // pasted bidi text (e.g. Hebrew with embedded [TM ... TM] markers)
+  // keeps its logical order instead of the browser's default LTR bidi
+  // algorithm visually reversing embedded LTR runs inside RTL text.
+  document.getElementById('paste-ta')?.classList.toggle('rtl', IS_RTL);
   LANG=lang==='greek'?'Greek':lang==='hebrew'?'Hebrew':(customLabel||'Custom');
   const prefix=typeof t==='function'?t('s2.add-passage-prefix'):'Add your ';
   const suffix=typeof t==='function'?t('s2.add-passage-suffix'):' passage';
@@ -388,14 +394,14 @@ function cModalCancel(){
    Called from every place SESS is established: choosing a language on
    Screen 1, and every project/JSON load path. */
 function _applySessionFontDefaults(){
-  CEDIT_O_SIZE = (SESS==='hebrew') ? 18 : 14;
-  CEDIT_T_SIZE = 14;
+  CEDIT_O_SIZE = DEFAULT_O_SIZE = (SESS==='hebrew') ? 18 : 14;
+  CEDIT_T_SIZE = DEFAULT_T_SIZE = 14;
   document.documentElement.style.setProperty('--cedit-o-size', CEDIT_O_SIZE+'px');
   document.documentElement.style.setProperty('--cedit-t-size', CEDIT_T_SIZE+'px');
   document.querySelectorAll('[id^="oc-"] .cedit').forEach(c=>{ c.style.fontSize=CEDIT_O_SIZE+'px'; });
   document.querySelectorAll('[id^="tc-"] .cedit').forEach(c=>{ c.style.fontSize=CEDIT_T_SIZE+'px'; });
   const ot=document.getElementById('phrasing-sz-txt'); if(ot) ot.textContent=CEDIT_O_SIZE+'px';
-  if(typeof setDiagramFontSize==='function') setDiagramFontSize(SESS==='hebrew' ? 18 : 16);
+  if(typeof setDiagramFontSize==='function') setDiagramFontSize(18);
   _updatePhrasingSizeGrpVisibility();
 }
 /* Shows the single unsplit -/+ stepper for Chinese/Custom sessions, or the
@@ -3099,6 +3105,24 @@ function _stepTransSize(delta){
 }
 function _stepBothSize(delta){
   const prev=CEDIT_O_SIZE, next=Math.max(FSZ_MIN,Math.min(FSZ_MAX,prev+delta));
+  if(next===prev) return;
+  _applyBothSize(next);
+  rowPush({type:'fsz-both', prev, next});
+}
+function _resetOrigSize(){
+  const prev=CEDIT_O_SIZE, next=DEFAULT_O_SIZE;
+  if(next===prev) return;
+  _applyOrigSize(next);
+  rowPush({type:'fsz-orig', prev, next});
+}
+function _resetTransSize(){
+  const prev=CEDIT_T_SIZE, next=DEFAULT_T_SIZE;
+  if(next===prev) return;
+  _applyTransSize(next);
+  rowPush({type:'fsz-trans', prev, next});
+}
+function _resetBothSize(){
+  const prev=CEDIT_O_SIZE, next=DEFAULT_O_SIZE;
   if(next===prev) return;
   _applyBothSize(next);
   rowPush({type:'fsz-both', prev, next});

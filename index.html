@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607221300"/>
+<meta name="app-version" content="202607221330"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -291,7 +291,7 @@
       <div class="tsep" id="phrasing-fmt-sep1"></div>
       <div class="tg" id="phrasing-sz-grp">
         <button class="tbtn" data-i18n-title="toolbar.fsize-dec" title="Decrease font size" onclick="bothFontDec()" style="font-size:16px;font-weight:700;line-height:1">−</button>
-        <span id="phrasing-sz-txt" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:34px;padding:0 4px;text-align:center;user-select:none">14px</span>
+        <span id="phrasing-sz-txt" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:34px;padding:0 4px;text-align:center;user-select:none;cursor:pointer" data-i18n-title="toolbar.fsize-reset" title="Reset to default size" onclick="_resetBothSize()">14px</span>
         <button class="tbtn" data-i18n-title="toolbar.fsize-inc" title="Increase font size" onclick="bothFontInc()" style="font-size:16px;font-weight:700;line-height:1">+</button>
       </div>
       <div class="tg" id="phrasing-sz-split-grp" style="display:none">
@@ -323,7 +323,7 @@
       </div>
       <div class="tg" id="dfont-grp" style="display:none">
         <button class="tbtn" title="Decrease diagram font size" onclick="diagramFontDec()" style="font-size:16px;font-weight:700;line-height:1;">−</button>
-        <span id="dfont-sz" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:34px;padding:0 4px;text-align:center;user-select:none;cursor:pointer" title="Reset font size to 16px" onclick="setDiagramFontSize(16)">16px</span>
+        <span id="dfont-sz" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:34px;padding:0 4px;text-align:center;user-select:none;cursor:pointer" title="Reset font size to 18px" onclick="setDiagramFontSize(18)">18px</span>
         <button class="tbtn" title="Increase diagram font size" onclick="diagramFontInc()" style="font-size:16px;font-weight:700;line-height:1;">+</button>
       </div>
       <div class="tsep" id="dlabel-sep" style="display:none"></div>
@@ -830,13 +830,13 @@
   <div class="fsz-row">
     <span id="fsz-orig-lbl" class="fsz-lbl">Hebrew</span>
     <button class="tbtn" data-i18n-title="toolbar.fsize-dec" title="Decrease font size" onclick="origFontDec()">−</button>
-    <span id="fsz-orig-txt" class="fsz-val">18px</span>
+    <span id="fsz-orig-txt" class="fsz-val" style="cursor:pointer" data-i18n-title="toolbar.fsize-reset" title="Reset to default size" onclick="_resetOrigSize()">18px</span>
     <button class="tbtn" data-i18n-title="toolbar.fsize-inc" title="Increase font size" onclick="origFontInc()">+</button>
   </div>
   <div class="fsz-row">
     <span class="fsz-lbl" data-i18n="toolbar.trans-size">Translation</span>
     <button class="tbtn" data-i18n-title="toolbar.fsize-dec" title="Decrease font size" onclick="transFontDec()">−</button>
-    <span id="fsz-trans-txt" class="fsz-val">14px</span>
+    <span id="fsz-trans-txt" class="fsz-val" style="cursor:pointer" data-i18n-title="toolbar.fsize-reset" title="Reset to default size" onclick="_resetTransSize()">14px</span>
     <button class="tbtn" data-i18n-title="toolbar.fsize-inc" title="Increase font size" onclick="transFontInc()">+</button>
   </div>
 </div>
