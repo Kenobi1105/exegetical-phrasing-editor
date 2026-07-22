@@ -8852,6 +8852,7 @@ const _LOGOS_PUA_MAP = {
   0xE91F: '👥',   // group/plural participant marker
   0xE91B: '💬',   // speech box / direct speech marker
   0xE91A: '🕐',   // clock / temporal marker
+  0xE916: '📢',   // redundant quotative frame marker
 };
 
 function _substitutePUAChars(el){
@@ -8919,6 +8920,7 @@ const DISC_MARK_KEYS={
   '+':'disc-add',              '☉':'disc-target',
   '→':'disc-ref',         '💬':'disc-meta',
   '🕐':'disc-hp',      '!':'disc-attn',
+  '📢':'disc-rqf',
 };
 /* One combined matcher, longest alternatives first:
    • frame markers [TM/TM] [TP/TP] [CP/CP] [CD/CD] [LD/LD] [SP/SP]
@@ -8928,8 +8930,8 @@ const DISC_MARK_KEYS={
    • NA28 apparatus signs, absorbing immediately-attached numerals (°1, ˸2) */
 const _CRIT_RE=new RegExp(
   '\\[(?:TM|TP|CP|CD|LD|SP)|(?:TM|TP|CP|CD|LD|SP)\\]'+
-  '|‹[✓✕👤👥+☉→💬🕐!]'+
-  '|[✓✕👤👥+☉→💬🕐!]›'+
+  '|‹[✓✕👤👥+☉→💬🕐!📢]'+
+  '|[✓✕👤👥+☉→💬🕐!📢]›'+
   '|[‶″]'+
   '|[°⸀⸁⸂⸃⸄⸅⸆⸇⸈⸉⸊⸋⸌⸍⸓˸*](?:[⁰-⁹¹²³]|\\d)*',
   'gu');
@@ -9138,16 +9140,23 @@ document.addEventListener('DOMContentLoaded',()=>{
       // Lexham Discourse GREEK New Testament and doesn't necessarily hold
       // for Hebrew usage of the same bracket notation, so the popup only
       // appears in Greek sessions. The marks themselves stay colored and
-      // bidi-isolated in every language \u2014 only the English glossary text
+      // bidi-isolated in every language — only the English glossary text
       // is Greek-specific and gated here.
       if(SESS!=='greek'){ critTip.classList.remove('show'); return; }
       const key=mk.dataset.crit||'';
       const txt=(typeof t==='function'?t('crit.'+key):'')||'';
       if(!txt||txt==='crit.'+key){critTip.classList.remove('show');return;}
-      critTip.classList.remove('wide');
-      critTip.textContent=txt;
+      const srcLine=(typeof t==='function'?t('crit.source'):'')||'';
+      critTip.classList.add('wide');
+      critTip.textContent='';
+      const d1=document.createElement('div'); d1.className='crit-tip-desc'; d1.textContent=txt;
+      critTip.appendChild(d1);
+      if(srcLine&&srcLine!=='crit.source'){
+        const d2=document.createElement('div'); d2.className='crit-tip-src'; d2.textContent=srcLine;
+        critTip.appendChild(d2);
+      }
       const r=mk.getBoundingClientRect();
-      critTip.style.left=Math.max(8, Math.min(window.innerWidth-268, r.left))+'px';
+      critTip.style.left=Math.max(8, Math.min(window.innerWidth-378, r.left))+'px';
       critTip.style.top=(r.bottom+8)+'px';
       critTip.classList.add('show');
       return;

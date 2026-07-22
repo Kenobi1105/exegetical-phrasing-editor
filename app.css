@@ -4309,6 +4309,7 @@ body.brk-locked .dbrk-pip:hover {
 body.hide-dividers .ann-divider{display:none}
 body.dg-hide-trans .dblock-trans{display:none}
 .tbtn.tgl-hidden svg{opacity:.35}
+.crit-tip-desc{white-space:pre-line}
 
 /* ── S2 field alignment + switch-style view toggles — added 202607221100 ── */
 #s2-title-label,#s2-version-label{width:118px;flex:none;text-align:right}
