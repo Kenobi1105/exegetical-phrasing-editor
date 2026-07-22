@@ -4326,3 +4326,10 @@ body.dg-hide-trans .dblock-trans{display:none}
 #crit-tip.wide{max-width:370px}
 .crit-tip-src{margin-top:6px;font-style:italic;opacity:.75;font-size:11px}
 .ann-divider{cursor:help}
+
+/* ── Split font-size popover (Hebrew/Greek Original + Translation) — added 202607221300 ── */
+.fsz-row{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.fsz-lbl{font-family:var(--ui);font-size:11px;color:var(--muted);min-width:64px}
+.fsz-val{font-family:var(--ui);font-size:11px;color:var(--ink);min-width:34px;text-align:center;user-select:none}
+#fsz-popover .tbtn{width:26px;height:26px;color:var(--ink)}
+#fsz-popover .tbtn:hover{background:rgba(73,53,72,.1)}

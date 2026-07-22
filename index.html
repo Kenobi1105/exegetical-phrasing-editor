@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607221230"/>
+<meta name="app-version" content="202607221300"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -290,12 +290,14 @@
       </div>
       <div class="tsep" id="phrasing-fmt-sep1"></div>
       <div class="tg" id="phrasing-sz-grp">
-        <select class="tsel" id="tb-sz" onchange="applySize(this.value)" data-i18n-title="toolbar.size" title="Font size">
-          <option value="" disabled data-i18n="toolbar.size">Size</option>
-          <option>10</option><option>11</option><option>12</option><option>13</option>
-          <option selected>14</option><option>16</option><option>18</option><option>20</option>
-          <option>24</option><option>28</option><option>32</option>
-        </select>
+        <button class="tbtn" data-i18n-title="toolbar.fsize-dec" title="Decrease font size" onclick="bothFontDec()" style="font-size:16px;font-weight:700;line-height:1">−</button>
+        <span id="phrasing-sz-txt" style="display:inline-block;font-family:var(--ui);font-size:11px;color:var(--label);min-width:34px;padding:0 4px;text-align:center;user-select:none">14px</span>
+        <button class="tbtn" data-i18n-title="toolbar.fsize-inc" title="Increase font size" onclick="bothFontInc()" style="font-size:16px;font-weight:700;line-height:1">+</button>
+      </div>
+      <div class="tg" id="phrasing-sz-split-grp" style="display:none">
+        <button class="tbtn" id="tb-sz-split-btn" data-i18n-title="toolbar.size" title="Font size" onclick="toggleFontSizePopup(this)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7V5h12v2M10 5v14M7 19h6"/><path d="M16 12h5M18.5 9.5v5"/></svg>
+        </button>
       </div>
       <div class="tsep" id="phrasing-fmt-sep2"></div>
       <div class="tg" id="phrasing-color-grp">
@@ -824,6 +826,21 @@
 </div>
 
 <!-- ══ SHARED TWO-LAYER COLOR PALETTE POPOVER (Highlight + Line Color) ══ -->
+<div id="fsz-popover" class="cpp" style="display:none">
+  <div class="fsz-row">
+    <span id="fsz-orig-lbl" class="fsz-lbl">Hebrew</span>
+    <button class="tbtn" data-i18n-title="toolbar.fsize-dec" title="Decrease font size" onclick="origFontDec()">−</button>
+    <span id="fsz-orig-txt" class="fsz-val">18px</span>
+    <button class="tbtn" data-i18n-title="toolbar.fsize-inc" title="Increase font size" onclick="origFontInc()">+</button>
+  </div>
+  <div class="fsz-row">
+    <span class="fsz-lbl" data-i18n="toolbar.trans-size">Translation</span>
+    <button class="tbtn" data-i18n-title="toolbar.fsize-dec" title="Decrease font size" onclick="transFontDec()">−</button>
+    <span id="fsz-trans-txt" class="fsz-val">14px</span>
+    <button class="tbtn" data-i18n-title="toolbar.fsize-inc" title="Increase font size" onclick="transFontInc()">+</button>
+  </div>
+</div>
+
 <div id="color-palette-popover" class="cpp" style="display:none">
   <div class="cpp-row" id="cpp-preset-row"></div>
   <div class="cpp-divider"></div>

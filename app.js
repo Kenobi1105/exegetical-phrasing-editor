@@ -2,6 +2,14 @@
    STATE
 ════════════════════════════════════════ */
 let SESS='', LANG='', IS_RTL=false, IS_SINGLE=false;
+// Per-column Phrasing font sizes (px). Hebrew sessions default the
+// original-text column larger (18) since Hebrew glyphs read smaller
+// than Latin translation text at the same nominal size; translation
+// stays at the normal default. Not persisted per-project — resets to
+// the session's default every time a session/project is (re)loaded,
+// same philosophy as the Phrasing/Diagram view toggles.
+let CEDIT_O_SIZE=14, CEDIT_T_SIZE=14;
+const FSZ_MIN=8, FSZ_MAX=40, FSZ_STEP=2;
 // NOTE: sessionVersionLabel is declared in bible.js as a shared global.
 // Do not redeclare it here with let/var — that would throw a SyntaxError
 // when both scripts are loaded in the same non-module scope.
@@ -99,6 +107,7 @@ let _bracketJustDragged=false; // suppresses click-after-handle-drag on bracket 
 function chooseLang(lang,customLabel,cuvVersion){
   if(cuvVersion) window._cuvVersion=cuvVersion; else window._cuvVersion=null;
   SESS=lang; IS_RTL=lang==='hebrew'; IS_SINGLE=lang==='custom';
+  _applySessionFontDefaults();
   LANG=lang==='greek'?'Greek':lang==='hebrew'?'Hebrew':(customLabel||'Custom');
   const prefix=typeof t==='function'?t('s2.add-passage-prefix'):'Add your ';
   const suffix=typeof t==='function'?t('s2.add-passage-suffix'):' passage';
@@ -251,19 +260,28 @@ function parsePasteIntoRows(div){
        numerals (˸1, °2) out. */
     let currentVerse='';
     for(const el of lineEls){
-      const plainText=el.innerText||el.textContent||'';
-      const trimmedText=plainText.trimStart();
-      if(!trimmedText) continue; // skip blank lines
+      const tcPlain=el.textContent||'';
+      if(!tcPlain.trim()) continue; // skip blank lines
 
+      // Detect a verse reference at the very start of the line. Three
+      // forms, same as the outline path, checked in order:
+      //   book chapter:verse  (Ge 1:1)  → verse = vs, book+chapter dropped
+      //   chapter:verse       (2:1)     → verse = vs, chapter dropped
+      //   bare verse          (3)       → verse = the number
+      // Matched against textContent (not innerText) so the offset fed to
+      // stripLeadingVerseFromHTML always agrees with what it actually walks.
       let html=el.innerHTML.trim();
-      // Detect verse number at the very start of plain text
       let lineVerse='';
-      const m=trimmedText.match(/^(\d+)\s+/);
+      let m=tcPlain.match(/^\s*((?:[1-3]\s?)?[A-Za-z]+\.?)\s*(\d+):(\d+)\s+/);
       if(m){
-        currentVerse=m[1];
-        lineVerse=m[1];
-        const leadingSpaces=plainText.length - plainText.trimStart().length;
-        html=stripLeadingVerseFromHTML(el, leadingSpaces + m[0].length);
+        currentVerse=m[3]; lineVerse=m[3];
+        html=stripLeadingVerseFromHTML(el, m[0].length);
+      } else if((m=tcPlain.match(/^\s*(\d+):(\d+)\s+/))){
+        currentVerse=m[2]; lineVerse=m[2];
+        html=stripLeadingVerseFromHTML(el, m[0].length);
+      } else if((m=tcPlain.match(/^\s*(\d+)\s+/))){
+        currentVerse=m[1]; lineVerse=m[1];
+        html=stripLeadingVerseFromHTML(el, m[0].length);
       }
       // Split the remainder at inline ascending verse numbers. Only the
       // segment that STARTS a verse carries the number; continuation
@@ -364,6 +382,32 @@ function cModalCancel(){
 /* ════════════════════════════════════════
    SESSION LABELS (i18n-aware)
 ════════════════════════════════════════ */
+/* Resets Phrasing per-column font sizes and the Diagram font size to this
+   session's defaults, and refreshes which font-size toolbar control is
+   shown (single stepper vs. the Hebrew/Greek split popover trigger).
+   Called from every place SESS is established: choosing a language on
+   Screen 1, and every project/JSON load path. */
+function _applySessionFontDefaults(){
+  CEDIT_O_SIZE = (SESS==='hebrew') ? 18 : 14;
+  CEDIT_T_SIZE = 14;
+  document.documentElement.style.setProperty('--cedit-o-size', CEDIT_O_SIZE+'px');
+  document.documentElement.style.setProperty('--cedit-t-size', CEDIT_T_SIZE+'px');
+  document.querySelectorAll('[id^="oc-"] .cedit').forEach(c=>{ c.style.fontSize=CEDIT_O_SIZE+'px'; });
+  document.querySelectorAll('[id^="tc-"] .cedit').forEach(c=>{ c.style.fontSize=CEDIT_T_SIZE+'px'; });
+  const ot=document.getElementById('phrasing-sz-txt'); if(ot) ot.textContent=CEDIT_O_SIZE+'px';
+  if(typeof setDiagramFontSize==='function') setDiagramFontSize(SESS==='hebrew' ? 18 : 16);
+  _updatePhrasingSizeGrpVisibility();
+}
+/* Shows the single unsplit -/+ stepper for Chinese/Custom sessions, or the
+   split (Original + Translation) popover trigger for Hebrew/Greek — only
+   ever in Phrasing view. Called on view switch AND on session change. */
+function _updatePhrasingSizeGrpVisibility(){
+  const isPhrasing=typeof EDITOR_VIEW==='undefined' || EDITOR_VIEW==='phrasing';
+  const split=SESS==='hebrew'||SESS==='greek';
+  document.getElementById('phrasing-sz-grp')?.style.setProperty('display', (isPhrasing&&!split)?'flex':'none');
+  document.getElementById('phrasing-sz-split-grp')?.style.setProperty('display', (isPhrasing&&split)?'flex':'none');
+}
+
 function _applySessionLabels(){
   const isChinese=typeof LANG_UI!=='undefined'&&LANG_UI==='zh';
   let sessLabel,origLabel;
@@ -481,11 +525,9 @@ function makeRowEl(rid,verse,origHTML,transHTML,cmtId){
   if(oc&&origHTML) oc.innerHTML=origHTML;
   const tc=el.querySelector(`#tc-${rid} .cedit`);
   if(tc&&transHTML) tc.innerHTML=transHTML;
-  // Apply current global font size to new cells
-  const globalSize=getComputedStyle(document.documentElement).getPropertyValue('--cedit-size').trim();
-  if(globalSize){
-    el.querySelectorAll('.cedit').forEach(c=>{ c.style.fontSize=globalSize; });
-  }
+  // Apply the current per-column font sizes to new cells
+  if(oc) oc.style.fontSize=CEDIT_O_SIZE+'px';
+  if(tc) tc.style.fontSize=CEDIT_T_SIZE+'px';
   return el;
 }
 
@@ -554,9 +596,10 @@ function setEditorView(view){
   document.getElementById('dzoom-sep')?.style.setProperty('display',isDiagram?'':'none');
   // Phrasing-only formatting controls (font size, text colour, indent/outdent)
   const phrasingFmt=isPhrasing?'':'none';
-  ['phrasing-sz-grp','phrasing-color-grp','phrasing-indent-grp',
+  ['phrasing-color-grp','phrasing-indent-grp',
    'phrasing-fmt-sep1','phrasing-fmt-sep2','phrasing-fmt-sep3']
     .forEach(id=>document.getElementById(id)?.style.setProperty('display',phrasingFmt));
+  _updatePhrasingSizeGrpVisibility();
   document.getElementById('dzoom-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dfont-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('dlabel-sep')?.style.setProperty('display',isDiagram?'':'none');
@@ -2603,6 +2646,9 @@ function applyRowUndo(op){
   if(typeof _annApplyUndo==='function' && _annApplyUndo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.prev); return; }
   if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.prev); return; }
+  if(op.type==='fsz-orig'){ _applyOrigSize(op.prev); return; }
+  if(op.type==='fsz-trans'){ _applyTransSize(op.prev); return; }
+  if(op.type==='fsz-both'){ _applyBothSize(op.prev); return; }
   if(op.type==='indent'){
     // Re-query the cell from the DOM (op.el reference may be stale)
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
@@ -2757,6 +2803,9 @@ function applyRowRedo(op){
   if(typeof _annApplyRedo==='function' && _annApplyRedo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.next); return; }
   if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.next); return; }
+  if(op.type==='fsz-orig'){ _applyOrigSize(op.next); return; }
+  if(op.type==='fsz-trans'){ _applyTransSize(op.next); return; }
+  if(op.type==='fsz-both'){ _applyBothSize(op.next); return; }
   if(op.type==='indent'){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     const ce=row?row.querySelector('.cedit[data-indent]')||row.querySelector('.cedit'):op.el;
@@ -3005,33 +3054,89 @@ function fmtCmd(cmd,val){
   // and break the feature. The carry-forward suppression only applies
   // in undo() where we want to clear stale pending state.
 }
-function applySize(size){
-  if(size){const sel=document.getElementById('tb-sz');if(sel)sel.value=size;}
-  if(!size) return;
-  const px=parseInt(size);
-  if(isNaN(px)) return;
-
-  // 1. Apply to active selection (rich formatting on selected text)
-  if(activeEl && window.getSelection && !window.getSelection().isCollapsed){
-    ensureFocus();
-    document.execCommand('fontSize',false,'7');
-    const cont=activeEl||document.body;
-    cont.querySelectorAll('font[size="7"]').forEach(f=>{
-      const s=document.createElement('span');s.style.fontSize=px+'px';
-      while(f.firstChild)s.appendChild(f.firstChild);
-      f.parentNode.replaceChild(s,f);
-    });
-  }
-
-  // 2. Universal: update the base CSS variable so ALL canvas cells resize.
-  //    Col 1 (vin) and Col 2 (lid) are NOT cedit — they are unaffected.
-  document.querySelectorAll('.cedit').forEach(el=>{
-    el.style.fontSize=px+'px';
-  });
-  // Also persist so new rows pick it up
-  document.documentElement.style.setProperty('--cedit-size', px+'px');
-
+/* ── Phrasing font-size controls ──────────────────────────────────────
+   Three independent step functions:
+   • _stepOrigSize / _stepTransSize — Hebrew & Greek sessions, via the
+     split popover (one column at a time)
+   • _stepBothSize — Chinese & Custom sessions, via the single toolbar
+     stepper (both columns move together, matching the old unified
+     behaviour minus the removed per-selection sizing)
+   Each pushes a ROW_STACK op so Ctrl+Z / Ctrl+Y step through size changes
+   exactly like any other editor action (see applyRowUndo/applyRowRedo). */
+function _applyOrigSize(px){
+  CEDIT_O_SIZE=px;
+  document.documentElement.style.setProperty('--cedit-o-size', px+'px');
+  document.querySelectorAll('[id^="oc-"] .cedit').forEach(c=>{ c.style.fontSize=px+'px'; });
+  const t1=document.getElementById('fsz-orig-txt'); if(t1) t1.textContent=px+'px';
   autoSave();
+}
+function _applyTransSize(px){
+  CEDIT_T_SIZE=px;
+  document.documentElement.style.setProperty('--cedit-t-size', px+'px');
+  document.querySelectorAll('[id^="tc-"] .cedit').forEach(c=>{ c.style.fontSize=px+'px'; });
+  const t2=document.getElementById('fsz-trans-txt'); if(t2) t2.textContent=px+'px';
+  autoSave();
+}
+function _applyBothSize(px){
+  CEDIT_O_SIZE=px; CEDIT_T_SIZE=px;
+  document.documentElement.style.setProperty('--cedit-o-size', px+'px');
+  document.documentElement.style.setProperty('--cedit-t-size', px+'px');
+  document.querySelectorAll('.cedit').forEach(c=>{ c.style.fontSize=px+'px'; });
+  const t3=document.getElementById('phrasing-sz-txt'); if(t3) t3.textContent=px+'px';
+  autoSave();
+}
+function _stepOrigSize(delta){
+  const prev=CEDIT_O_SIZE, next=Math.max(FSZ_MIN,Math.min(FSZ_MAX,prev+delta));
+  if(next===prev) return;
+  _applyOrigSize(next);
+  rowPush({type:'fsz-orig', prev, next});
+}
+function _stepTransSize(delta){
+  const prev=CEDIT_T_SIZE, next=Math.max(FSZ_MIN,Math.min(FSZ_MAX,prev+delta));
+  if(next===prev) return;
+  _applyTransSize(next);
+  rowPush({type:'fsz-trans', prev, next});
+}
+function _stepBothSize(delta){
+  const prev=CEDIT_O_SIZE, next=Math.max(FSZ_MIN,Math.min(FSZ_MAX,prev+delta));
+  if(next===prev) return;
+  _applyBothSize(next);
+  rowPush({type:'fsz-both', prev, next});
+}
+function origFontInc(){ _stepOrigSize(FSZ_STEP); }
+function origFontDec(){ _stepOrigSize(-FSZ_STEP); }
+function transFontInc(){ _stepTransSize(FSZ_STEP); }
+function transFontDec(){ _stepTransSize(-FSZ_STEP); }
+function bothFontInc(){ _stepBothSize(FSZ_STEP); }
+function bothFontDec(){ _stepBothSize(-FSZ_STEP); }
+
+/* Split font-size popover (Hebrew/Greek sessions only) */
+function toggleFontSizePopup(triggerEl){
+  const pop=document.getElementById('fsz-popover');
+  if(!pop) return;
+  if(pop.style.display!=='none'){ closeFontSizePopup(); return; }
+  if(typeof closeColorPalette==='function') closeColorPalette();
+  const lbl=document.getElementById('fsz-orig-lbl');
+  if(lbl) lbl.textContent=(typeof t==='function') ? t(SESS==='hebrew'?'toolbar.fsize-hebrew':'toolbar.fsize-greek') : (SESS==='hebrew'?'Hebrew':'Greek');
+  const t1=document.getElementById('fsz-orig-txt'); if(t1) t1.textContent=CEDIT_O_SIZE+'px';
+  const t2=document.getElementById('fsz-trans-txt'); if(t2) t2.textContent=CEDIT_T_SIZE+'px';
+  pop.style.display='flex';
+  const r=triggerEl.getBoundingClientRect();
+  const pw=pop.offsetWidth||190, ph=pop.offsetHeight||96;
+  let left=Math.max(8, Math.min(window.innerWidth-pw-8, r.left));
+  let top=r.bottom+6;
+  if(top+ph>window.innerHeight-8) top=r.top-ph-6;
+  pop.style.left=left+'px'; pop.style.top=Math.max(8,top)+'px';
+  setTimeout(()=>{ document.addEventListener('mousedown', _fszOutsideClick); },0);
+}
+function _fszOutsideClick(e){
+  const pop=document.getElementById('fsz-popover');
+  if(pop && !pop.contains(e.target) && !e.target.closest('#tb-sz-split-btn')) closeFontSizePopup();
+}
+function closeFontSizePopup(){
+  const pop=document.getElementById('fsz-popover');
+  if(pop) pop.style.display='none';
+  document.removeEventListener('mousedown', _fszOutsideClick);
 }
 /* ── Inline-format undo snapshot ──────────────────────────────────────
    Saves the innerHTML of the active cell before a highlight apply or
@@ -3520,6 +3625,8 @@ document.addEventListener('keydown',function(e){
   if(expPopup&&expPopup.classList.contains('show')){e.preventDefault();expPopup.classList.remove('show');return;}
   var cpp=document.getElementById('color-palette-popover');
   if(cpp&&cpp.style.display!=='none'){e.preventDefault();if(typeof closeColorPalette==='function')closeColorPalette();return;}
+  var fszp=document.getElementById('fsz-popover');
+  if(fszp&&fszp.style.display!=='none'){e.preventDefault();if(typeof closeFontSizePopup==='function')closeFontSizePopup();return;}
   var cep=document.getElementById('conn-edit-popup');
   if(cep&&cep.style.display!=='none'){e.preventDefault();if(typeof closeConnEditPopup==='function')closeConnEditPopup();return;}
 });
@@ -3942,6 +4049,7 @@ function projLoad(id){
     // Restore session language
     if(data.lang){
       SESS=data.lang;IS_RTL=data.isRTL||false;IS_SINGLE=data.isSingle||false;
+      _applySessionFontDefaults();
       LANG=data.langLabel||(SESS==='greek'?'Greek':SESS==='hebrew'?'Hebrew':'Custom');
     }
     // Always navigate to editor (even if called from Screen 1)
@@ -4880,6 +4988,7 @@ function loadFile(e){
       const data=JSON.parse(ev.target.result);
       if(data.lang&&data.lang!==SESS){
         SESS=data.lang;IS_RTL=data.isRTL||false;IS_SINGLE=data.isSingle||false;
+      _applySessionFontDefaults();
         LANG=data.langLabel||(SESS==='greek'?'Greek':SESS==='hebrew'?'Hebrew':'Custom');
         document.getElementById('sess-lbl').textContent=LANG+' Session';
         document.getElementById('ch-o-lbl').textContent=IS_SINGLE?LANG:LANG+' Text';
@@ -4904,6 +5013,7 @@ function loadFromScreen1(e){
       const lang=data.lang||'greek';
       const customLabel=data.langLabel||'';
       SESS=lang;IS_RTL=lang==='hebrew';IS_SINGLE=lang==='custom';
+      _applySessionFontDefaults();
       LANG=lang==='greek'?'Greek':lang==='hebrew'?'Hebrew':(customLabel||'Custom');
       document.getElementById('s1').classList.add('hidden');
       document.getElementById('s2').classList.add('hidden');

@@ -166,6 +166,11 @@ const LANGS = {
     'toolbar.highlight':   'Highlight (Ctrl+Alt+H)',
     'toolbar.hl-remove':   'Remove highlight',
     'toolbar.size':        'Size',
+    'toolbar.fsize-dec':   'Decrease font size',
+    'toolbar.fsize-inc':   'Increase font size',
+    'toolbar.fsize-hebrew':'Hebrew',
+    'toolbar.fsize-greek': 'Greek',
+    'toolbar.trans-size':  'Translation',
     'toolbar.text-color':  'Text color',
     'toolbar.indent':      'Indent (Tab)',
     'toolbar.outdent':     'Outdent (Shift+Tab)',
@@ -563,6 +568,11 @@ const LANGS = {
     'toolbar.highlight':   '高亮 (Ctrl+Alt+H)',
     'toolbar.hl-remove':   '取消高亮',
     'toolbar.size':        '字号',
+    'toolbar.fsize-dec':   '减小字号',
+    'toolbar.fsize-inc':   '增大字号',
+    'toolbar.fsize-hebrew':'希伯来文',
+    'toolbar.fsize-greek': '希腊文',
+    'toolbar.trans-size':  '译文',
     'toolbar.text-color':  '文字颜色',
     'toolbar.indent':      '增加缩进 (Tab)',
     'toolbar.outdent':     '减少缩进 (Shift+Tab)',
@@ -869,13 +879,6 @@ function applyLang() {
   const stbar = document.getElementById('stbar');
   if (stbar && (stbar.textContent === 'Ready' || stbar.textContent === '就绪')) {
     stbar.textContent = t('stbar.ready');
-  }
-
-  // Update Size dropdown placeholder
-  const tbSz = document.getElementById('tb-sz');
-  if (tbSz) {
-    const disabledOpt = tbSz.querySelector('option[disabled]');
-    if (disabledOpt) disabledOpt.textContent = t('toolbar.size');
   }
 
   // Re-render projects panel if open
