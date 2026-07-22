@@ -109,11 +109,13 @@ function chooseLang(lang,customLabel,cuvVersion){
   if(cuvVersion) window._cuvVersion=cuvVersion; else window._cuvVersion=null;
   SESS=lang; IS_RTL=lang==='hebrew'; IS_SINGLE=lang==='custom';
   _applySessionFontDefaults();
-  // Match the Screen 2 paste box's direction to the chosen session, so
-  // pasted bidi text (e.g. Hebrew with embedded [TM ... TM] markers)
-  // keeps its logical order instead of the browser's default LTR bidi
-  // algorithm visually reversing embedded LTR runs inside RTL text.
-  document.getElementById('paste-ta')?.classList.toggle('rtl', IS_RTL);
+  // dir="auto" lets each pasted line resolve its own base direction from
+  // its first strong character (Unicode's standard heuristic) — a
+  // Hebrew-first line reads RTL, a reference/label-first line reads LTR
+  // — rather than forcing one direction on the whole box, which is what
+  // caused embedded markers like [TM ... TM] to mirror into TM]...[TM.
+  const pta0=document.getElementById('paste-ta');
+  if(pta0) pta0.dir = IS_RTL ? 'auto' : 'ltr';
   LANG=lang==='greek'?'Greek':lang==='hebrew'?'Hebrew':(customLabel||'Custom');
   const prefix=typeof t==='function'?t('s2.add-passage-prefix'):'Add your ';
   const suffix=typeof t==='function'?t('s2.add-passage-suffix'):' passage';
@@ -8967,6 +8969,47 @@ function _markupCriticalSigns(el){
       sp.className='crit-mark'+(key.indexOf('frame-')===0?' crit-frame':'');
       sp.dataset.crit=key;
       sp.textContent=m[0];
+      // dir="ltr" gives the browser's bidi algorithm an explicit isolate for
+      // this token, so it can never mirror its brackets or reorder relative
+      // to surrounding Hebrew/RTL text — the actual fix for the
+      // "[TM ... TM]" -> "TM]...[TM" bug (a blanket container-level
+      // direction:rtl, tried previously, causes exactly that mirroring).
+      sp.dir='ltr';
+      frag.appendChild(sp);
+      last=m.index+m[0].length;
+    }
+    if(last<text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    if(last>0) tn.replaceWith(frag);
+  });
+}
+
+/* Wraps contiguous Latin-letter/digit runs (SENTENCE, "Ge", "1:1", bare
+   verse numbers, ...) in an isolating dir="ltr" span, skipping anything
+   already inside a .crit-mark (which _markupCriticalSigns already
+   isolated). Screen 2 preview only: these tokens are stripped out during
+   import and never reach a saved row, so this is purely cosmetic — it
+   only adds non-content-altering span wrappers, so it can never change
+   what the parser later reads from textContent. */
+function _isolateLatinRunsForPreview(el){
+  const LATIN_RUN_RE=/[A-Za-z0-9][A-Za-z0-9:.\-]*/g;
+  const walker=document.createTreeWalker(el, NodeFilter.SHOW_TEXT, null);
+  const nodes=[];
+  let node;
+  while((node=walker.nextNode())){
+    if(node.parentElement && node.parentElement.closest('.crit-mark, [dir="ltr"]')) continue;
+    if(LATIN_RUN_RE.test(node.textContent)) nodes.push(node);
+    LATIN_RUN_RE.lastIndex=0;
+  }
+  nodes.forEach(tn=>{
+    const text=tn.textContent;
+    const frag=document.createDocumentFragment();
+    let last=0, m;
+    LATIN_RUN_RE.lastIndex=0;
+    while((m=LATIN_RUN_RE.exec(text))){
+      if(m.index>last) frag.appendChild(document.createTextNode(text.slice(last,m.index)));
+      const sp=document.createElement('span');
+      sp.dir='ltr';
+      sp.textContent=m[0];
       frag.appendChild(sp);
       last=m.index+m[0].length;
     }
@@ -9077,6 +9120,10 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
     // Replace Logos PUA glyphs with readable substitutes
     _substitutePUAChars(pasteTA);
+    // Color + bidi-isolate markers and plain Latin tokens so the RTL
+    // preview reads correctly (matches what import will do to the text).
+    _markupCriticalSigns(pasteTA);
+    _isolateLatinRunsForPreview(pasteTA);
   });
   renderS1Recent();
   // ── Critical-mark hover tooltip (one shared element, event delegation) ──
