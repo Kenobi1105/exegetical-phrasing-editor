@@ -6886,15 +6886,23 @@ function _demTokenize(blockEl){
             //     it's nested inside a color/formatting wrapper span.
             //   • opening half (starts with [ or ‹ or is ‶) always belongs
             //     to whatever follows it — sweeps forward normally.
-            //   • a standalone, unpaired sign (*, °, ˸, ♦, ✽, ...) only
-            //     counts as a SUFFIX of the preceding word when it directly
-            //     touches it with no whitespace at all (e.g. "θεοῦ*,");
-            //     otherwise it's a normal prefix of whatever follows.
+            //   • ° and ⸀/⸁ (omit-word, replace-word) are ALSO always
+            //     forward-attaching, per their own NA28 definition ("the
+            //     word FOLLOWING is omitted/replaced") — this holds even
+            //     when the sign sits with NO space on either side (e.g.
+            //     "ζωὴ⸀ἦν"), where it would otherwise look identical to a
+            //     touching-the-preceding-word suffix like "θεοῦ*,".
+            //   • every other standalone, unpaired sign (*, ˸, ♦, ✽, ...)
+            //     only counts as a SUFFIX of the preceding word when it
+            //     directly touches it with no whitespace at all; otherwise
+            //     it's a normal prefix of whatever follows.
             const mk=_effectiveCritMark(prev);
             if(mk){
               const mtxt=mk.textContent||'';
+              const mkey=mk.dataset.crit||'';
               const isClosing = mtxt.endsWith(']') || mtxt.endsWith('›') || mtxt==='″';
-              const isOpening = mtxt.startsWith('[') || mtxt.startsWith('‹') || mtxt==='‶';
+              const isOpening = mtxt.startsWith('[') || mtxt.startsWith('‹') || mtxt==='‶'
+                                 || mkey==='omit-word' || mkey==='replace-word';
               if(isClosing) break;
               if(!isOpening){
                 let n=prev.previousSibling;
@@ -9373,6 +9381,29 @@ function _markupCriticalSigns(el){
     }
     if(last<text.length) frag.appendChild(document.createTextNode(text.slice(last)));
     if(last>0) tn.replaceWith(frag);
+  });
+
+  // Absorb a trailing numeral suffix that RTF/Logos put in its OWN <sup>
+  // element (e.g. "˸" then a separate <sup>1</sup>) into the mark it
+  // belongs to. NA28's own apparatus notes explain these superscript
+  // numerals distinguish multiple occurrences of the same variant kind
+  // within one apparatus unit (e.g. °1/°2, ˸1/˸2) — the numeral is part
+  // of the same sign, but the regex above can only see one text node at
+  // a time, so a numeral living in a sibling element is invisible to it
+  // and would otherwise stay unstyled, plain black text. Only applies to
+  // apparatus signs (not frame/discourse markers, which never take these
+  // numeral suffixes).
+  el.querySelectorAll('.crit-mark').forEach(mk=>{
+    if(mk.classList.contains('crit-frame')) return; // frame markers don't take these
+    const key=mk.dataset.crit||'';
+    if(DISC_MARK_KEYS && Object.values(DISC_MARK_KEYS).includes(key)) return; // nor discourse markers
+    const next=mk.nextSibling;
+    if(next && next.nodeType===Node.ELEMENT_NODE && next.tagName==='SUP' && /^\d+$/.test((next.textContent||'').trim())){
+      const sup=document.createElement('sup');
+      sup.textContent=next.textContent;
+      mk.appendChild(sup);
+      next.remove();
+    }
   });
 }
 
