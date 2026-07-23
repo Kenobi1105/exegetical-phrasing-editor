@@ -9043,8 +9043,14 @@ function _mergeAdjacentRuns(root){
     let child=el.firstChild;
     while(child){
       const next=child.nextSibling;
+      // Only merge INLINE formatting elements (span/b/i/u/sup/sub/...) —
+      // never block-level line wrappers (div/p/li/...). Two sibling line
+      // divs both happen to have zero attributes, which would otherwise
+      // satisfy attrsEqual() trivially and silently fuse separate lines
+      // into one, destroying the outline's line-break structure.
       if(child.nodeType===Node.ELEMENT_NODE && next && next.nodeType===Node.ELEMENT_NODE &&
-         child.tagName===next.tagName && attrsEqual(child,next)){
+         child.tagName===next.tagName && _PASTE_KEEP_TAGS.has(child.tagName.toLowerCase()) &&
+         attrsEqual(child,next)){
         while(next.firstChild) child.appendChild(next.firstChild);
         next.remove();
         continue; // re-check the (now-grown) child against its new next sibling
