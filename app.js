@@ -1609,11 +1609,13 @@ document.addEventListener('keydown', ev=>{
   const canvas=document.getElementById('dcanvas'); if(!canvas) return;
   document.querySelectorAll('#dcanvas .dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
   canvas.classList.add('ann-connector-mode');
+  _setAnnBtnActive('tb-add-connector', true);
 });
 document.addEventListener('keyup', ev=>{
   if(ev.key!=='Control') return;
   if(!_connectorModeActive){
     document.getElementById('dcanvas')?.classList.remove('ann-connector-mode');
+    _setAnnBtnActive('tb-add-connector', false);
   }
 });
 
@@ -1632,7 +1634,20 @@ function _getWordIdx(textEl, targetNode){
 function _wrapBlockTextWords_single(blockEl){
   const textEl=blockEl?.querySelector('.dblock-text');
   if(!textEl||textEl.querySelector('.ann-word')) return; // already wrapped
-  const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT);
+  // Skip <sup> and .crit-mark subtrees — apparatus/discourse markers are
+  // annotation markup, never real "words" that should be independently
+  // draggable connector anchors (matches _demTokenize's same protection).
+  const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, {
+    acceptNode(node){
+      let p=node.parentNode;
+      while(p&&p!==textEl){
+        if(p.nodeName==='SUP') return NodeFilter.FILTER_REJECT;
+        if(p.nodeType===Node.ELEMENT_NODE && p.classList && p.classList.contains('crit-mark')) return NodeFilter.FILTER_REJECT;
+        p=p.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
   const textNodes=[];
   let node;
   while((node=walker.nextNode())) textNodes.push(node);
@@ -6757,12 +6772,15 @@ function _demTokenize(blockEl){
   const textEl=blockEl.querySelector('.dblock-text');
   if(!textEl||textEl.querySelector('.dedit-word')) return;
 
-  /* Phase 1: walk all text nodes (skipping <sup> subtrees) and collect them */
+  /* Phase 1: walk all text nodes (skipping <sup> and .crit-mark subtrees —
+     apparatus/discourse markers are annotation markup, never real "words"
+     that should be independently splittable or connector-anchorable) */
   const walker=document.createTreeWalker(textEl, NodeFilter.SHOW_TEXT, {
     acceptNode(node){
       let p=node.parentNode;
       while(p&&p!==textEl){
         if(p.nodeName==='SUP') return NodeFilter.FILTER_REJECT;
+        if(p.nodeType===Node.ELEMENT_NODE && p.classList && p.classList.contains('crit-mark')) return NodeFilter.FILTER_REJECT;
         p=p.parentNode;
       }
       return NodeFilter.FILTER_ACCEPT;
@@ -6831,6 +6849,30 @@ function _demTokenize(blockEl){
         while(prev){
           if(prev.nodeType===Node.ELEMENT_NODE && (prev.classList.contains('dedit-word')||prev.classList.contains('dedit-sp'))){
             break; // found previous word or marker — group starts at the node after this
+          }
+          // A crit-mark's OWN glyph tells us which side it belongs to:
+          //   • closing half of a pair (ends with ] or › or is ″) always
+          //     belongs to whatever precedes it — never sweeps forward
+          //     onto the next word, no matter how it's spaced ("... TM]"
+          //     conventionally HAS a space before it, so whitespace alone
+          //     can't distinguish this case from a genuine prefix).
+          //   • opening half (starts with [ or ‹ or is ‶) always belongs
+          //     to whatever follows it — sweeps forward normally (the
+          //     existing default behavior for a genuine prefix).
+          //   • a standalone, unpaired sign (*, °, ˸, ♦, ✽, ...) only
+          //     counts as a SUFFIX of the preceding word when it directly
+          //     touches it with no whitespace at all (e.g. "θεοῦ*,");
+          //     otherwise it's a normal prefix of whatever follows.
+          if(prev.nodeType===Node.ELEMENT_NODE && prev.classList.contains('crit-mark')){
+            const mtxt=prev.textContent||'';
+            const isClosing = mtxt.endsWith(']') || mtxt.endsWith('›') || mtxt==='″';
+            const isOpening = mtxt.startsWith('[') || mtxt.startsWith('‹') || mtxt==='‶';
+            if(isClosing) break;
+            if(!isOpening){
+              let n=prev;
+              while(n && n.nodeType===Node.ELEMENT_NODE && n.classList.contains('crit-mark')) n=n.previousSibling;
+              if(n && n.nodeType===Node.ELEMENT_NODE && n.classList.contains('dedit-word')) break;
+            }
           }
           groupStart=prev;
           prev=prev.previousSibling;
@@ -8754,19 +8796,49 @@ const _PASTE_BLOCK_TAGS = new Set(['p','div','li','tr','td','th','h1','h2','h3',
 const _PASTE_SAFE_STYLES = new Set(['color','font-weight','font-style','text-decoration','font-size','vertical-align']);
 
 function _sanitizePasteHTML(rawHTML){
-  // Parse into a document fragment via DOMParser (safe — doesn't execute scripts)
-  const parser=new DOMParser();
-  const doc=parser.parseFromString(rawHTML,'text/html');
-  const body=doc.body;
+  // Resolve colors the way the browser actually would. Logos (and many
+  // rich-text sources) commonly apply color via a CSS class plus an
+  // embedded <style> block rather than an inline style="" on every span.
+  // A DOMParser-based parse never runs style computation, so class-driven
+  // colors were silently lost — only literal inline styles survived.
+  // Fix: briefly attach the raw HTML to the live page (off-screen,
+  // removed before this function returns) so any embedded <style> block
+  // registers normally, read each element's actually-resolved color via
+  // getComputedStyle, and bake it into an inline style attribute — the
+  // existing sanitizeNode walk below then picks it up exactly like any
+  // other inline-styled color, unchanged. innerHTML never executes
+  // <script> tags, so this remains exactly as safe as the previous
+  // DOMParser approach; the container is removed synchronously in the
+  // same tick, before any other code can observe its attached styles.
+  const liveHost=document.createElement('div');
+  liveHost.style.cssText='position:fixed;left:-99999px;top:0;pointer-events:none;';
+  document.body.appendChild(liveHost);
+  liveHost.innerHTML=rawHTML;
 
   // Logos-specific cleanup: remove verse reference spans (usually aria-label or data-ref attrs)
   // and footnote markers before we process
-  body.querySelectorAll('[data-ref],[data-footnote],sup.footnote,sup.versenum.logos,a').forEach(el=>{
+  liveHost.querySelectorAll('[data-ref],[data-footnote],sup.footnote,sup.versenum.logos,a').forEach(el=>{
     // Keep <a> text content but remove the link
     if(el.tagName.toLowerCase()==='a'){
       el.replaceWith(...el.childNodes);
     } else {
       el.remove();
+    }
+  });
+
+  // Bake each element's resolved color into an inline style, but only
+  // where it actually differs from its parent's resolved color — keeps
+  // output clean instead of stamping a redundant color onto every node.
+  // Covers inline style, CSS classes, and legacy <font color> alike,
+  // since computed style resolves all three the same way.
+  liveHost.querySelectorAll('*').forEach(el=>{
+    const own=window.getComputedStyle(el).color;
+    const parentEl=el.parentElement;
+    const parentColor=parentEl?window.getComputedStyle(parentEl).color:null;
+    if(own && own!==parentColor){
+      const existing=el.getAttribute('style')||'';
+      const withoutColor=existing.split(';').filter(d=>!/^\s*color\s*:/i.test(d)).join(';');
+      el.setAttribute('style', (withoutColor?withoutColor+';':'')+'color:'+own);
     }
   });
 
@@ -8829,10 +8901,11 @@ function _sanitizePasteHTML(rawHTML){
   }
 
   const out=document.createElement('div');
-  Array.from(body.childNodes).forEach(node=>{
+  Array.from(liveHost.childNodes).forEach(node=>{
     const sanitized=sanitizeNode(node);
     if(sanitized) out.appendChild(sanitized);
   });
+  document.body.removeChild(liveHost);
 
   // Flatten: if the result is a single wrapper div with no style, return its innerHTML
   if(out.children.length===1&&out.children[0].tagName==='DIV'&&!out.children[0].getAttribute('style')){
