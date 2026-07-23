@@ -8777,6 +8777,222 @@ async function slExportPDF(){
 // Patched at the top of applyRowUndo / applyRowRedo
 
 /* ════════════════════════════════════════
+   RTF → HTML CONVERTER (Screen 2)
+   Logos puts NO text/html flavor on the clipboard at all — only
+   text/plain and text/rtf (confirmed by diagnostic: HTML length 0,
+   RTF length ~15KB with a \colortbl). All formatting, including the
+   font colors, lives exclusively in the RTF — the same flavor MS
+   Word's "Keep Source Formatting" reads. This converter parses the
+   subset of RTF that matters for our pipeline and emits HTML that
+   then flows through _sanitizePasteHTML exactly like a native HTML
+   paste would.
+   Handled: \colortbl + \cfN (font color), \b, \i, \ul, \super/\sub,
+   \par/\line (line breaks), \tab, \uN unicode (incl. negative values
+   and surrogate pairs — this is how all Greek/Hebrew and the Logos
+   PUA marker glyphs are encoded), \ucN fallback skipping, \'xx hex
+   bytes (cp1252), escaped braces/backslash, and skipping of non-text
+   destination groups (\fonttbl, \stylesheet, {\*\…}, etc).
+   Deliberately ignored: \highlightN and \cbN (backgrounds — consistent
+   with the app-wide policy of stripping source-app background tints),
+   font faces and sizes (session typography governs those).
+════════════════════════════════════════ */
+
+const _RTF_SKIP_DESTS=new Set(['fonttbl','stylesheet','info','themedata','colorschememapping',
+  'datastore','latentstyles','listtable','listoverridetable','rsidtbl','generator',
+  'pict','object','header','footer','headerl','headerr','footerl','footerr','xmlnstbl',
+  'ftnsep','ftnsepc','aftnsep','aftnsepc']);
+
+/* Windows-1252 upper range (0x80–0x9F) → Unicode; rest of \'xx is latin-1 */
+const _CP1252_HI={
+  0x80:0x20AC,0x82:0x201A,0x83:0x0192,0x84:0x201E,0x85:0x2026,0x86:0x2020,0x87:0x2021,
+  0x88:0x02C6,0x89:0x2030,0x8A:0x0160,0x8B:0x2039,0x8C:0x0152,0x8E:0x017D,
+  0x91:0x2018,0x92:0x2019,0x93:0x201C,0x94:0x201D,0x95:0x2022,0x96:0x2013,0x97:0x2014,
+  0x98:0x02DC,0x99:0x2122,0x9A:0x0161,0x9B:0x203A,0x9C:0x0153,0x9E:0x017E,0x9F:0x0178};
+
+function _rtfToHTML(rtf){
+  const colors=[];      // colortbl entries: null (auto) or '#rrggbb'
+  const lines=[[]];     // array of lines; each line = array of runs {text,cf,b,i,u,sup,sub}
+  let state={cf:0,b:false,i:false,u:false,sup:false,sub:false,uc:1};
+  const stack=[];
+  let i=0;
+  const n=rtf.length;
+  let curText='';
+
+  function pushRun(){
+    if(!curText) return;
+    lines[lines.length-1].push({text:curText,cf:state.cf,b:state.b,i:state.i,u:state.u,sup:state.sup,sub:state.sub});
+    curText='';
+  }
+  function newLine(){ pushRun(); lines.push([]); }
+  function emit(ch){ curText+=ch; }
+
+  /* Skip an entire group starting at an already-consumed '{' */
+  function skipGroup(){
+    let depth=1;
+    while(i<n&&depth>0){
+      const c=rtf[i++];
+      if(c==='\\'){ i++; continue; } // skip escaped char / control-word head
+      if(c==='{') depth++;
+      else if(c==='}') depth--;
+    }
+  }
+
+  /* Parse the \colortbl group body (called with i just after the control word) */
+  function parseColorTbl(){
+    let depth=1, r=0,g=0,b=0, any=false;
+    while(i<n&&depth>0){
+      const c=rtf[i];
+      if(c==='\\'){
+        i++;
+        let w=''; while(i<n&&/[a-z]/i.test(rtf[i])) w+=rtf[i++];
+        let num=''; if(rtf[i]==='-'){num='-';i++;} while(i<n&&/[0-9]/.test(rtf[i])) num+=rtf[i++];
+        if(rtf[i]===' ') i++;
+        const v=num?parseInt(num,10):0;
+        if(w==='red'){r=v;any=true;} else if(w==='green'){g=v;any=true;} else if(w==='blue'){b=v;any=true;}
+      } else if(c===';'){
+        colors.push(any?('#'+[r,g,b].map(x=>Math.max(0,Math.min(255,x)).toString(16).padStart(2,'0')).join('')):null);
+        r=g=b=0; any=false; i++;
+      } else if(c==='{'){ depth++; i++; }
+      else if(c==='}'){ depth--; i++; }
+      else i++;
+    }
+  }
+
+  // Preflight: must look like RTF at all
+  if(!/^\s*{\\rtf/.test(rtf)) throw new Error('not RTF');
+
+  while(i<n){
+    const c=rtf[i];
+
+    if(c==='{'){
+      i++;
+      // Destination groups we skip wholesale: {\*\anything ...} and known tables
+      let j=i;
+      if(rtf[j]==='\\'){
+        let k=j+1;
+        if(rtf[k]==='*'){ skipGroup(); continue; }
+        let w=''; while(k<n&&/[a-z]/i.test(rtf[k])) w+=rtf[k++];
+        if(w==='colortbl'){
+          // consume "\colortbl" then parse entries; parseColorTbl consumes the closing }
+          i=k; if(rtf[i]===' ') i++;
+          parseColorTbl();
+          continue;
+        }
+        if(_RTF_SKIP_DESTS.has(w)){ skipGroup(); continue; }
+      }
+      pushRun(); // text before the group belongs to the PRE-group state
+      stack.push({...state});
+      continue;
+    }
+    if(c==='}'){
+      i++;
+      pushRun();
+      if(stack.length) state=stack.pop();
+      continue;
+    }
+    if(c==='\\'){
+      i++;
+      const cc=rtf[i];
+      // Escaped literals & specials
+      if(cc==='\\'||cc==='{'||cc==='}'){ emit(cc); i++; continue; }
+      if(cc==="'"){ // \'xx hex byte (cp1252)
+        const hex=rtf.substr(i+1,2); i+=3;
+        const code=parseInt(hex,16);
+        if(!isNaN(code)) emit(String.fromCharCode(_CP1252_HI[code]||code));
+        continue;
+      }
+      if(cc==='~'){ emit('\u00A0'); i++; continue; }
+      if(cc==='-'||cc==='_'){ i++; continue; } // optional hyphen markers — drop
+      if(cc==='\n'||cc==='\r'){ i++; continue; } // escaped raw newline — ignore
+
+      // Control word: letters then optional signed number then optional space
+      let w=''; while(i<n&&/[a-z]/i.test(rtf[i])) w+=rtf[i++];
+      let numStr=''; if(rtf[i]==='-'){numStr='-';i++;}
+      while(i<n&&/[0-9]/.test(rtf[i])) numStr+=rtf[i++];
+      if(rtf[i]===' ') i++;
+      const num=numStr!==''?parseInt(numStr,10):null;
+
+      // Any control word that mutates run-visible formatting state must
+      // flush the pending text first, so already-emitted characters keep
+      // the state they were typed under (runs are styled at flush time).
+      if(w==='cf'||w==='b'||w==='i'||w==='ul'||w==='ulnone'||
+         w==='super'||w==='sub'||w==='nosupersub'||w==='plain'){
+        pushRun();
+      }
+
+      switch(w){
+        case 'u': {
+          // Signed 16-bit code unit; negative wraps by +65536. Surrogate
+          // pairs (e.g. Logos PUA glyphs above BMP would be two \u words)
+          // concatenate naturally via fromCharCode of each code unit.
+          let cu=num==null?0:num;
+          if(cu<0) cu+=65536;
+          emit(String.fromCharCode(cu));
+          // Skip `uc` fallback characters (plain chars or \'xx escapes)
+          let toSkip=state.uc;
+          while(toSkip>0&&i<n){
+            if(rtf[i]==='\\'&&rtf[i+1]==="'"){ i+=4; }
+            else if(rtf[i]==='\\'){ break; } // next control word — fallback absent
+            else if(rtf[i]==='{'||rtf[i]==='}'){ break; }
+            else { i++; }
+            toSkip--;
+          }
+          break;
+        }
+        case 'uc': state.uc=num==null?1:num; break;
+        case 'cf': state.cf=num==null?0:num; break;
+        case 'b': state.b=num!==0; break;
+        case 'i': state.i=num!==0; break;
+        case 'ul': state.u=num!==0; break;
+        case 'ulnone': state.u=false; break;
+        case 'super': state.sup=num!==0; if(state.sup) state.sub=false; break;
+        case 'sub': state.sub=num!==0; if(state.sub) state.sup=false; break;
+        case 'nosupersub': state.sup=false; state.sub=false; break;
+        case 'plain': state={...state,cf:0,b:false,i:false,u:false,sup:false,sub:false}; break;
+        case 'par': case 'row': case 'sect': case 'page': newLine(); break;
+        case 'line': newLine(); break;
+        case 'tab': case 'cell': emit('\t'); break;
+        case 'emdash': emit('\u2014'); break;
+        case 'endash': emit('\u2013'); break;
+        case 'lquote': emit('\u2018'); break;
+        case 'rquote': emit('\u2019'); break;
+        case 'ldblquote': emit('\u201C'); break;
+        case 'rdblquote': emit('\u201D'); break;
+        case 'bullet': emit('\u2022'); break;
+        default: break; // every other control word (fonts, sizes, margins…) — ignore
+      }
+      continue;
+    }
+    if(c==='\n'||c==='\r'){ i++; continue; } // raw newlines are not content in RTF
+    emit(c); i++;
+  }
+  pushRun();
+
+  /* Render lines[] to HTML */
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const htmlLines=lines.map(runs=>{
+    if(!runs.length) return '';
+    let out='';
+    runs.forEach(r=>{
+      let piece=esc(r.text).replace(/\t/g,'&nbsp;&nbsp;&nbsp;&nbsp;');
+      if(r.sup) piece='<sup>'+piece+'</sup>';
+      if(r.sub) piece='<sub>'+piece+'</sub>';
+      if(r.b) piece='<b>'+piece+'</b>';
+      if(r.i) piece='<i>'+piece+'</i>';
+      if(r.u) piece='<u>'+piece+'</u>';
+      const col=colors[r.cf];
+      if(col) piece='<span style="color:'+col+'">'+piece+'</span>';
+      out+=piece;
+    });
+    return out;
+  });
+  // Trim leading/trailing empty lines, keep interior blanks as <br> lines
+  while(htmlLines.length&&!htmlLines[0].trim()) htmlLines.shift();
+  while(htmlLines.length&&!htmlLines[htmlLines.length-1].trim()) htmlLines.pop();
+  return htmlLines.map(l=>'<div>'+(l||'<br>')+'</div>').join('');
+}
+
+/* ════════════════════════════════════════
    RICH PASTE SANITIZER (Screen 2)
    Intercepts clipboard HTML, keeps inline
    formatting (color, bold, italic, sup),
@@ -9209,8 +9425,21 @@ document.addEventListener('DOMContentLoaded',()=>{
   if(pasteTA) pasteTA.addEventListener('paste', ev=>{
     ev.preventDefault();
     const html=ev.clipboardData.getData('text/html');
+    const rtf=ev.clipboardData.getData('text/rtf');
     const plain=ev.clipboardData.getData('text/plain');
-    const sanitized = html ? _sanitizePasteHTML(html) : _plainToHTML(plain);
+    // Logos puts no text/html on the clipboard at all — only RTF carries
+    // its formatting (colors, bold, superscript). When HTML is absent but
+    // RTF is present, convert the RTF to HTML ourselves ("Keep Source
+    // Formatting"), then sanitize it exactly like a native HTML paste.
+    let sanitized;
+    if(html){
+      sanitized=_sanitizePasteHTML(html);
+    } else if(rtf&&/^\s*{\\rtf/.test(rtf)){
+      try{ sanitized=_sanitizePasteHTML(_rtfToHTML(rtf)); }
+      catch(err){ sanitized=_plainToHTML(plain); }
+    } else {
+      sanitized=_plainToHTML(plain);
+    }
     // Insert at caret position or replace all if empty
     const sel=window.getSelection();
     if(sel&&sel.rangeCount){
