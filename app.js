@@ -6844,34 +6844,63 @@ function _demTokenize(blockEl){
         marker.style.cssText='display:none;font-size:0;line-height:0;pointer-events:none;';
         // Find the true group start: walk BACKWARD from ch to find the last .dedit-word
         // or start of parent, then insert the marker at the first node of this group's prefix.
+        // A crit-mark may be wrapped inside a color/formatting span (RTF-imported
+        // content nests them), so "is this a crit-mark?" is answered by looking
+        // INSIDE elements, not only at the element itself.
+        const _effectiveCritMark=el=>{
+          if(el.classList&&el.classList.contains('crit-mark')) return el;
+          if(el.querySelectorAll){
+            const marks=el.querySelectorAll('.crit-mark');
+            if(marks.length===1 && (el.textContent||'').trim()===(marks[0].textContent||'').trim()) return marks[0];
+          }
+          return null;
+        };
         let groupStart=ch;
         let prev=ch.previousSibling;
         while(prev){
           if(prev.nodeType===Node.ELEMENT_NODE && (prev.classList.contains('dedit-word')||prev.classList.contains('dedit-sp'))){
             break; // found previous word or marker — group starts at the node after this
           }
-          // A crit-mark's OWN glyph tells us which side it belongs to:
-          //   • closing half of a pair (ends with ] or › or is ″) always
-          //     belongs to whatever precedes it — never sweeps forward
-          //     onto the next word, no matter how it's spaced ("... TM]"
-          //     conventionally HAS a space before it, so whitespace alone
-          //     can't distinguish this case from a genuine prefix).
-          //   • opening half (starts with [ or ‹ or is ‶) always belongs
-          //     to whatever follows it — sweeps forward normally (the
-          //     existing default behavior for a genuine prefix).
-          //   • a standalone, unpaired sign (*, °, ˸, ♦, ✽, ...) only
-          //     counts as a SUFFIX of the preceding word when it directly
-          //     touches it with no whitespace at all (e.g. "θεοῦ*,");
-          //     otherwise it's a normal prefix of whatever follows.
-          if(prev.nodeType===Node.ELEMENT_NODE && prev.classList.contains('crit-mark')){
-            const mtxt=prev.textContent||'';
-            const isClosing = mtxt.endsWith(']') || mtxt.endsWith('›') || mtxt==='″';
-            const isOpening = mtxt.startsWith('[') || mtxt.startsWith('‹') || mtxt==='‶';
-            if(isClosing) break;
-            if(!isOpening){
-              let n=prev;
-              while(n && n.nodeType===Node.ELEMENT_NODE && n.classList.contains('crit-mark')) n=n.previousSibling;
-              if(n && n.nodeType===Node.ELEMENT_NODE && n.classList.contains('dedit-word')) break;
+          // A trailing-punctuation TEXT node ("⌝, " / ", " after θεοῦ)
+          // belongs to the PRECEDING word, never to the clicked one. Only
+          // a non-whitespace tail glued directly to what follows (e.g. the
+          // "⸀" in "θεοῦ, ⸀word") counts as this group's prefix — split
+          // the node there so the tail travels and the punctuation stays.
+          if(prev.nodeType===Node.TEXT_NODE && /\S/.test(prev.textContent)){
+            const txt=prev.textContent;
+            const m=txt.match(/\s(\S+)$/);
+            if(m){
+              const tail=prev.splitText(txt.length-m[1].length);
+              groupStart=tail;
+            }
+            break; // punctuation (and everything before it) stays behind
+          }
+          if(prev.nodeType===Node.ELEMENT_NODE){
+            // An element containing a real word ends the group unconditionally
+            // (can happen when words live inside color spans at this level).
+            if(prev.querySelector && prev.querySelector('.dedit-word')) break;
+            // A crit-mark's OWN glyph tells us which side it belongs to:
+            //   • closing half of a pair (ends with ] or › or is ″) always
+            //     belongs to whatever precedes it — never sweeps forward
+            //     onto the next word, no matter how it's spaced or whether
+            //     it's nested inside a color/formatting wrapper span.
+            //   • opening half (starts with [ or ‹ or is ‶) always belongs
+            //     to whatever follows it — sweeps forward normally.
+            //   • a standalone, unpaired sign (*, °, ˸, ♦, ✽, ...) only
+            //     counts as a SUFFIX of the preceding word when it directly
+            //     touches it with no whitespace at all (e.g. "θεοῦ*,");
+            //     otherwise it's a normal prefix of whatever follows.
+            const mk=_effectiveCritMark(prev);
+            if(mk){
+              const mtxt=mk.textContent||'';
+              const isClosing = mtxt.endsWith(']') || mtxt.endsWith('›') || mtxt==='″';
+              const isOpening = mtxt.startsWith('[') || mtxt.startsWith('‹') || mtxt==='‶';
+              if(isClosing) break;
+              if(!isOpening){
+                let n=prev.previousSibling;
+                while(n && n.nodeType===Node.ELEMENT_NODE && _effectiveCritMark(n)) n=n.previousSibling;
+                if(n && n.nodeType===Node.ELEMENT_NODE && n.classList.contains('dedit-word')) break;
+              }
             }
           }
           groupStart=prev;
