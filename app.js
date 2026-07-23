@@ -9021,6 +9021,42 @@ function _rtfToHTML(rtf){
   return htmlLines.map(l=>'<div>'+(l||'<br>')+'</div>').join('');
 }
 
+/* Merges adjacent sibling elements that share the same tag and identical
+   attributes into one. RTF (and Logos's export in particular) very
+   commonly wraps each glyph in its own formatting group even when
+   nothing actually changes between them — e.g. a discourse-marker pair
+   like "‹+" can arrive as two back-to-back <span style="color:#1E6AFE">
+   elements, one holding "‹" and the next holding "+". Marker detection
+   matches within a single text node, so a token split across two
+   separate (if identically-styled) nodes is invisible to it and gets
+   silently treated as ordinary text — exactly the "opening marker left
+   stranded behind instead of traveling with the next word" bug. Running
+   this BEFORE marker detection glues such runs back into one text node,
+   restoring normal detection with no other change needed. */
+function _mergeAdjacentRuns(root){
+  function attrsEqual(a,b){
+    if(a.attributes.length!==b.attributes.length) return false;
+    for(const attr of a.attributes){ if(b.getAttribute(attr.name)!==attr.value) return false; }
+    return true;
+  }
+  function pass(el){
+    let child=el.firstChild;
+    while(child){
+      const next=child.nextSibling;
+      if(child.nodeType===Node.ELEMENT_NODE && next && next.nodeType===Node.ELEMENT_NODE &&
+         child.tagName===next.tagName && attrsEqual(child,next)){
+        while(next.firstChild) child.appendChild(next.firstChild);
+        next.remove();
+        continue; // re-check the (now-grown) child against its new next sibling
+      }
+      if(child.nodeType===Node.ELEMENT_NODE) pass(child);
+      child=next;
+    }
+  }
+  pass(root);
+  root.normalize(); // also coalesce any now-adjacent plain text nodes
+}
+
 /* ════════════════════════════════════════
    RICH PASTE SANITIZER (Screen 2)
    Intercepts clipboard HTML, keeps inline
@@ -9151,6 +9187,7 @@ function _sanitizePasteHTML(rawHTML){
     if(sanitized) out.appendChild(sanitized);
   });
   document.body.removeChild(liveHost);
+  _mergeAdjacentRuns(out);
 
   // Flatten: if the result is a single wrapper div with no style, return its innerHTML
   if(out.children.length===1&&out.children[0].tagName==='DIV'&&!out.children[0].getAttribute('style')){
