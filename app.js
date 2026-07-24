@@ -775,11 +775,13 @@ function makeDiagramRowEl(row){
   raHandle.className='dra-handle'+(IS_RTL?' rtl':'');
   raHandle.setAttribute('aria-label', typeof t==='function'?t('diagram.rightangle-handle'):'Draw right-angle line');
   raHandle.innerHTML='+';
-  raHandle.addEventListener('mousedown', ev=>{ startRightAngleDraw(ev, rid); });
+  raHandle.style.touchAction='none';
+  raHandle.addEventListener('pointerdown', ev=>{ startRightAngleDraw(ev, rid); });
   block.appendChild(raHandle);
 
   lane.appendChild(block);
-  block.addEventListener('mousedown', ev=>startBlockDrag(ev, rid));
+  block.style.touchAction='none';
+  block.addEventListener('pointerdown', ev=>startBlockDrag(ev, rid));
   block.addEventListener('click', ev=>{
     // Select this block (gold outline). Shift+click is a bracket gesture and
     // Ctrl+click is a connector draw gesture — ignore both for selection.
@@ -829,7 +831,7 @@ function makeDiagramRowEl(row){
     // Prevent Shift+drag-to-connect / plain-drag-to-indent from triggering
     // when interacting with the translation text itself — it's a normal
     // editable text field, not a draggable block.
-    transEl.addEventListener('mousedown', ev=>ev.stopPropagation());
+    transEl.addEventListener('pointerdown', ev=>ev.stopPropagation());
     lane.appendChild(transEl);
   }
 
@@ -942,7 +944,7 @@ function _makeLabelEl(lb){
   del.type='button';
   del.setAttribute('aria-label', typeof t==='function'?t('diagram.delete-label'):'Delete label');
   del.innerHTML='&times;';
-  del.addEventListener('mousedown', ev=>ev.stopPropagation());
+  del.addEventListener('pointerdown', ev=>ev.stopPropagation());
   del.addEventListener('click', ()=>{
     DIAGRAM_DATA.labels=DIAGRAM_DATA.labels.filter(l=>l.id!==lb.id);
     el.remove();
@@ -969,13 +971,14 @@ function _makeLabelEl(lb){
       if(ev.key==='y'||ev.key==='Y'){ ev.preventDefault(); redo(); }
     }
   });
-  txt.addEventListener('mousedown', ev=>ev.stopPropagation());
+  txt.addEventListener('pointerdown', ev=>ev.stopPropagation());
   el.appendChild(txt);
 
   // ── Width resize grip ────────────────────────────────────────────────
   const grip=document.createElement('div');
   grip.className='dlabel-grip';
-  grip.addEventListener('mousedown', ev=>{
+  grip.style.touchAction='none';
+  grip.addEventListener('pointerdown', ev=>{
     ev.preventDefault();ev.stopPropagation();
     const startX=ev.clientX, startW=el.offsetWidth;
     function onMove(e){
@@ -986,17 +989,18 @@ function _makeLabelEl(lb){
       if(found) found.width=newW;
     }
     function onUp(){
-      document.removeEventListener('mousemove',onMove);
-      document.removeEventListener('mouseup',onUp);
+      document.removeEventListener('pointermove',onMove);
+      document.removeEventListener('pointerup',onUp);
       autoSave();
     }
-    document.addEventListener('mousemove',onMove);
-    document.addEventListener('mouseup',onUp);
+    document.addEventListener('pointermove',onMove);
+    document.addEventListener('pointerup',onUp);
   });
   el.appendChild(grip);
 
   // ── Label drag (via bar) ─────────────────────────────────────────────
-  bar.addEventListener('mousedown', ev=>{
+  bar.style.touchAction='none';
+  bar.addEventListener('pointerdown', ev=>{
     if(ev.target===del) return;
     if(ev.shiftKey) return;
     ev.preventDefault();ev.stopPropagation();
@@ -1018,8 +1022,8 @@ function _makeLabelEl(lb){
       if(found){found.x=newPctX;found.y=newPctY;lb.x=newPctX;lb.y=newPctY;}
     }
     function onUp(){
-      document.removeEventListener('mousemove',onMove);
-      document.removeEventListener('mouseup',onUp);
+      document.removeEventListener('pointermove',onMove);
+      document.removeEventListener('pointerup',onUp);
       if(didMove){
         const afterSnap={x:lb.x, y:lb.y};
         if(JSON.stringify(beforeSnap)!==JSON.stringify(afterSnap)){
@@ -1028,8 +1032,8 @@ function _makeLabelEl(lb){
         autoSave();
       }
     }
-    document.addEventListener('mousemove',onMove);
-    document.addEventListener('mouseup',onUp);
+    document.addEventListener('pointermove',onMove);
+    document.addEventListener('pointerup',onUp);
   });
 
   canvas.appendChild(el);
@@ -1138,8 +1142,8 @@ function startBlockDrag(ev, rid){
   };
 
   const onUp=()=>{
-    document.removeEventListener('mousemove',onMove);
-    document.removeEventListener('mouseup',onUp);
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
     block.classList.remove('dragging');
     if(dragged && liveIndent!==startIndent){
       setRowIndent(rid, liveIndent); // commits + pushes to ROW_STACK + re-renders (which redraws connectors too)
@@ -1153,8 +1157,8 @@ function startBlockDrag(ev, rid){
     }
   };
 
-  document.addEventListener('mousemove',onMove);
-  document.addEventListener('mouseup',onUp);
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 
 /* Converts a connector's stored fractional offset into actual #dcanvas-
@@ -1362,7 +1366,7 @@ function _makeHitPath(d, cnxId){
   hitPath.setAttribute('fill','none');
   hitPath.setAttribute('stroke','transparent');
   hitPath.setAttribute('stroke-width','14');
-  hitPath.addEventListener('mousedown', ev=>{ ev.stopPropagation(); });
+  hitPath.addEventListener('pointerdown', ev=>{ ev.stopPropagation(); });
   hitPath.addEventListener('click', ev=>{ ev.stopPropagation(); selectConnector(cnxId, ev); });
   return hitPath;
 }
@@ -1734,8 +1738,8 @@ function startConnectorDraw(ev, fromRid){
   };
 
   const cancel=()=>{
-    document.removeEventListener('mousemove',onMove);
-    document.removeEventListener('mouseup',onUp);
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
     document.removeEventListener('keydown',onKey,true);
     rubberPath.remove();
     fromEl.classList.remove('dconn-source');
@@ -1775,8 +1779,8 @@ function startConnectorDraw(ev, fromRid){
     }
   };
 
-  document.addEventListener('mousemove',onMove);
-  document.addEventListener('mouseup',onUp);
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
   document.addEventListener('keydown',onKey,true);
 }
 
@@ -1878,8 +1882,8 @@ function startRightAngleDraw(ev, fromRid){
   };
 
   const teardown=()=>{
-    document.removeEventListener('mousemove',onDragMove);
-    document.removeEventListener('mouseup',onMouseUp);
+    document.removeEventListener('pointermove',onDragMove);
+    document.removeEventListener('pointerup',onMouseUp);
     document.removeEventListener('mousemove',onArmedMove);
     document.removeEventListener('click',onArmedClick);
     document.removeEventListener('keydown',onArmedEscape);
@@ -1895,8 +1899,8 @@ function startRightAngleDraw(ev, fromRid){
   };
 
   const onMouseUp=mv=>{
-    document.removeEventListener('mousemove',onDragMove);
-    document.removeEventListener('mouseup',onMouseUp);
+    document.removeEventListener('pointermove',onDragMove);
+    document.removeEventListener('pointerup',onMouseUp);
 
     if(dragged){
       // A real drag occurred — same commit-or-cancel behavior as before,
@@ -1948,8 +1952,8 @@ function startRightAngleDraw(ev, fromRid){
     if(kev.key==='Escape') cancelRightAngleArm();
   };
 
-  document.addEventListener('mousemove',onDragMove);
-  document.addEventListener('mouseup',onMouseUp);
+  document.addEventListener('pointermove',onDragMove);
+  document.addEventListener('pointerup',onMouseUp);
 }
 
 /* ── Diagram View: connector selection + edit popup ──
@@ -5729,7 +5733,8 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   topHandle.setAttribute('stroke','transparent'); topHandle.setAttribute('stroke-width',12);
   topHandle.style.cursor = 'ns-resize';
   topHandle.style.pointerEvents = 'stroke';
-  topHandle.addEventListener('mousedown', ev=>{
+  topHandle.style.touchAction = 'none';
+  topHandle.addEventListener('pointerdown', ev=>{
     ev.stopPropagation(); ev.preventDefault();
     _brkStartSerifDrag(ev, brk.id, 'start');
   });
@@ -5742,7 +5747,8 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   botHandle.setAttribute('stroke','transparent'); botHandle.setAttribute('stroke-width',12);
   botHandle.style.cursor = 'ns-resize';
   botHandle.style.pointerEvents = 'stroke';
-  botHandle.addEventListener('mousedown', ev=>{
+  botHandle.style.touchAction = 'none';
+  botHandle.addEventListener('pointerdown', ev=>{
     ev.stopPropagation(); ev.preventDefault();
     _brkStartSerifDrag(ev, brk.id, 'end');
   });
@@ -5796,7 +5802,7 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
   });
 
   // Mousedown: distinguish drag (vertical > 4px) from click-to-edit
-  div.addEventListener('mousedown', ev=>{
+  div.addEventListener('pointerdown', ev=>{
     if(ev.button!==0) return;
     ev.stopPropagation(); // don't bubble to canvas deselect
 
@@ -5821,27 +5827,27 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
           refreshBrackets();
         };
         const onDragUp = ()=>{
-          document.removeEventListener('mousemove', onDragMove);
-          document.removeEventListener('mouseup',   onDragUp);
+          document.removeEventListener('pointermove', onDragMove);
+          document.removeEventListener('pointerup',   onDragUp);
           if(brk.labelOffsetY !== startOffset){
             rowPush({type:'brk-style', id:brk.id, prop:'labelOffsetY',
                      oldVal:startOffset, newVal:brk.labelOffsetY});
           }
           autoSave();
         };
-        document.removeEventListener('mousemove', onMove);
-        document.removeEventListener('mouseup',   onUp);
-        document.addEventListener('mousemove', onDragMove);
-        document.addEventListener('mouseup',   onDragUp);
+        document.removeEventListener('pointermove', onMove);
+        document.removeEventListener('pointerup',   onUp);
+        document.addEventListener('pointermove', onDragMove);
+        document.addEventListener('pointerup',   onDragUp);
       }
     };
     const onUp = ()=>{
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup',   onUp);
+      document.removeEventListener('pointermove', onMove);
+      document.removeEventListener('pointerup',   onUp);
       // Not a drag — let the click land on the div naturally (browser focuses it)
     };
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup',   onUp);
+    document.addEventListener('pointermove', onMove);
+    document.addEventListener('pointerup',   onUp);
   });
 
   fo.appendChild(div);
@@ -5901,8 +5907,8 @@ function _brkStartSerifDrag(ev, brkId, which){
   };
 
   const onUp = ()=>{
-    document.removeEventListener('mousemove', onMove);
-    document.removeEventListener('mouseup',   onUp);
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup',   onUp);
     if(currentRid !== oldRid){
       rowPush({type:'brk-style', id:brkId,
                prop: which==='start' ? 'startRid' : 'endRid',
@@ -5911,8 +5917,8 @@ function _brkStartSerifDrag(ev, brkId, which){
     autoSave();
   };
 
-  document.addEventListener('mousemove', onMove);
-  document.addEventListener('mouseup',   onUp);
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup',   onUp);
 }
 
 /* ── Select bracket → show edit popup ── */
@@ -6321,8 +6327,8 @@ function startFreeArrow(){
       _updateRubberArrow(rubber, x1,y1,x2,y2, canvas);
     };
     const onUp=ev2=>{
-      document.removeEventListener('mousemove',onMove);
-      document.removeEventListener('mouseup',onUp);
+      document.removeEventListener('pointermove',onMove);
+      document.removeEventListener('pointerup',onUp);
       if(rubber) rubber.remove();
       _cancelAnnMode(); // exits arrow mode, deactivates button
 
@@ -6342,14 +6348,16 @@ function startFreeArrow(){
       autoSave();
       rowPush({type:'ann-add',ann:{...ann}});
     };
-    document.addEventListener('mousemove',onMove);
-    document.addEventListener('mouseup',onUp);
+    document.addEventListener('pointermove',onMove);
+    document.addEventListener('pointerup',onUp);
   };
-  canvas.addEventListener('mousedown',onDown);
+  canvas.style.touchAction='none'; // only while the arrow-draw listener below is attached (removed with the rest of arrow mode on cancel)
+  canvas.addEventListener('pointerdown',onDown);
   // Register a cancel callback so _cancelAnnMode() can clean up arrow mode
   _annCancelFns.push(()=>{
     canvas.classList.remove('ann-arrow-mode');
-    canvas.removeEventListener('mousedown',onDown);
+    canvas.removeEventListener('pointerdown',onDown);
+    canvas.style.touchAction='';
     const rubber=document.getElementById('ann-arrow-rubber');
     if(rubber) rubber.remove();
   });
@@ -6563,8 +6571,8 @@ function _addDragHandle(svg, ann, x, y, point, W, H){
   circle.setAttribute('cx',x); circle.setAttribute('cy',y); circle.setAttribute('r','6');
   circle.setAttribute('fill','#fff'); circle.setAttribute('stroke',ann.color||'#C8A84B');
   circle.setAttribute('stroke-width','2');
-  circle.style.pointerEvents='all'; circle.style.cursor='grab';
-  circle.addEventListener('mousedown',ev=>{
+  circle.style.pointerEvents='all'; circle.style.cursor='grab'; circle.style.touchAction='none';
+  circle.addEventListener('pointerdown',ev=>{
     ev.stopPropagation(); ev.preventDefault();
     const canvas=document.getElementById('dcanvas');
     const onMove=ev2=>{
@@ -6575,9 +6583,9 @@ function _addDragHandle(svg, ann, x, y, point, W, H){
       if(point==='p1'){ann.x1=px;ann.y1=py;}else{ann.x2=px;ann.y2=py;}
       renderAnnLayer();
     };
-    const onUp=()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); autoSave(); };
-    document.addEventListener('mousemove',onMove);
-    document.addEventListener('mouseup',onUp);
+    const onUp=()=>{ document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp); autoSave(); };
+    document.addEventListener('pointermove',onMove);
+    document.addEventListener('pointerup',onUp);
   });
   svg.appendChild(circle);
 }
