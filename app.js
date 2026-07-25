@@ -588,6 +588,12 @@ function setEditorView(view){
   document.getElementById('dzone').style.display    = isDiagram?'':'none';
   document.getElementById('szone').style.display    = isSlides ?'flex':'none';
   document.getElementById('sl-presenter').style.display='none';
+  // Section strips are measured via getBoundingClientRect() on Phrasing's
+  // rows, which are always 0,0,0,0 while tzone is display:none (e.g. a
+  // section created from Diagram View) — nothing recomputed them once
+  // Phrasing became visible again, so a strip created elsewhere stayed
+  // permanently collapsed. Recompute right after rows become visible.
+  if(isPhrasing && typeof renderSectionStrips==='function') renderSectionStrips();
   // Hide comment pane in Slides View (it overlaps slide canvas and is irrelevant)
   const cmargin=document.getElementById('cmargin');
   if(cmargin){
@@ -869,51 +875,70 @@ function makeDiagramRowEl(row){
    created FIRST (so it paints BEHIND every block — right-angle connectors
    live here) and #dconns is created LAST (so it paints IN FRONT of every
    block — curve connectors live here). */
-/* Builds one Diagram View Section Divider element: a full-width rule with
-   a large, bold, all-caps label — appended into #dcanvas's normal
-   document flow (blocks are NOT absolutely positioned, so inserting this
-   before a row's block naturally pushes everything after it down, same
-   as row.before(el) does for Proposition Dividers in Phrasing View).
-   Editable label + delete + color, same interaction pattern as the
-   Phrasing-side strip, for consistency. */
-function _makeDiagramSectionEl(ann){
+/* Builds one Diagram View Section Divider marker: 'start' (full editable
+   label, appears before the section's first row) or 'end' (a plain
+   closing line, no label — just marks where the range concludes,
+   appears after the section's last row). Uses real flex-child line
+   segments rather than a border-top + per-element transform hack, so
+   every child shares one align-items:center row and can't drift out of
+   vertical alignment with each other. */
+function _makeDiagramSectionEl(ann, kind){
   const el=document.createElement('div');
-  el.className='dsec-divider';
+  el.className='dsec-divider dsec-'+kind;
   el.dataset.annId=ann.id;
   el.style.setProperty('--sec-color', ann.color||'#534AB7');
 
-  const label=document.createElement('div');
-  label.className='dsec-label';
-  label.contentEditable='true';
-  label.spellcheck=false;
-  label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
-  label.textContent=ann.label||'';
-  label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
-  label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
-  label.addEventListener('mousedown',ev=>ev.stopPropagation());
-  label.addEventListener('pointerdown',ev=>ev.stopPropagation());
+  const leadLine=document.createElement('div');
+  leadLine.className='dsec-line dsec-line-lead';
 
-  const swatch=document.createElement('input');
-  swatch.type='color'; swatch.className='dsec-color';
-  swatch.value=ann.color||'#534AB7';
-  swatch.title=typeof t==='function'?t('ann.color'):'Color';
-  swatch.addEventListener('mousedown',ev=>ev.stopPropagation());
-  swatch.addEventListener('pointerdown',ev=>ev.stopPropagation());
-  swatch.addEventListener('change',()=>{
-    ann.color=swatch.value;
-    el.style.setProperty('--sec-color', ann.color);
-    autoSave();
-  });
+  el.appendChild(leadLine);
 
-  const del=document.createElement('button');
-  del.className='dsec-del';
-  del.title=typeof t==='function'?t('ann.delete'):'Delete annotation';
-  del.innerHTML='✕';
-  del.addEventListener('mousedown',ev=>ev.stopPropagation());
-  del.addEventListener('pointerdown',ev=>ev.stopPropagation());
-  del.addEventListener('click',()=>{ deleteSection(ann.id); });
+  if(kind==='start'){
+    const label=document.createElement('div');
+    label.className='dsec-label';
+    label.contentEditable='true';
+    label.spellcheck=false;
+    label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
+    label.textContent=ann.label||'';
+    label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('mousedown',ev=>ev.stopPropagation());
+    label.addEventListener('pointerdown',ev=>ev.stopPropagation());
+    el.appendChild(label);
 
-  el.append(label, swatch, del);
+    const trailLine=document.createElement('div');
+    trailLine.className='dsec-line dsec-line-trail';
+    el.appendChild(trailLine);
+
+    const swatch=document.createElement('input');
+    swatch.type='color'; swatch.className='dsec-color';
+    swatch.value=ann.color||'#534AB7';
+    swatch.title=typeof t==='function'?t('ann.color'):'Color';
+    swatch.addEventListener('mousedown',ev=>ev.stopPropagation());
+    swatch.addEventListener('pointerdown',ev=>ev.stopPropagation());
+    swatch.addEventListener('change',()=>{
+      ann.color=swatch.value;
+      document.querySelectorAll(`.dsec-divider[data-ann-id="${ann.id}"]`)
+        .forEach(d=>d.style.setProperty('--sec-color', ann.color));
+      autoSave();
+    });
+    el.appendChild(swatch);
+
+    const del=document.createElement('button');
+    del.className='dsec-del';
+    del.title=typeof t==='function'?t('ann.delete'):'Delete annotation';
+    del.innerHTML='✕';
+    del.addEventListener('mousedown',ev=>ev.stopPropagation());
+    del.addEventListener('pointerdown',ev=>ev.stopPropagation());
+    del.addEventListener('click',()=>{ deleteSection(ann.id); });
+    el.appendChild(del);
+  } else {
+    // 'end' marker: just a plain closing line the full width, same color
+    const trailLine=document.createElement('div');
+    trailLine.className='dsec-line dsec-line-trail dsec-line-end';
+    el.appendChild(trailLine);
+  }
+
   return el;
 }
 
@@ -946,12 +971,20 @@ function renderDiagram(){
   canvas.appendChild(labelsLayer);
 
   const rows=Array.from(document.querySelectorAll('.xrow'));
-  const sectionsByRid={};
-  ANNOTATIONS.filter(a=>a.type==='section').forEach(a=>{ sectionsByRid[a.beforeRid]=a; });
+  const startByRid={}, endByRid={};
+  ANNOTATIONS.filter(a=>a.type==='section').forEach(a=>{
+    startByRid[a.startRid]=a;
+    endByRid[a.endRid]=a;
+  });
   rows.forEach(row=>{
-    const sec=sectionsByRid[row.dataset.rid];
-    if(sec) canvas.appendChild(_makeDiagramSectionEl(sec));
+    const startSec=startByRid[row.dataset.rid];
+    if(startSec) canvas.appendChild(_makeDiagramSectionEl(startSec,'start'));
     canvas.appendChild(makeDiagramRowEl(row));
+    const endSec=endByRid[row.dataset.rid];
+    // A single-row section (startRid===endRid) correctly gets BOTH its
+    // start marker (before the row) and end marker (after the same row)
+    // — bracketing that one row on both sides.
+    if(endSec) canvas.appendChild(_makeDiagramSectionEl(endSec,'end'));
   });
 
   // Front connector SVG layer is created fresh each render (innerHTML=''
@@ -2756,6 +2789,11 @@ function applyRowUndo(op){
   if(typeof _slApplyUndo==='function' && _slApplyUndo(op)) return;
   // Bracket ops — handled entirely by bracket system
   if(typeof _brkApplyUndo==='function' && _brkApplyUndo(op)) return;
+  if(op.type==='sec-style'){
+    const ann=ANNOTATIONS.find(a=>a.id===op.id && a.type==='section');
+    if(ann){ ann[op.prop]=op.oldVal; renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); }
+    return;
+  }
   // Annotation ops (dividers, arrows, spans, arcs)
   if(typeof _annApplyUndo==='function' && _annApplyUndo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.prev); return; }
@@ -2913,6 +2951,11 @@ function applyRowRedo(op){
   if(typeof _slApplyRedo==='function' && _slApplyRedo(op)) return;
   // Bracket ops — handled entirely by bracket system
   if(typeof _brkApplyRedo==='function' && _brkApplyRedo(op)) return;
+  if(op.type==='sec-style'){
+    const ann=ANNOTATIONS.find(a=>a.id===op.id && a.type==='section');
+    if(ann){ ann[op.prop]=op.newVal; renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); }
+    return;
+  }
   // Annotation ops
   if(typeof _annApplyRedo==='function' && _annApplyRedo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.next); return; }
@@ -6260,15 +6303,19 @@ function addSection(){
   // was actually clicked. Diagram View has its OWN reliable "current
   // row" signal — SELECTED_DIAG_RID, set by selectDiagBlock() on every
   // block click — so use that when it's the active view.
-  let beforeRid;
+  let anchorRid;
   if(EDITOR_VIEW==='diagram' && typeof SELECTED_DIAG_RID!=='undefined' && SELECTED_DIAG_RID){
-    beforeRid=SELECTED_DIAG_RID;
+    anchorRid=SELECTED_DIAG_RID;
   } else {
     const focusedRow=lastFocusedRowEl || document.querySelector('.xrow');
     if(!focusedRow) return;
-    beforeRid=focusedRow.dataset.rid;
+    anchorRid=focusedRow.dataset.rid;
   }
-  const ann = { id:_annId(), type:'section', beforeRid, label:'', color:'#534AB7' };
+  // Explicit start/end range (both anchors, not an implicit "until the
+  // next section" point) — starts as a single-row span; startRid/endRid
+  // are then independently drag-resizable, same interaction as the
+  // Diagram bracket's start/end handles.
+  const ann = { id:_annId(), type:'section', startRid:anchorRid, endRid:anchorRid, label:'', color:'#534AB7' };
   ANNOTATIONS.push(ann);
   renderSectionStrips();
   if(EDITOR_VIEW==='diagram') renderDiagram();
@@ -6399,13 +6446,8 @@ function deleteDivider(id){
 }
 
 /* ── Section Divider (Phrasing View): a colored strip spanning every row
-   in the section, not just its anchor row. "How far it extends" is never
-   stored — it's computed fresh each render as "from this section's row
-   to the row right before the NEXT section's row (in current row order),
-   or the last row if this is the final section" — the same
-   never-stale-because-always-recomputed principle recomputeIds() already
-   uses for line lettering, so reordering/adding/removing rows can never
-   leave a section's stored extent pointing at the wrong place. ── */
+   from its explicit startRid to its explicit endRid (both independently
+   drag-resizable via the handles at each end — see _secStartDrag). ── */
 function renderSectionStrips(){
   const scroll=document.getElementById('rows-scroll');
   if(!scroll) return;
@@ -6420,49 +6462,43 @@ function renderSectionStrips(){
   if(!sections.length) return;
 
   const rows=Array.from(document.querySelectorAll('.xrow'));
-  const ridToIndex={};
-  rows.forEach((r,i)=>{ ridToIndex[r.dataset.rid]=i; });
-
-  const sorted=sections
-    .map(s=>({ann:s, idx:ridToIndex[s.beforeRid]}))
-    .filter(s=>s.idx!==undefined)
-    .sort((a,b)=>a.idx-b.idx);
-  if(!sorted.length) return;
+  const ridToRow={};
+  rows.forEach(r=>{ ridToRow[r.dataset.rid]=r; });
 
   const scrollRect=scroll.getBoundingClientRect();
   const scrollTop=scroll.scrollTop||0;
 
-  sorted.forEach((entry,i)=>{
-    const startRow=rows[entry.idx];
-    const endIdx=(i+1<sorted.length) ? Math.max(entry.idx, sorted[i+1].idx-1) : rows.length-1;
-    const endRow=rows[endIdx];
+  sections.forEach(ann=>{
+    const startRow=ridToRow[ann.startRid];
+    const endRow=ridToRow[ann.endRid]||startRow;
     if(!startRow||!endRow) return;
 
     const startRect=startRow.getBoundingClientRect();
     const endRect=endRow.getBoundingClientRect();
-    const top=startRect.top-scrollRect.top+scrollTop;
-    const height=Math.max(24,(endRect.bottom-scrollRect.top+scrollTop)-top);
+    const top=Math.min(startRect.top,endRect.top)-scrollRect.top+scrollTop;
+    const bottom=Math.max(startRect.bottom,endRect.bottom)-scrollRect.top+scrollTop;
+    const height=Math.max(24,bottom-top);
 
     const strip=document.createElement('div');
     strip.className='sec-strip';
-    strip.dataset.annId=entry.ann.id;
+    strip.dataset.annId=ann.id;
     strip.style.top=top+'px';
     strip.style.height=height+'px';
-    strip.style.setProperty('--sec-color', entry.ann.color||'#534AB7');
+    strip.style.setProperty('--sec-color', ann.color||'#534AB7');
 
     const del=document.createElement('button');
     del.className='sec-strip-del';
     del.title=typeof t==='function'?t('ann.delete'):'Delete annotation';
     del.innerHTML='✕';
-    del.addEventListener('click',()=>{ deleteSection(entry.ann.id); });
+    del.addEventListener('click',()=>{ deleteSection(ann.id); });
 
     const swatch=document.createElement('input');
     swatch.type='color'; swatch.className='sec-strip-color';
-    swatch.value=entry.ann.color||'#534AB7';
+    swatch.value=ann.color||'#534AB7';
     swatch.title=typeof t==='function'?t('ann.color'):'Color';
     swatch.addEventListener('change',()=>{
-      entry.ann.color=swatch.value;
-      strip.style.setProperty('--sec-color', entry.ann.color);
+      ann.color=swatch.value;
+      strip.style.setProperty('--sec-color', ann.color);
       if(EDITOR_VIEW==='diagram') renderDiagram();
       autoSave();
     });
@@ -6472,13 +6508,78 @@ function renderSectionStrips(){
     label.contentEditable='true';
     label.spellcheck=false;
     label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
-    label.textContent=entry.ann.label||'';
-    label.addEventListener('input',()=>{ entry.ann.label=label.textContent.trim(); autoSave(); });
-    label.addEventListener('blur',()=>{ entry.ann.label=label.textContent.trim(); autoSave(); });
+    label.textContent=ann.label||'';
+    label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
 
-    strip.append(swatch, del, label);
+    const topHandle=document.createElement('div');
+    topHandle.className='sec-strip-handle sec-strip-handle-top';
+    topHandle.style.touchAction='none';
+    topHandle.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); ev.preventDefault(); _secStartDrag(ev, ann.id, 'start'); });
+
+    const botHandle=document.createElement('div');
+    botHandle.className='sec-strip-handle sec-strip-handle-bot';
+    botHandle.style.touchAction='none';
+    botHandle.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); ev.preventDefault(); _secStartDrag(ev, ann.id, 'end'); });
+
+    strip.append(topHandle, swatch, del, label, botHandle);
     layer.appendChild(strip);
   });
+}
+
+/* Drag either end of a section's range to a different row — same
+   nearest-row-by-Y-position technique as the Diagram bracket's serif
+   drag (_brkStartSerifDrag), adapted to Phrasing's .xrow/#rows-scroll
+   (no zoom factor to divide by, and no lane reassignment since sections
+   don't nest the way brackets can). */
+function _secStartDrag(ev, annId, which){
+  const ann=ANNOTATIONS.find(a=>a.id===annId && a.type==='section'); if(!ann) return;
+  const scroll=document.getElementById('rows-scroll'); if(!scroll) return;
+  const oldRid = which==='start' ? ann.startRid : ann.endRid;
+
+  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const rids=rows.map(r=>r.dataset.rid);
+  const scrollRect=scroll.getBoundingClientRect();
+  const scrollTop=scroll.scrollTop||0;
+  const rowMids=rows.map(r=>{
+    const rect=r.getBoundingClientRect();
+    return (rect.top+rect.height/2-scrollRect.top+scrollTop);
+  });
+
+  const fixedRid = which==='start' ? ann.endRid : ann.startRid;
+  const fixedIdx = rids.indexOf(String(fixedRid));
+
+  let currentRid=oldRid;
+
+  const onMove=mv=>{
+    const mouseY=(mv.clientY-scrollRect.top+scrollTop);
+    let nearest=-1, nearestDist=Infinity;
+    rowMids.forEach((mid,i)=>{
+      if(which==='start' && i>fixedIdx) return; // can't drag start past end
+      if(which==='end'   && i<fixedIdx) return; // can't drag end before start
+      const dist=Math.abs(mid-mouseY);
+      if(dist<nearestDist){ nearestDist=dist; nearest=i; }
+    });
+    if(nearest<0) return;
+    const targetRid=rids[nearest];
+    if(targetRid===currentRid) return;
+    currentRid=targetRid;
+    if(which==='start') ann.startRid=targetRid; else ann.endRid=targetRid;
+    renderSectionStrips();
+    if(EDITOR_VIEW==='diagram') renderDiagram();
+  };
+  const onUp=()=>{
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    if(currentRid!==oldRid){
+      rowPush({type:'sec-style', id:annId,
+               prop: which==='start' ? 'startRid' : 'endRid',
+               oldVal:oldRid, newVal:currentRid});
+    }
+    autoSave();
+  };
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 
 /* ═══════════════════════════════════════════

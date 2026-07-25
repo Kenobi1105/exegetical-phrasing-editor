@@ -4365,10 +4365,10 @@ body.dg-hide-trans .dblock-trans{display:none}
   box-shadow:0 1px 3px rgba(0,0,0,.18);
 }
 .sec-strip-label{
-  flex:1;writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);
+  flex:0 0 auto;writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);
   color:#fff;font-family:var(--ui);font-weight:700;font-size:11px;
   letter-spacing:.04em;outline:none;overflow:hidden;
-  padding:6px 0;white-space:nowrap;
+  padding:6px 0;white-space:nowrap;max-height:calc(100% - 50px);
 }
 .sec-strip-label:empty:before{content:attr(data-ph);opacity:.7}
 .sec-strip-color{
@@ -4385,16 +4385,34 @@ body.dg-hide-trans .dblock-trans{display:none}
   transition:opacity .12s;
 }
 .sec-strip:hover .sec-strip-del{opacity:1}
-
-/* ── Section Divider rule (Diagram View) ── */
-.dsec-divider{
-  display:flex;align-items:center;gap:10px;
-  margin:14px 0 10px;padding:0 2px;
-  border-top:3px solid var(--sec-color,#534AB7);
+.sec-strip-handle{
+  flex:none;width:100%;height:8px;cursor:ns-resize;position:relative;
+  opacity:0;transition:opacity .12s;
 }
+.sec-strip-handle:before{
+  content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:16px;height:3px;border-radius:2px;background:rgba(255,255,255,.9);
+}
+.sec-strip:hover .sec-strip-handle{opacity:1}
+.sec-strip-handle-top{order:-1}
+.sec-strip-handle-bot{order:99;margin-top:auto}
+
+/* ── Section Divider rule (Diagram View) ──
+   Built from real flex-child line segments (not a border-top +
+   per-element transform hack), so every child shares one
+   align-items:center row and can't drift out of vertical alignment
+   with each other. 'start' markers carry the editable label/swatch/
+   delete; 'end' markers are a plain closing line. */
+.dsec-divider{
+  display:flex;align-items:center;
+  margin:14px 0 10px;padding:0 2px;
+}
+.dsec-line{height:3px;background:var(--sec-color,#534AB7);border-radius:2px}
+.dsec-line-lead{flex:0 0 28px}
+.dsec-line-trail{flex:1;margin-left:12px}
+.dsec-line-end{margin-left:0}
 .dsec-label{
-  flex:none;transform:translateY(-13px);
-  background:var(--bg);padding:0 8px 0 0;margin-left:32px;
+  flex:none;
   color:var(--sec-color,#534AB7);
   font-family:var(--ui);font-weight:800;font-size:15px;
   text-transform:uppercase;letter-spacing:.06em;
@@ -4402,7 +4420,7 @@ body.dg-hide-trans .dblock-trans{display:none}
 }
 .dsec-label:empty:before{content:attr(data-ph);opacity:.55;text-transform:none;font-weight:600}
 .dsec-color{
-  flex:none;transform:translateY(-13px);
+  flex:none;margin-left:12px;
   width:14px;height:14px;padding:0;border:1.5px solid var(--sec-color,#534AB7);
   border-radius:50%;background:none;cursor:pointer;opacity:0;transition:opacity .12s;
   -webkit-appearance:none;appearance:none;
@@ -4410,9 +4428,9 @@ body.dg-hide-trans .dblock-trans{display:none}
 .dsec-color::-webkit-color-swatch-wrapper{padding:0}
 .dsec-color::-webkit-color-swatch{border:none;border-radius:50%}
 .dsec-del{
-  flex:none;transform:translateY(-13px);
-  width:16px;height:16px;border:none;background:rgba(0,0,0,.08);
-  color:var(--ink);border-radius:50%;font-size:9px;line-height:1;cursor:pointer;
+  flex:none;margin-left:8px;
+  width:16px;height:16px;border:none;background:#D64545;
+  color:#fff;border-radius:50%;font-size:9px;line-height:1;cursor:pointer;
   display:flex;align-items:center;justify-content:center;opacity:0;
   transition:opacity .12s;
 }
