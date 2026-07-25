@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607231100"/>
+<meta name="app-version" content="202607231200"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -356,6 +356,9 @@
           <span class="tsw"><span class="tsw-knob"></span></span>
         </button>
       </div>
+      <button class="tbtn" id="tb-add-section" data-i18n-title="toolbar.add-section" title="Add Section Divider" onclick="addSection()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="4" height="18" rx="1.5"/><line x1="12" y1="7" x2="20" y2="7"/><line x1="12" y1="12" x2="20" y2="12"/><line x1="12" y1="17" x2="17" y2="17"/></svg>
+      </button>
       <button class="tbtn" id="tb-add-arrow" title="Draw free arrow (Alt+A)" onclick="startFreeArrow()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="5" y1="19" x2="19" y2="5"/><polyline points="12 5 19 5 19 12"/></svg>
       </button>
@@ -414,6 +417,7 @@
           <div class="ch" style="width:40px;min-width:40px"></div>
         </div>
         <div id="rows-scroll">
+          <div id="section-strips"></div>
           <div id="rows-body"></div>
           <div id="row-actions">
             <button class="ra-btn add" onclick="addEmptyRow()">

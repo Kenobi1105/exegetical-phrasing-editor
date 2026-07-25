@@ -219,6 +219,8 @@ const LANGS = {
     /* ── Annotations ── */
     'ann.div.add':       'Add Proposition Divider',
     'ann.div.ph':        'Proposition…',
+    'ann.section.ph':    'Section…',
+    'toolbar.add-section':'Add Section Divider',
     'ann.arrow.add':     'Draw free arrow',
     'ann.arrow.hint':    'Click and drag on the canvas to draw an arrow.',
     'ann.connector.hint':'Ctrl+drag from any block or word to draw a connector. Drag to a word for word-level anchoring.',
@@ -640,6 +642,8 @@ const LANGS = {
     /* ── Annotations ── */
     'ann.div.add':       '添加命题分隔线',
     'ann.div.ph':        '命题…',
+    'ann.section.ph':    '章节…',
+    'toolbar.add-section':'添加章节分隔符',
     'ann.arrow.add':     '绘制自由箭头',
     'ann.arrow.hint':    '在图示区域点击并拖动以绘制箭头。',
     'ann.connector.hint':'Ctrl+拖动任意词块或单词以绘制连接线。拖动到单词上可实现词级锚定。',

@@ -869,6 +869,54 @@ function makeDiagramRowEl(row){
    created FIRST (so it paints BEHIND every block — right-angle connectors
    live here) and #dconns is created LAST (so it paints IN FRONT of every
    block — curve connectors live here). */
+/* Builds one Diagram View Section Divider element: a full-width rule with
+   a large, bold, all-caps label — appended into #dcanvas's normal
+   document flow (blocks are NOT absolutely positioned, so inserting this
+   before a row's block naturally pushes everything after it down, same
+   as row.before(el) does for Proposition Dividers in Phrasing View).
+   Editable label + delete + color, same interaction pattern as the
+   Phrasing-side strip, for consistency. */
+function _makeDiagramSectionEl(ann){
+  const el=document.createElement('div');
+  el.className='dsec-divider';
+  el.dataset.annId=ann.id;
+  el.style.setProperty('--sec-color', ann.color||'#534AB7');
+
+  const label=document.createElement('div');
+  label.className='dsec-label';
+  label.contentEditable='true';
+  label.spellcheck=false;
+  label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
+  label.textContent=ann.label||'';
+  label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+  label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+  label.addEventListener('mousedown',ev=>ev.stopPropagation());
+  label.addEventListener('pointerdown',ev=>ev.stopPropagation());
+
+  const swatch=document.createElement('input');
+  swatch.type='color'; swatch.className='dsec-color';
+  swatch.value=ann.color||'#534AB7';
+  swatch.title=typeof t==='function'?t('ann.color'):'Color';
+  swatch.addEventListener('mousedown',ev=>ev.stopPropagation());
+  swatch.addEventListener('pointerdown',ev=>ev.stopPropagation());
+  swatch.addEventListener('change',()=>{
+    ann.color=swatch.value;
+    el.style.setProperty('--sec-color', ann.color);
+    autoSave();
+  });
+
+  const del=document.createElement('button');
+  del.className='dsec-del';
+  del.title=typeof t==='function'?t('ann.delete'):'Delete annotation';
+  del.innerHTML='✕';
+  del.addEventListener('mousedown',ev=>ev.stopPropagation());
+  del.addEventListener('pointerdown',ev=>ev.stopPropagation());
+  del.addEventListener('click',()=>{ deleteSection(ann.id); });
+
+  el.append(label, swatch, del);
+  return el;
+}
+
 function renderDiagram(){
   const canvas=document.getElementById('dcanvas');
   if(!canvas) return;
@@ -898,7 +946,11 @@ function renderDiagram(){
   canvas.appendChild(labelsLayer);
 
   const rows=Array.from(document.querySelectorAll('.xrow'));
+  const sectionsByRid={};
+  ANNOTATIONS.filter(a=>a.type==='section').forEach(a=>{ sectionsByRid[a.beforeRid]=a; });
   rows.forEach(row=>{
+    const sec=sectionsByRid[row.dataset.rid];
+    if(sec) canvas.appendChild(_makeDiagramSectionEl(sec));
     canvas.appendChild(makeDiagramRowEl(row));
   });
 
@@ -2386,6 +2438,10 @@ function _applyRowShading(){
     row.classList.toggle('row-odd', i%2===1);
     i++;
   });
+  // Section strips span multiple rows, so anything that changes row
+  // count/order needs them recomputed too — same reasoning, same fix
+  // location as the shading itself just above.
+  if(typeof renderSectionStrips==='function') renderSectionStrips();
 }
 
 function recomputeIds(){
@@ -3126,6 +3182,7 @@ function _applyOrigSize(px){
   document.documentElement.style.setProperty('--cedit-o-size', px+'px');
   document.querySelectorAll('[id^="oc-"] .cedit').forEach(c=>{ c.style.fontSize=px+'px'; });
   const t1=document.getElementById('fsz-orig-txt'); if(t1) t1.textContent=px+'px';
+  if(typeof renderSectionStrips==='function') renderSectionStrips();
   autoSave();
 }
 function _applyTransSize(px){
@@ -3133,6 +3190,7 @@ function _applyTransSize(px){
   document.documentElement.style.setProperty('--cedit-t-size', px+'px');
   document.querySelectorAll('[id^="tc-"] .cedit').forEach(c=>{ c.style.fontSize=px+'px'; });
   const t2=document.getElementById('fsz-trans-txt'); if(t2) t2.textContent=px+'px';
+  if(typeof renderSectionStrips==='function') renderSectionStrips();
   autoSave();
 }
 function _applyBothSize(px){
@@ -3141,6 +3199,7 @@ function _applyBothSize(px){
   document.documentElement.style.setProperty('--cedit-t-size', px+'px');
   document.querySelectorAll('.cedit').forEach(c=>{ c.style.fontSize=px+'px'; });
   const t3=document.getElementById('phrasing-sz-txt'); if(t3) t3.textContent=px+'px';
+  if(typeof renderSectionStrips==='function') renderSectionStrips();
   autoSave();
 }
 function _stepOrigSize(delta){
@@ -4062,7 +4121,7 @@ function loadData(data){
   // Ensure ANN_CTR is at least as large as the highest existing id
   ANNOTATIONS.forEach(a=>{ const n=parseInt(String(a.id||'').replace(/^ann-/,''),10); if(!isNaN(n)&&n>=ANN_CTR) ANN_CTR=n+1; });
   // Re-render dividers in phrasing view after rows exist in DOM
-  setTimeout(()=>{ renderDividers(); if(EDITOR_VIEW==='diagram') renderAnnLayer(); }, 50);
+  setTimeout(()=>{ renderDividers(); renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderAnnLayer(); }, 50);
   // Restore diagram edit mode (persistent across saves)
   DIAGRAM_EDIT_MODE=data.diagramEditMode===true;
   if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 80);
@@ -6185,6 +6244,38 @@ function addDivider(){
   }, 60);
 }
 
+/* Section Divider — same idea as a Proposition Divider (single anchor
+   row, implicit extent until the next one), but represents a HIGHER
+   level grouping ("Introduction", "Body", ...) and renders very
+   differently per view: a colored strip spanning every row in the
+   section (Phrasing View) or a full-width rule with a large all-caps
+   label (Diagram View). Deliberately its own type/functions rather than
+   generalizing addDivider/deleteDivider, so the well-tested existing
+   Proposition Divider code path is never at risk of being disturbed. */
+function addSection(){
+  const focusedRow = lastFocusedRowEl || document.querySelector('.xrow');
+  if(!focusedRow) return;
+  const beforeRid = focusedRow.dataset.rid;
+  const ann = { id:_annId(), type:'section', beforeRid, label:'', color:'#534AB7' };
+  ANNOTATIONS.push(ann);
+  renderSectionStrips();
+  if(EDITOR_VIEW==='diagram') renderDiagram();
+  autoSave();
+  rowPush({type:'ann-add', ann:{...ann}});
+  setTimeout(()=>{
+    const el=document.querySelector(`.sec-strip[data-ann-id="${ann.id}"] .sec-strip-label`);
+    if(el) el.focus();
+  }, 60);
+}
+function deleteSection(id){
+  const ann=ANNOTATIONS.find(a=>a.id===id); if(!ann) return;
+  ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==id);
+  renderSectionStrips();
+  if(EDITOR_VIEW==='diagram') renderDiagram();
+  autoSave();
+  rowPush({type:'ann-remove', ann:{...ann}});
+}
+
 /* ── View toggles ──
    Phrasing: show/hide all Proposition Dividers.
    Diagram:  show/hide all block translations.
@@ -6202,6 +6293,10 @@ function addDivider(){
 function _setDividersVisible(visible){
   document.body.classList.toggle('hide-dividers', !visible);
   document.getElementById('tb-tgl-dividers')?.classList.toggle('tgl-on', visible);
+  // Hiding/showing Proposition Dividers shifts row positions (they take
+  // up vertical space via row.before(el)), which section strips — which
+  // span multiple rows — need to recheck.
+  if(typeof renderSectionStrips==='function') renderSectionStrips();
 }
 function _setDgTransVisible(visible){
   document.body.classList.toggle('dg-hide-trans', !visible);
@@ -6286,6 +6381,89 @@ function deleteDivider(id){
   renderDividers();
   autoSave();
   rowPush({type:'ann-remove', ann:{...ann}});
+}
+
+/* ── Section Divider (Phrasing View): a colored strip spanning every row
+   in the section, not just its anchor row. "How far it extends" is never
+   stored — it's computed fresh each render as "from this section's row
+   to the row right before the NEXT section's row (in current row order),
+   or the last row if this is the final section" — the same
+   never-stale-because-always-recomputed principle recomputeIds() already
+   uses for line lettering, so reordering/adding/removing rows can never
+   leave a section's stored extent pointing at the wrong place. ── */
+function renderSectionStrips(){
+  const scroll=document.getElementById('rows-scroll');
+  if(!scroll) return;
+  let layer=document.getElementById('section-strips');
+  if(!layer){
+    layer=document.createElement('div');
+    layer.id='section-strips';
+    scroll.appendChild(layer);
+  }
+  layer.innerHTML='';
+  const sections=ANNOTATIONS.filter(a=>a.type==='section');
+  if(!sections.length) return;
+
+  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const ridToIndex={};
+  rows.forEach((r,i)=>{ ridToIndex[r.dataset.rid]=i; });
+
+  const sorted=sections
+    .map(s=>({ann:s, idx:ridToIndex[s.beforeRid]}))
+    .filter(s=>s.idx!==undefined)
+    .sort((a,b)=>a.idx-b.idx);
+  if(!sorted.length) return;
+
+  const scrollRect=scroll.getBoundingClientRect();
+  const scrollTop=scroll.scrollTop||0;
+
+  sorted.forEach((entry,i)=>{
+    const startRow=rows[entry.idx];
+    const endIdx=(i+1<sorted.length) ? Math.max(entry.idx, sorted[i+1].idx-1) : rows.length-1;
+    const endRow=rows[endIdx];
+    if(!startRow||!endRow) return;
+
+    const startRect=startRow.getBoundingClientRect();
+    const endRect=endRow.getBoundingClientRect();
+    const top=startRect.top-scrollRect.top+scrollTop;
+    const height=Math.max(24,(endRect.bottom-scrollRect.top+scrollTop)-top);
+
+    const strip=document.createElement('div');
+    strip.className='sec-strip';
+    strip.dataset.annId=entry.ann.id;
+    strip.style.top=top+'px';
+    strip.style.height=height+'px';
+    strip.style.setProperty('--sec-color', entry.ann.color||'#534AB7');
+
+    const del=document.createElement('button');
+    del.className='sec-strip-del';
+    del.title=typeof t==='function'?t('ann.delete'):'Delete annotation';
+    del.innerHTML='✕';
+    del.addEventListener('click',()=>{ deleteSection(entry.ann.id); });
+
+    const swatch=document.createElement('input');
+    swatch.type='color'; swatch.className='sec-strip-color';
+    swatch.value=entry.ann.color||'#534AB7';
+    swatch.title=typeof t==='function'?t('ann.color'):'Color';
+    swatch.addEventListener('change',()=>{
+      entry.ann.color=swatch.value;
+      strip.style.setProperty('--sec-color', entry.ann.color);
+      if(EDITOR_VIEW==='diagram') renderDiagram();
+      autoSave();
+    });
+
+    const label=document.createElement('div');
+    label.className='sec-strip-label';
+    label.contentEditable='true';
+    label.spellcheck=false;
+    label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
+    label.textContent=entry.ann.label||'';
+    label.addEventListener('input',()=>{ entry.ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('blur',()=>{ entry.ann.label=label.textContent.trim(); autoSave(); });
+
+    strip.append(swatch, del, label);
+    layer.appendChild(strip);
+  });
 }
 
 /* ═══════════════════════════════════════════
@@ -6660,12 +6838,12 @@ function _annApplyUndo(op){
   if(op.type==='ann-add'){
     ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==op.ann.id);
     _annHidePopupIfStale();
-    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    if(op.ann.type==='divider') renderDividers(); else if(op.ann.type==='section'){ renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); } else renderAnnLayer();
     return true;
   }
   if(op.type==='ann-remove'){
     if(!ANNOTATIONS.find(a=>a.id===op.ann.id)) ANNOTATIONS.push({...op.ann});
-    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    if(op.ann.type==='divider') renderDividers(); else if(op.ann.type==='section'){ renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); } else renderAnnLayer();
     return true;
   }
   if(op.type==='ann-edit'){
@@ -6684,13 +6862,13 @@ function _annApplyRedo(op){
   // Redo is the mirror of undo: ann-add re-adds, ann-remove re-removes
   if(op.type==='ann-add'){
     if(!ANNOTATIONS.find(a=>a.id===op.ann.id)) ANNOTATIONS.push({...op.ann});
-    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    if(op.ann.type==='divider') renderDividers(); else if(op.ann.type==='section'){ renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); } else renderAnnLayer();
     return true;
   }
   if(op.type==='ann-remove'){
     ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==op.ann.id);
     _annHidePopupIfStale();
-    if(op.ann.type==='divider') renderDividers(); else renderAnnLayer();
+    if(op.ann.type==='divider') renderDividers(); else if(op.ann.type==='section'){ renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); } else renderAnnLayer();
     return true;
   }
   if(op.type==='ann-edit'){
@@ -9575,7 +9753,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
   document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);
   document.getElementById('cmargin')?.addEventListener('scroll', drawConns);
-  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); refreshDiagramConnectors(); });
+  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); refreshDiagramConnectors(); if(typeof renderSectionStrips==='function') renderSectionStrips(); });
   // Rich paste handler for Screen 2
   const pasteTA=document.getElementById('paste-ta');
   if(pasteTA) pasteTA.addEventListener('paste', ev=>{
