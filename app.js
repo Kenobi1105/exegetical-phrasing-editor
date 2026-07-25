@@ -604,7 +604,7 @@ function setEditorView(view){
   document.getElementById('dzoom-sep')?.style.setProperty('display',isDiagram?'':'none');
   // Phrasing-only formatting controls (font size, text colour, indent/outdent)
   const phrasingFmt=isPhrasing?'':'none';
-  ['phrasing-color-grp','phrasing-indent-grp',
+  ['phrasing-inline-fmt-grp','phrasing-color-grp','phrasing-indent-grp',
    'phrasing-fmt-sep1','phrasing-fmt-sep2','phrasing-fmt-sep3']
     .forEach(id=>document.getElementById(id)?.style.setProperty('display',phrasingFmt));
   _updatePhrasingSizeGrpVisibility();
@@ -1691,9 +1691,13 @@ function startConnectorDraw(ev, fromRid){
   // without rewriting the entire canvas DOM (which would interrupt the drag).
   _wrapBlockTextWords_single(fromEl);
 
-  // Determine if the drag started on a specific word (word-level anchor)
+  // Determine if the drag started on a specific word (word-level anchor).
+  // Connectors must resolve to a word on BOTH ends — a block-level
+  // fallback point is no longer a valid outcome, so bail out here with
+  // no drag/rubber-band at all if the press didn't land on a word.
   const fromWordEl=ev.target.closest('.ann-word');
-  const fromWordIdx=fromWordEl?_getWordIdx(fromEl.querySelector('.dblock-text'), fromWordEl):null;
+  if(!fromWordEl) return;
+  const fromWordIdx=_getWordIdx(fromEl.querySelector('.dblock-text'), fromWordEl);
 
   // Compute start fractional position within the block
   const fr0=fromEl.getBoundingClientRect();
@@ -1759,9 +1763,13 @@ function startConnectorDraw(ev, fromRid){
       const toFracX=Math.min(1,Math.max(0,(mv.clientX-tr.left)/tr.width));
       const toFracY=_snapFracY(Math.min(1,Math.max(0,(mv.clientY-tr.top)/tr.height)));
 
-      // Determine if release was on a specific word (word-level anchor)
+      // Connectors must resolve to a word on BOTH ends (see the matching
+      // guard at drag-start) — if the release didn't land on a specific
+      // word, the connector is rejected rather than falling back to a
+      // block-level point.
       const toWordEl=el?el.closest('.ann-word'):null;
-      const toWordIdx=toWordEl?_getWordIdx(toBlock.querySelector('.dblock-text'), toWordEl):null;
+      if(!toWordEl) return;
+      const toWordIdx=_getWordIdx(toBlock.querySelector('.dblock-text'), toWordEl);
 
       CNX++;
       const newConnector={
@@ -2358,9 +2366,29 @@ document.addEventListener('click', e=>{
    last seen verse number for ID purposes,
    without writing to the verse input.
 ════════════════════════════════════════ */
+/* Alternating row shading, computed here rather than via CSS :nth-child,
+   because Proposition Dividers are inserted as direct DOM siblings of
+   rows (row.before(el) in renderDividers) — a positional CSS selector
+   counts EVERY sibling type, so a divider between two rows throws off
+   the odd/even count for everything after it. Counting only .xrow
+   elements keeps the alternating pattern correct regardless of how many
+   dividers are interspersed. Called from recomputeIds() (row add/
+   remove/reorder) and from the end of renderDividers() (divider add/
+   remove doesn't change row order, but does change which rows sit next
+   to a divider sibling, so shading needs the same recheck either way). */
+function _applyRowShading(){
+  let i=0;
+  document.querySelectorAll('.xrow').forEach(row=>{
+    row.classList.toggle('row-even', i%2===0);
+    row.classList.toggle('row-odd', i%2===1);
+    i++;
+  });
+}
+
 function recomputeIds(){
   const counts={};
   let lastVerse='';
+  _applyRowShading();
   document.querySelectorAll('.xrow').forEach(row=>{
     const vi=row.querySelector('.vin');
     const lid=row.querySelector('.lid');
@@ -6240,6 +6268,7 @@ function renderDividers(){
     el.append(line, labelWrap);
     row.before(el);  // Proposition divider appears ABOVE its row
   });
+  _applyRowShading();
 }
 
 function deleteDivider(id){
@@ -6321,8 +6350,15 @@ function startFreeArrow(){
       // Snap to horizontal or vertical when Shift is held
       if(ev2.shiftKey){
         const dx=x2-x1, dy=y2-y1;
-        if(Math.abs(dy)*canvas.scrollWidth < Math.abs(dx)*canvas.scrollHeight*0.15) y2=y1;      // snap horizontal
-        else if(Math.abs(dx)*canvas.scrollHeight < Math.abs(dy)*canvas.scrollWidth*0.15) x2=x1; // snap vertical
+        // x/y are stored as percentages of canvas.scrollWidth/scrollHeight,
+        // which usually aren't equal — comparing raw dx/dy without
+        // converting back to true pixel space would bias the snap
+        // decision toward whichever axis has the larger percent-per-pixel
+        // ratio. Whichever axis has the larger PIXEL delta wins; the other
+        // axis is pinned back to the start point, keeping its sign so all
+        // four cardinal directions (left/right/up/down) snap correctly.
+        const pxDx=dx*canvas.scrollWidth, pxDy=dy*canvas.scrollHeight;
+        if(Math.abs(pxDx)>=Math.abs(pxDy)) y2=y1; else x2=x1;
       }
       _updateRubberArrow(rubber, x1,y1,x2,y2, canvas);
     };
@@ -6337,8 +6373,8 @@ function startFreeArrow(){
       let y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
       if(ev2.shiftKey){
         const dx=x2-x1, dy=y2-y1;
-        if(Math.abs(dy)*canvas.scrollWidth < Math.abs(dx)*canvas.scrollHeight*0.15) y2=y1;
-        else if(Math.abs(dx)*canvas.scrollHeight < Math.abs(dy)*canvas.scrollWidth*0.15) x2=x1;
+        const pxDx=dx*canvas.scrollWidth, pxDy=dy*canvas.scrollHeight;
+        if(Math.abs(pxDx)>=Math.abs(pxDy)) y2=y1; else x2=x1;
       }
       const dx=x2-x1, dy=y2-y1;
       if(Math.sqrt(dx*dx+dy*dy)<1) return; // too small — cancel

@@ -187,8 +187,8 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 /* ── ROW ── */
 .xrow{display:flex;align-items:stretch;border-radius:var(--rs);
   margin-bottom:2px;position:relative;transition:background .1s}
-.xrow:nth-child(odd){background:transparent}
-.xrow:nth-child(even){background:var(--alt)}
+.xrow.row-even{background:transparent}
+.xrow.row-odd{background:var(--alt)}
 .xrow:hover{background:rgba(240,208,143,.13)}
 .xrow.has-cmt{border-left:2px solid var(--sig)}
 
