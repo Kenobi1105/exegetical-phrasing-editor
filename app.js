@@ -6253,9 +6253,21 @@ function addDivider(){
    generalizing addDivider/deleteDivider, so the well-tested existing
    Proposition Divider code path is never at risk of being disturbed. */
 function addSection(){
-  const focusedRow = lastFocusedRowEl || document.querySelector('.xrow');
-  if(!focusedRow) return;
-  const beforeRid = focusedRow.dataset.rid;
+  // lastFocusedRowEl only updates from Phrasing View's text-field focus
+  // handlers — clicking a diagram block never touches it, so Add Section
+  // from Diagram View was always silently re-anchoring to whatever row
+  // was last focused in Phrasing (often verse 1), no matter which block
+  // was actually clicked. Diagram View has its OWN reliable "current
+  // row" signal — SELECTED_DIAG_RID, set by selectDiagBlock() on every
+  // block click — so use that when it's the active view.
+  let beforeRid;
+  if(EDITOR_VIEW==='diagram' && typeof SELECTED_DIAG_RID!=='undefined' && SELECTED_DIAG_RID){
+    beforeRid=SELECTED_DIAG_RID;
+  } else {
+    const focusedRow=lastFocusedRowEl || document.querySelector('.xrow');
+    if(!focusedRow) return;
+    beforeRid=focusedRow.dataset.rid;
+  }
   const ann = { id:_annId(), type:'section', beforeRid, label:'', color:'#534AB7' };
   ANNOTATIONS.push(ann);
   renderSectionStrips();
@@ -6263,7 +6275,10 @@ function addSection(){
   autoSave();
   rowPush({type:'ann-add', ann:{...ann}});
   setTimeout(()=>{
-    const el=document.querySelector(`.sec-strip[data-ann-id="${ann.id}"] .sec-strip-label`);
+    const sel = EDITOR_VIEW==='diagram'
+      ? `.dsec-divider[data-ann-id="${ann.id}"] .dsec-label`
+      : `.sec-strip[data-ann-id="${ann.id}"] .sec-strip-label`;
+    const el=document.querySelector(sel);
     if(el) el.focus();
   }, 60);
 }

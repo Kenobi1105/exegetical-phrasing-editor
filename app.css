@@ -4365,7 +4365,7 @@ body.dg-hide-trans .dblock-trans{display:none}
   box-shadow:0 1px 3px rgba(0,0,0,.18);
 }
 .sec-strip-label{
-  flex:1;writing-mode:vertical-rl;text-orientation:mixed;
+  flex:1;writing-mode:vertical-rl;text-orientation:mixed;transform:rotate(180deg);
   color:#fff;font-family:var(--ui);font-weight:700;font-size:11px;
   letter-spacing:.04em;outline:none;overflow:hidden;
   padding:6px 0;white-space:nowrap;
@@ -4394,7 +4394,7 @@ body.dg-hide-trans .dblock-trans{display:none}
 }
 .dsec-label{
   flex:none;transform:translateY(-13px);
-  background:var(--bg);padding:0 8px 0 0;
+  background:var(--bg);padding:0 8px 0 0;margin-left:32px;
   color:var(--sec-color,#534AB7);
   font-family:var(--ui);font-weight:800;font-size:15px;
   text-transform:uppercase;letter-spacing:.06em;
@@ -4404,7 +4404,7 @@ body.dg-hide-trans .dblock-trans{display:none}
 .dsec-color{
   flex:none;transform:translateY(-13px);
   width:14px;height:14px;padding:0;border:1.5px solid var(--sec-color,#534AB7);
-  border-radius:50%;background:none;cursor:pointer;
+  border-radius:50%;background:none;cursor:pointer;opacity:0;transition:opacity .12s;
   -webkit-appearance:none;appearance:none;
 }
 .dsec-color::-webkit-color-swatch-wrapper{padding:0}
@@ -4416,4 +4416,4 @@ body.dg-hide-trans .dblock-trans{display:none}
   display:flex;align-items:center;justify-content:center;opacity:0;
   transition:opacity .12s;
 }
-.dsec-divider:hover .dsec-del{opacity:1}
+.dsec-divider:hover .dsec-del,.dsec-divider:hover .dsec-color{opacity:1}
