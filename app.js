@@ -622,6 +622,7 @@ function setEditorView(view){
   // Annotation buttons: divider only in phrasing, arrow + bracket only in diagram
   document.getElementById('divider-grp')?.style.setProperty('display',isPhrasing?'flex':'none');
   document.getElementById('tb-tgl-dgtrans')?.style.setProperty('display',isDiagram?'':'none');
+  document.getElementById('tb-tgl-dsec-end')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-connector')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-bracket')?.style.setProperty('display',isDiagram?'':'none');
@@ -882,6 +883,47 @@ function makeDiagramRowEl(row){
    segments rather than a border-top + per-element transform hack, so
    every child shares one align-items:center row and can't drift out of
    vertical alignment with each other. */
+/* Section gutter preview (Diagram View): a faint, non-interactive
+   indicator in the verse-number gutter showing a section's full
+   startRid..endRid range on hover/tap — same visual language as the
+   Phrasing-side .sec-strip, but transient and much fainter, since this
+   is a preview, not a persistent/editable element. */
+let _secPreviewPinned=false, _secPreviewAnnId=null, _secPreviewTimer=null;
+function _showSecGutterPreview(ann){
+  const canvas=document.getElementById('dcanvas'); if(!canvas) return;
+  const startBlk=canvas.querySelector(`.dblock[data-rid="${ann.startRid}"]`);
+  const endBlk=canvas.querySelector(`.dblock[data-rid="${ann.endRid}"]`)||startBlk;
+  if(!startBlk) return;
+  _secPreviewAnnId=ann.id;
+  let bar=document.getElementById('dsec-gutter-preview');
+  if(!bar){
+    bar=document.createElement('div');
+    bar.id='dsec-gutter-preview';
+    canvas.appendChild(bar);
+  }
+  const canvasRect=canvas.getBoundingClientRect();
+  const startRect=startBlk.getBoundingClientRect();
+  const endRect=endBlk.getBoundingClientRect();
+  const top=Math.min(startRect.top,endRect.top)-canvasRect.top+canvas.scrollTop;
+  const bottom=Math.max(startRect.bottom,endRect.bottom)-canvasRect.top+canvas.scrollTop;
+  bar.style.top=top+'px';
+  bar.style.height=Math.max(20,bottom-top)+'px';
+  bar.style.setProperty('--sec-color', ann.color||'#534AB7');
+  bar.classList.add('visible');
+}
+function _hideSecGutterPreview(){
+  _secPreviewAnnId=null;
+  const bar=document.getElementById('dsec-gutter-preview');
+  if(bar) bar.classList.remove('visible');
+}
+// Tap elsewhere to dismiss a pinned preview
+document.addEventListener('click',ev=>{
+  if(!_secPreviewPinned) return;
+  if(ev.target.closest('.dsec-start')) return; // handled by the element's own click handler
+  _secPreviewPinned=false;
+  _hideSecGutterPreview();
+});
+
 function _makeDiagramSectionEl(ann, kind){
   const el=document.createElement('div');
   el.className='dsec-divider dsec-'+kind;
@@ -930,8 +972,34 @@ function _makeDiagramSectionEl(ann, kind){
     del.innerHTML='✕';
     del.addEventListener('mousedown',ev=>ev.stopPropagation());
     del.addEventListener('pointerdown',ev=>ev.stopPropagation());
-    del.addEventListener('click',()=>{ deleteSection(ann.id); });
+    del.addEventListener('click',ev=>{ ev.stopPropagation(); deleteSection(ann.id); });
     el.appendChild(del);
+
+    // Hover (desktop) / tap (touch) preview of the section's full range as
+    // a faint gutter indicator, independent of the end-line toggle above —
+    // lets you see the scope even when end lines are hidden. Single
+    // tap/click shows briefly then auto-hides; double-click/double-tap
+    // pins it until dismissed by tapping the line again or tapping
+    // elsewhere. Mouse hover always shows/hides live and ignores the
+    // pinned state entirely EXCEPT that leaving a pinned preview up
+    // doesn't get cleared by an unrelated mouseleave.
+    el.addEventListener('mouseenter',()=>{ if(!_secPreviewPinned) _showSecGutterPreview(ann); });
+    el.addEventListener('mouseleave',()=>{ if(!_secPreviewPinned) _hideSecGutterPreview(); });
+    el.addEventListener('click',ev=>{
+      if(ev.target===del||ev.target===swatch||ev.target===label) return;
+      if(_secPreviewPinned && _secPreviewAnnId===ann.id){
+        _secPreviewPinned=false; _hideSecGutterPreview(); return;
+      }
+      _showSecGutterPreview(ann);
+      clearTimeout(_secPreviewTimer);
+      _secPreviewTimer=setTimeout(()=>{ if(!_secPreviewPinned) _hideSecGutterPreview(); }, 1800);
+    });
+    el.addEventListener('dblclick',ev=>{
+      if(ev.target===del||ev.target===swatch||ev.target===label) return;
+      clearTimeout(_secPreviewTimer);
+      _secPreviewPinned=true;
+      _showSecGutterPreview(ann);
+    });
   } else {
     // 'end' marker: just a plain closing line the full width, same color
     const trailLine=document.createElement('div');
@@ -2809,6 +2877,7 @@ function applyRowUndo(op){
   if(typeof _annApplyUndo==='function' && _annApplyUndo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.prev); return; }
   if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.prev); return; }
+  if(op.type==='tgl-dsec-end'){ _setDgSecEndVisible(op.prev); return; }
   if(op.type==='fsz-orig'){ _applyOrigSize(op.prev); return; }
   if(op.type==='fsz-trans'){ _applyTransSize(op.prev); return; }
   if(op.type==='fsz-both'){ _applyBothSize(op.prev); return; }
@@ -2971,6 +3040,7 @@ function applyRowRedo(op){
   if(typeof _annApplyRedo==='function' && _annApplyRedo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.next); return; }
   if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.next); return; }
+  if(op.type==='tgl-dsec-end'){ _setDgSecEndVisible(op.next); return; }
   if(op.type==='fsz-orig'){ _applyOrigSize(op.next); return; }
   if(op.type==='fsz-trans'){ _applyTransSize(op.next); return; }
   if(op.type==='fsz-both'){ _applyBothSize(op.next); return; }
@@ -6380,6 +6450,21 @@ function _setDgTransVisible(visible){
   // Fixed here (not in toggleDgTransVisible) so undo/redo — which call
   // this setter directly, bypassing the toggle function — are covered too.
   if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
+}
+function _setDgSecEndVisible(visible){
+  document.body.classList.toggle('dg-hide-sec-end', !visible);
+  document.getElementById('tb-tgl-dsec-end')?.classList.toggle('tgl-on', visible);
+  // Same reasoning as _setDgTransVisible: hiding the end line is a
+  // flow-inserted element disappearing, which shifts everything after it
+  // — connectors need to recheck their positions. Fixed here (not in
+  // toggleDgSecEndVisible) so undo/redo, which call this setter directly,
+  // are covered too.
+  if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
+}
+function toggleDgSecEndVisible(){
+  const wasVisible=!document.body.classList.contains('dg-hide-sec-end');
+  _setDgSecEndVisible(!wasVisible);
+  rowPush({type:'tgl-dsec-end', prev:wasVisible, next:!wasVisible});
 }
 function toggleDividersVisible(){
   const wasVisible=!document.body.classList.contains('hide-dividers');

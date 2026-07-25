@@ -4407,7 +4407,7 @@ body.dg-hide-trans .dblock-trans{display:none}
   display:flex;align-items:center;
   margin:14px 0 10px;padding:0 2px;
 }
-.dsec-line{height:3px;background:var(--sec-color,#534AB7);border-radius:2px}
+.dsec-line{height:2px;background:var(--sec-color,#534AB7);border-radius:2px}
 .dsec-line-lead{flex:0 0 28px}
 .dsec-line-trail{flex:1;margin-left:12px}
 .dsec-line-end{margin-left:0}
@@ -4435,3 +4435,18 @@ body.dg-hide-trans .dblock-trans{display:none}
   transition:opacity .12s;
 }
 .dsec-divider:hover .dsec-del,.dsec-divider:hover .dsec-color{opacity:1}
+
+/* ── Section Divider end-line visibility toggle (Diagram View) ── */
+body.dg-hide-sec-end .dsec-end{display:none}
+
+/* ── Section gutter preview (Diagram View, hover/tap) ──
+   Sits within the existing 60px verse-number column (.dcell.dv), left of
+   the number text itself, so no extra canvas padding is needed. */
+#dsec-gutter-preview{
+  position:absolute;left:4px;width:8px;
+  background:var(--sec-color,#534AB7);border-radius:4px;
+  opacity:0;pointer-events:none;
+  transition:opacity .15s;
+}
+#dsec-gutter-preview.visible{opacity:.35}
+.dsec-start{cursor:pointer}
