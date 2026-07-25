@@ -700,6 +700,9 @@ function setDiagramFontSize(sz){
   if(canvas) canvas.style.setProperty('--diagram-font', DIAGRAM_FONT_SIZE+'px');
   const lbl=document.getElementById('dfont-sz');
   if(lbl) lbl.textContent=DIAGRAM_FONT_SIZE+'px';
+  // Font size changes block dimensions the same way translation-hiding
+  // does — same missing-refresh bug, same fix.
+  if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
   autoSave();
 }
 function diagramFontInc(){ setDiagramFontSize(DIAGRAM_FONT_SIZE+DIAGRAM_FONT_STEP); }
@@ -6203,6 +6206,12 @@ function _setDividersVisible(visible){
 function _setDgTransVisible(visible){
   document.body.classList.toggle('dg-hide-trans', !visible);
   document.getElementById('tb-tgl-dgtrans')?.classList.toggle('tgl-on', visible);
+  // Hiding/showing translations changes block height, which shifts block
+  // positions — connectors (and brackets/labels, via the same call) never
+  // got told to recheck, so they stayed frozen at the pre-toggle spot.
+  // Fixed here (not in toggleDgTransVisible) so undo/redo — which call
+  // this setter directly, bypassing the toggle function — are covered too.
+  if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
 }
 function toggleDividersVisible(){
   const wasVisible=!document.body.classList.contains('hide-dividers');
@@ -9566,7 +9575,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
   document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);
   document.getElementById('cmargin')?.addEventListener('scroll', drawConns);
-  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); });
+  window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); refreshDiagramConnectors(); });
   // Rich paste handler for Screen 2
   const pasteTA=document.getElementById('paste-ta');
   if(pasteTA) pasteTA.addEventListener('paste', ev=>{
