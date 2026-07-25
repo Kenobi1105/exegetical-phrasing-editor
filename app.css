@@ -4412,7 +4412,7 @@ body.dg-hide-trans .dblock-trans{display:none}
 .dsec-line-trail{flex:1;margin-left:12px}
 .dsec-line-end{margin-left:0}
 .dsec-label{
-  flex:none;
+  flex:none;margin-left:12px;
   color:var(--sec-color,#534AB7);
   font-family:var(--ui);font-weight:800;font-size:15px;
   text-transform:uppercase;letter-spacing:.06em;

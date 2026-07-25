@@ -998,6 +998,17 @@ function renderDiagram(){
   canvas.appendChild(svg);
 
   if(!rows.length) return;
+  // Curve connectors can anchor to a specific word (fromWordIdx/toWordIdx),
+  // resolved by looking up the Nth .ann-word span in the target block —
+  // but .ann-word spans only get created lazily (Ctrl-press or entering
+  // connector mode). A rebuild from ANY other trigger (switching views,
+  // editing a row, hiding translations, ...) wipes and recreates every
+  // block with plain unwrapped text, so a word-anchored connector would
+  // fail to find its word and fall back to a block-level point instead —
+  // same "must be tokenized before connectors resolve" requirement the
+  // DIAGRAM_EDIT_MODE re-tokenization a few lines below already handles
+  // for its own system; connectors just needed the same treatment.
+  document.querySelectorAll('#dcanvas .dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
   renderDiagramConnectors();
   renderDiagramLabels();
   refreshDiagramLabels();
