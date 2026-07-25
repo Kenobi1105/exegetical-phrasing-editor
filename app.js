@@ -621,8 +621,9 @@ function setEditorView(view){
   document.getElementById('tb-dem')?.style.setProperty('display',isDiagram?'':'none');
   // Annotation buttons: divider only in phrasing, arrow + bracket only in diagram
   document.getElementById('divider-grp')?.style.setProperty('display',isPhrasing?'flex':'none');
+  document.getElementById('psection-grp')?.style.setProperty('display',isPhrasing?'flex':'none');
   document.getElementById('tb-tgl-dgtrans')?.style.setProperty('display',isDiagram?'':'none');
-  document.getElementById('tb-tgl-dsec-end')?.style.setProperty('display',isDiagram?'':'none');
+  document.getElementById('dsection-grp')?.style.setProperty('display',isDiagram?'flex':'none');
   document.getElementById('tb-add-arrow')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-connector')?.style.setProperty('display',isDiagram?'':'none');
   document.getElementById('tb-add-bracket')?.style.setProperty('display',isDiagram?'':'none');
@@ -2876,6 +2877,7 @@ function applyRowUndo(op){
   // Annotation ops (dividers, arrows, spans, arcs)
   if(typeof _annApplyUndo==='function' && _annApplyUndo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.prev); return; }
+  if(op.type==='tgl-sections'){ _setSectionsVisible(op.prev); return; }
   if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.prev); return; }
   if(op.type==='tgl-dsec-end'){ _setDgSecEndVisible(op.prev); return; }
   if(op.type==='fsz-orig'){ _applyOrigSize(op.prev); return; }
@@ -3039,6 +3041,7 @@ function applyRowRedo(op){
   // Annotation ops
   if(typeof _annApplyRedo==='function' && _annApplyRedo(op)) return;
   if(op.type==='tgl-dividers'){ _setDividersVisible(op.next); return; }
+  if(op.type==='tgl-sections'){ _setSectionsVisible(op.next); return; }
   if(op.type==='tgl-dgtrans'){ _setDgTransVisible(op.next); return; }
   if(op.type==='tgl-dsec-end'){ _setDgSecEndVisible(op.next); return; }
   if(op.type==='fsz-orig'){ _applyOrigSize(op.next); return; }
@@ -6465,6 +6468,15 @@ function toggleDgSecEndVisible(){
   const wasVisible=!document.body.classList.contains('dg-hide-sec-end');
   _setDgSecEndVisible(!wasVisible);
   rowPush({type:'tgl-dsec-end', prev:wasVisible, next:!wasVisible});
+}
+function _setSectionsVisible(visible){
+  document.body.classList.toggle('hide-sections', !visible);
+  document.getElementById('tb-tgl-sections')?.classList.toggle('tgl-on', visible);
+}
+function toggleSectionsVisible(){
+  const wasVisible=!document.body.classList.contains('hide-sections');
+  _setSectionsVisible(!wasVisible);
+  rowPush({type:'tgl-sections', prev:wasVisible, next:!wasVisible});
 }
 function toggleDividersVisible(){
   const wasVisible=!document.body.classList.contains('hide-dividers');
