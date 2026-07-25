@@ -4409,8 +4409,6 @@ body.dg-hide-trans .dblock-trans{display:none}
 }
 .dsec-line{height:2px;background:var(--sec-color,#534AB7);border-radius:2px}
 .dsec-line-lead{flex:0 0 28px}
-.dsec-line-trail{flex:1;margin-left:12px}
-.dsec-line-end{margin-left:0}
 .dsec-label{
   flex:none;margin-left:12px;
   color:var(--sec-color,#534AB7);

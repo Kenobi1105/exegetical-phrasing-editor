@@ -611,7 +611,7 @@ function setEditorView(view){
   // Phrasing-only formatting controls (font size, text colour, indent/outdent)
   const phrasingFmt=isPhrasing?'':'none';
   ['phrasing-inline-fmt-grp','phrasing-color-grp','phrasing-indent-grp',
-   'phrasing-fmt-sep1','phrasing-fmt-sep2','phrasing-fmt-sep3']
+   'phrasing-fmt-sep0','phrasing-fmt-sep1','phrasing-fmt-sep2','phrasing-fmt-sep3']
     .forEach(id=>document.getElementById(id)?.style.setProperty('display',phrasingFmt));
   _updatePhrasingSizeGrpVisibility();
   document.getElementById('dzoom-grp')?.style.setProperty('display',isDiagram?'flex':'none');
@@ -949,10 +949,6 @@ function _makeDiagramSectionEl(ann, kind){
     label.addEventListener('pointerdown',ev=>ev.stopPropagation());
     el.appendChild(label);
 
-    const trailLine=document.createElement('div');
-    trailLine.className='dsec-line dsec-line-trail';
-    el.appendChild(trailLine);
-
     const swatch=document.createElement('input');
     swatch.type='color'; swatch.className='dsec-color';
     swatch.value=ann.color||'#534AB7';
@@ -1002,10 +998,10 @@ function _makeDiagramSectionEl(ann, kind){
       _showSecGutterPreview(ann);
     });
   } else {
-    // 'end' marker: just a plain closing line the full width, same color
-    const trailLine=document.createElement('div');
-    trailLine.className='dsec-line dsec-line-trail dsec-line-end';
-    el.appendChild(trailLine);
+    // 'end' marker: nothing more than the short lead line, same length
+    // and color as the start marker's own lead line — deliberately NOT
+    // full-width, so it doesn't interfere with labels/brackets/etc.
+    // sitting further right in the diagram.
   }
 
   return el;
@@ -10116,10 +10112,10 @@ document.addEventListener('keydown',function(ev){
   if(typeof toggleLang==='function')toggleLang();
 });
 
-/* ── Alt+1/2/3/T/L/P/D/A/B hotkeys ── */
+/* ── Alt+1/2/3/T/L/P/D/A/B/S/J/K/H hotkeys ── */
 document.addEventListener('keydown',function(ev){
   if(!ev.altKey||ev.shiftKey||ev.ctrlKey||ev.metaKey)return;
-  if(!'123tTlLpPdDaAbBcCeE'.includes(ev.key))return;
+  if(!'123tTlLpPdDaAbBcCeEsSjJkKhH'.includes(ev.key))return;
   const tag=(ev.target.tagName||'').toLowerCase();
   if(tag==='input'||tag==='textarea')return;
   const s2Visible=!document.getElementById('s2')?.classList.contains('hidden');
@@ -10143,6 +10139,20 @@ document.addEventListener('keydown',function(ev){
   // Annotation shortcuts
   if((ev.key==='d'||ev.key==='D')&&!s1Visible&&EDITOR_VIEW==='phrasing'){
     addDivider();
+  }
+  if((ev.key==='h'||ev.key==='H')&&!s1Visible&&EDITOR_VIEW==='phrasing'){
+    toggleDividersVisible();
+  }
+  if((ev.key==='s'||ev.key==='S')&&!s1Visible){
+    addSection(); // view-aware internally (Phrasing vs Diagram anchor)
+  }
+  if((ev.key==='j'||ev.key==='J')&&!s1Visible&&EDITOR_VIEW==='diagram'){
+    toggleDgTransVisible();
+  }
+  if((ev.key==='k'||ev.key==='K')&&!s1Visible){
+    // Same key, contextual per view — each toggle only exists/matters in its own view
+    if(EDITOR_VIEW==='diagram') toggleDgSecEndVisible();
+    else if(EDITOR_VIEW==='phrasing') toggleSectionsVisible();
   }
   if((ev.key==='a'||ev.key==='A')&&!s1Visible&&EDITOR_VIEW==='diagram'){
     startFreeArrow();
