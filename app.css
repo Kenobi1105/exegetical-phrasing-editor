@@ -128,7 +128,8 @@ body{font-family:var(--ui);font-size:12px;color:var(--ink);display:flex;flex-dir
 .tsep{width:1px;height:24px;background:rgba(255,255,255,.13);margin:0 5px;flex-shrink:0}
 .tbtn{width:32px;height:32px;border:none;background:transparent;color:var(--label);
   border-radius:8px;display:flex;align-items:center;justify-content:center;
-  cursor:pointer;transition:background .13s,color .13s;flex-shrink:0;position:relative}
+  cursor:pointer;transition:background .13s,color .13s;flex-shrink:0;position:relative;
+  -webkit-tap-highlight-color:transparent}
 .tbtn:hover{background:rgba(255,255,255,.12)}
 .tbtn:active{background:rgba(255,255,255,.18)}
 .tbtn.on{background:var(--accent);color:var(--ink)}
@@ -156,7 +157,8 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 .tr-r{margin-left:auto;display:flex;align-items:center;gap:4px}
 .ibtn{width:32px;height:32px;border:none;background:transparent;
   color:var(--label);border-radius:8px;display:flex;align-items:center;
-  justify-content:center;cursor:pointer;transition:background .14s}
+  justify-content:center;cursor:pointer;transition:background .14s;
+  -webkit-tap-highlight-color:transparent}
 .ibtn:hover{background:rgba(255,255,255,.14)}
 .ibtn:active{background:rgba(255,255,255,.2)}
 .ibtn svg{width:15px;height:15px;pointer-events:none}
@@ -4470,7 +4472,7 @@ body.hide-sections #section-strips{display:none}
 #toolbar-panel{
   position:fixed;left:0;right:0;z-index:500;
   max-height:0;overflow:hidden;
-  background:color-mix(in srgb, var(--sig) 80%, transparent);
+  background:var(--sig);
   transition:max-height .22s ease;
 }
 #toolbar-panel.open{max-height:70vh;overflow-y:auto;box-shadow:0 8px 18px rgba(0,0,0,.22)}
