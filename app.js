@@ -10257,6 +10257,10 @@ function toggleMobileToolPanel(){
   const btn=document.getElementById('tb-mobile-tools');
   if(!panel) return;
   const willOpen=!panel.classList.contains('open');
+  if(willOpen){
+    const toolbar=document.getElementById('toolbar');
+    if(toolbar) panel.style.top=toolbar.getBoundingClientRect().bottom+'px';
+  }
   panel.classList.toggle('open', willOpen);
   btn?.classList.toggle('on', willOpen);
 }

@@ -4468,7 +4468,7 @@ body.hide-sections #section-strips{display:none}
   #toolbar .tsep{display:none !important}
 }
 #toolbar-panel{
-  position:absolute;left:0;right:0;top:100%;z-index:500;
+  position:fixed;left:0;right:0;z-index:500;
   max-height:0;overflow:hidden;
   background:color-mix(in srgb, var(--sig) 80%, transparent);
   transition:max-height .22s ease;
