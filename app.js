@@ -648,6 +648,7 @@ function setEditorView(view){
   if(isDiagram) renderDiagram();
   if(isSlides) setTimeout(()=>slRenderAll(), 80);
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
+  if(typeof _refreshMobilePanelSections==='function') _refreshMobilePanelSections();
 }
 
 function _repositionCmtCards(isDiagram){
@@ -10220,6 +10221,7 @@ function _syncMobileToolbarLayout(){
       sec.append(lbl, row);
       inner.appendChild(sec);
     });
+    _refreshMobilePanelSections();
   } else {
     MOBILE_TOOL_GROUPS.forEach(grp=>{
       grp.ids.forEach(id=>{
@@ -10233,6 +10235,21 @@ function _syncMobileToolbarLayout(){
     panel.classList.remove('open');
     document.getElementById('tb-mobile-tools')?.classList.remove('on');
   }
+}
+
+// A .tp-section only exists to group buttons that are relevant to the
+// CURRENT view — but the elements inside it are gated by setEditorView()
+// independently of which section wraps them, so a section whose every
+// button just got hidden (e.g. "Diagram view" while Phrasing is active)
+// would otherwise still show its own label with nothing beneath it. Hide
+// the whole section (label included) whenever none of its own children
+// are currently visible.
+function _refreshMobilePanelSections(){
+  document.querySelectorAll('#toolbar-panel-inner .tp-section').forEach(sec=>{
+    const row=sec.querySelector('.tp-row');
+    const anyVisible=row && [...row.children].some(el=>getComputedStyle(el).display!=='none');
+    sec.style.display=anyVisible?'':'none';
+  });
 }
 
 function toggleMobileToolPanel(){
