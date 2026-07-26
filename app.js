@@ -10162,3 +10162,102 @@ document.addEventListener('keydown',function(ev){
   }
 });
 
+/* ════════════════════════════════════════
+   MOBILE/TABLET TWO-TIER TOOLBAR
+   Desktop (fine pointer) keeps the single-row toolbar exactly as it has
+   always worked. On coarse pointer, the view-specific groups — never
+   duplicated, the actual same elements with their actual same handlers
+   and ids — get physically moved into a collapsible panel below the
+   always-visible top row (Undo/Redo, Phrasing/Diagram/Slides, this
+   toggle, and the right-side cluster stay put either way). Reversible:
+   if the pointer capability changes (matchMedia can update live, e.g. a
+   mouse gets connected to a tablet), everything moves back to its exact
+   original position.
+════════════════════════════════════════ */
+const MOBILE_TOOL_GROUPS=[
+  {section:'Format',   ids:['phrasing-inline-fmt-grp','phrasing-sz-grp','phrasing-sz-split-grp','phrasing-color-grp','phrasing-indent-grp']},
+  {section:'Dividers',  ids:['divider-grp','psection-grp']},
+  {section:'Diagram view', ids:['dzoom-grp','dfont-grp','tb-tgl-dgtrans']},
+  {section:'Sections',  ids:['dsection-grp']},
+  {section:'Tools',    ids:['tb-add-label','tb-add-cmt','tb-dem','tb-add-arrow','tb-add-connector','tb-add-bracket']},
+];
+let _mobileToolbarActive=false;
+
+function _syncMobileToolbarLayout(){
+  const coarse=window.matchMedia('(pointer:coarse)').matches;
+  if(coarse===_mobileToolbarActive) return;
+  _mobileToolbarActive=coarse;
+  const panel=document.getElementById('toolbar-panel');
+  if(!panel) return;
+  let inner=document.getElementById('toolbar-panel-inner');
+  if(!inner){
+    inner=document.createElement('div');
+    inner.id='toolbar-panel-inner';
+    panel.appendChild(inner);
+  }
+
+  if(coarse){
+    inner.innerHTML='';
+    MOBILE_TOOL_GROUPS.forEach(grp=>{
+      const els=grp.ids.map(id=>document.getElementById(id)).filter(Boolean);
+      if(!els.length) return;
+      const sec=document.createElement('div'); sec.className='tp-section';
+      const lbl=document.createElement('p'); lbl.className='tp-section-label'; lbl.textContent=grp.section;
+      const row=document.createElement('div'); row.className='tp-row';
+      els.forEach(el=>{
+        // Leave a marker comment at the element's original spot so it can
+        // be restored to the EXACT same position later — a plain JS
+        // reference on the element itself (not an id lookup, comment
+        // nodes can't have ids) since the element persists in memory the
+        // whole time, it's only ever relocated, never destroyed/rebuilt.
+        if(!el._mtAnchor){
+          const anchor=document.createComment('mt-anchor');
+          el.parentNode.insertBefore(anchor, el.nextSibling);
+          el._mtAnchor=anchor;
+        }
+        row.appendChild(el);
+      });
+      sec.append(lbl, row);
+      inner.appendChild(sec);
+    });
+  } else {
+    MOBILE_TOOL_GROUPS.forEach(grp=>{
+      grp.ids.forEach(id=>{
+        const el=document.getElementById(id);
+        if(el && el._mtAnchor && el._mtAnchor.parentNode){
+          el._mtAnchor.parentNode.insertBefore(el, el._mtAnchor);
+        }
+      });
+    });
+    inner.innerHTML='';
+    panel.classList.remove('open');
+    document.getElementById('tb-mobile-tools')?.classList.remove('on');
+  }
+}
+
+function toggleMobileToolPanel(){
+  const panel=document.getElementById('toolbar-panel');
+  const btn=document.getElementById('tb-mobile-tools');
+  if(!panel) return;
+  const willOpen=!panel.classList.contains('open');
+  panel.classList.toggle('open', willOpen);
+  btn?.classList.toggle('on', willOpen);
+}
+
+// Stays open while interacting with anything inside it or the toggle
+// button itself; dismisses on tapping anywhere else (canvas, content).
+document.addEventListener('click', ev=>{
+  const panel=document.getElementById('toolbar-panel');
+  if(!panel || !panel.classList.contains('open')) return;
+  const btn=document.getElementById('tb-mobile-tools');
+  if(panel.contains(ev.target) || (btn && btn.contains(ev.target))) return;
+  panel.classList.remove('open');
+  btn?.classList.remove('on');
+});
+
+_syncMobileToolbarLayout();
+if(window.matchMedia){
+  const mq=window.matchMedia('(pointer:coarse)');
+  if(mq.addEventListener) mq.addEventListener('change', _syncMobileToolbarLayout);
+  else if(mq.addListener) mq.addListener(_syncMobileToolbarLayout); // older Safari
+}
