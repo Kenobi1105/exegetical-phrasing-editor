@@ -4346,7 +4346,14 @@ body.dg-hide-trans .dblock-trans{display:none}
    change; only actual touch devices get bigger targets. */
 @media (pointer: coarse) {
   .tbtn{width:44px;height:44px;}
-  .vtbtn{height:44px;}
+  /* Undo/Redo and the tools-panel opener specifically shrink back down to
+     match the Phrasing/Diagram/Slides pills' natural 32px height, per an
+     explicit request to prioritize visual consistency with those three
+     over the general 44px touch-target guideline — every OTHER .tbtn
+     instance (all the formatting/annotation buttons) keeps the full 44px
+     from the rule above; only these three are scoped smaller. IDs used
+     for specificity so this reliably wins regardless of rule order. */
+  #btn-undo,#btn-redo,#tb-mobile-tools{width:32px;height:32px;}
   .dra-handle{
     width:26px;height:26px;
     /* Touch has no hover-before-tap, so the handle can't stay
