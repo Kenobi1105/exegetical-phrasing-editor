@@ -4346,6 +4346,7 @@ body.dg-hide-trans .dblock-trans{display:none}
    change; only actual touch devices get bigger targets. */
 @media (pointer: coarse) {
   .tbtn{width:44px;height:44px;}
+  .vtbtn{height:44px;}
   .dra-handle{
     width:26px;height:26px;
     /* Touch has no hover-before-tap, so the handle can't stay
@@ -4470,10 +4471,9 @@ body.hide-sections #section-strips{display:none}
   #toolbar .tsep{display:none !important}
 }
 #toolbar-panel{
-  position:fixed;left:0;right:0;z-index:500;
   max-height:0;overflow:hidden;
-  background:var(--sig);
-  transition:max-height .22s ease;
+  background:color-mix(in srgb, var(--sig) 85%, white 15%);
+  transition:max-height .22s ease;flex-shrink:0;
 }
 #toolbar-panel.open{max-height:70vh;overflow-y:auto;box-shadow:0 8px 18px rgba(0,0,0,.22)}
 #toolbar-panel-inner{padding:10px 12px 14px;display:none}
