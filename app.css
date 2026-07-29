@@ -2839,6 +2839,11 @@ sup.bfn:hover { opacity: .7; }
   box-shadow:0 0 0 2px rgba(73,53,72,.3);
   cursor:crosshair;
 }
+.ann-word.dconn-armed{
+  background:rgba(200,168,75,.35);
+  border-radius:3px;
+  outline:1.5px solid var(--active,#C8A84B);
+}
 
 /* Right-angle connector "+" handle — sits at the left-edge midpoint
    (right edge in RTL), straddling the block's border. Always visible

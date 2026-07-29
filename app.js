@@ -1864,6 +1864,15 @@ function startConnectorDraw(ev, fromRid){
   if(!fromWordEl) return;
   const fromWordIdx=_getWordIdx(fromEl.querySelector('.dblock-text'), fromWordEl);
 
+  // Stage 2 (mobile touch parity): dragging a continuous path is
+  // imprecise with a finger, so coarse-pointer devices get tap-source,
+  // tap-target instead — desktop mice keep the exact drag behavior
+  // below, completely untouched.
+  if(window.matchMedia && window.matchMedia('(pointer:coarse)').matches){
+    _startConnectorTapMode(fromRid, fromEl, fromWordEl, fromWordIdx);
+    return;
+  }
+
   // Compute start fractional position within the block
   const fr0=fromEl.getBoundingClientRect();
   const fromFracX=Math.min(1,Math.max(0,(ev.clientX-fr0.left)/fr0.width));
@@ -1955,6 +1964,161 @@ function startConnectorDraw(ev, fromRid){
   document.addEventListener('pointermove',onMove);
   document.addEventListener('pointerup',onUp);
   document.addEventListener('keydown',onKey,true);
+}
+
+/* ── Stage 2 (mobile): tap-to-connect for curve connectors ──
+   Same source-then-target arming principle as the right-angle
+   connector's RA_ARMED above, adapted for word-level anchors instead of
+   fixed block-edge points. Kept as a SEPARATE state machine (not reusing
+   RA_ARMED) since curve connectors need to track a specific armed WORD,
+   not just a block.
+   Timing note: unlike the right-angle connector (which arms during its
+   OWN pointerup handler, after the initiating gesture has essentially
+   finished), this is entered directly from pointerdown — so the SAME
+   tap that arms this gesture is still about to generate its own click
+   event. Attaching the completion/cancel click-listener synchronously
+   would risk that very click immediately landing on it and cancelling
+   the gesture before the user's finger even lifts — so that one
+   listener is deferred to the next macrotask, after the current tap's
+   own event sequence has fully finished. */
+let CONN_ARMED=null;
+
+function cancelConnectorArm(){
+  if(!CONN_ARMED) return;
+  const armed=CONN_ARMED;
+  CONN_ARMED=null;
+  armed.teardown();
+}
+
+function _startConnectorTapMode(fromRid, fromEl, fromWordEl, fromWordIdx){
+  if(CONN_ARMED){
+    if(CONN_ARMED.fromRid===fromRid && CONN_ARMED.fromWordIdx===fromWordIdx){
+      // Tapped the same armed word again — cancel, don't re-arm.
+      cancelConnectorArm();
+      return;
+    }
+    // Tapped a different word while armed — completes the connection,
+    // a terminal action (mirrors the right-angle connector's same rule).
+    const armed=CONN_ARMED;
+    cancelConnectorArm();
+    _commitConnectorTap(armed, fromRid, fromEl, fromWordEl, fromWordIdx);
+    return;
+  }
+  // Wait for THIS tap's own pointerup before arming (see timing note
+  // above) — nothing about the gesture actually needs pointerup to have
+  // fired first, this is purely to dodge the same-tap click race.
+  const onInitialUp=()=>{
+    document.removeEventListener('pointerup', onInitialUp);
+    _armConnectorTap(fromRid, fromEl, fromWordEl, fromWordIdx);
+  };
+  document.addEventListener('pointerup', onInitialUp, {once:true});
+}
+
+function _armConnectorTap(fromRid, fromEl, fromWordEl, fromWordIdx){
+  const canvas=document.getElementById('dcanvas');
+  const svg=document.getElementById('dconns');
+  if(!canvas||!svg) return;
+
+  const fr0=fromEl.getBoundingClientRect();
+  const wr=fromWordEl.getBoundingClientRect();
+  // Use the word's own center, not a raw tap coordinate — a fingertip is
+  // far less precise than a mouse cursor for picking an exact point
+  // within a small word, so the word's center is the more reliable
+  // anchor for the touch path specifically.
+  const fromFracX=Math.min(1,Math.max(0,((wr.left+wr.right)/2-fr0.left)/fr0.width));
+  const fromFracY=_snapFracY(Math.min(1,Math.max(0,((wr.top+wr.bottom)/2-fr0.top)/fr0.height)));
+
+  const rubberPath=document.createElementNS('http://www.w3.org/2000/svg','path');
+  rubberPath.setAttribute('class','dconn-rubberband');
+  rubberPath.setAttribute('fill','none');
+  rubberPath.setAttribute('stroke','#C8A84B');
+  rubberPath.setAttribute('stroke-width','1.5');
+  rubberPath.setAttribute('stroke-dasharray','4,4');
+  canvas.appendChild(svg);
+  svg.appendChild(rubberPath);
+  fromEl.classList.add('dconn-source');
+  fromWordEl.classList.add('dconn-armed');
+
+  const updateRubberband=(mx,my)=>{
+    const canvasRect=canvas.getBoundingClientRect();
+    const p1=_connectorPoint(fromEl, fromFracX, fromFracY, canvasRect, fromWordIdx);
+    const p2={x:mx-canvasRect.left, y:my-canvasRect.top+(canvas.scrollTop||0)};
+    rubberPath.setAttribute('d', _connectorPathD(p1,p2,fromFracY,null));
+  };
+  updateRubberband(wr.left+wr.width/2, wr.top+wr.height/2);
+
+  let hoverTarget=null;
+  const onMove=mv=>{
+    updateRubberband(mv.clientX, mv.clientY);
+    const el=document.elementFromPoint?document.elementFromPoint(mv.clientX, mv.clientY):null;
+    const block=el?el.closest('.dblock'):null;
+    if(hoverTarget && hoverTarget!==block) hoverTarget.classList.remove('dconn-target');
+    if(block && block!==fromEl){ block.classList.add('dconn-target'); hoverTarget=block; }
+    else if(!block) hoverTarget=null;
+  };
+
+  const onEscape=kev=>{ if(kev.key==='Escape'){ kev.preventDefault(); cancelConnectorArm(); } };
+
+  const onClick=cev=>{
+    const target=cev.target;
+    const clickedWord=target.closest?.('.ann-word');
+    const clickedBlock=target.closest?.('.dblock');
+    if(!clickedBlock || clickedBlock===fromEl){
+      // Tapping the source block again (any word or empty space on it),
+      // or tapping anywhere that isn't a block at all, cancels.
+      cancelConnectorArm();
+      return;
+    }
+    if(!clickedWord){
+      // Tapped a different block but not a specific word — connectors
+      // must resolve to a word on both ends, same rule as the drag path.
+      cancelConnectorArm();
+      return;
+    }
+    const armed=CONN_ARMED;
+    cancelConnectorArm();
+    _commitConnectorTap(armed, clickedBlock.dataset.rid, clickedBlock, clickedWord,
+      _getWordIdx(clickedBlock.querySelector('.dblock-text'), clickedWord));
+  };
+
+  const teardown=()=>{
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('click', onClick);
+    document.removeEventListener('keydown', onEscape);
+    rubberPath.remove();
+    fromEl.classList.remove('dconn-source');
+    fromWordEl.classList.remove('dconn-armed');
+    if(hoverTarget) hoverTarget.classList.remove('dconn-target');
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('keydown', onEscape);
+  setTimeout(()=>{ document.addEventListener('click', onClick); }, 0);
+
+  CONN_ARMED={ fromRid, fromWordIdx, fromEl, fromFracX, fromFracY, teardown };
+}
+
+function _commitConnectorTap(armed, toRid, toEl, toWordEl, toWordIdx){
+  if(!armed || String(armed.fromRid)===String(toRid)) return;
+  _wrapBlockTextWords_single(toEl);
+  const tr=toEl.getBoundingClientRect();
+  const wr=toWordEl.getBoundingClientRect();
+  const toFracX=Math.min(1,Math.max(0,((wr.left+wr.right)/2-tr.left)/tr.width));
+  const toFracY=_snapFracY(Math.min(1,Math.max(0,((wr.top+wr.bottom)/2-tr.top)/tr.height)));
+
+  CNX++;
+  const newConnector={
+    id:'cnx'+CNX, fromRid:String(armed.fromRid), toRid:String(toRid),
+    kind:'curve',
+    fromX:armed.fromFracX, fromY:armed.fromFracY, toX:toFracX, toY:toFracY,
+    fromWordIdx:armed.fromWordIdx, toWordIdx,
+    pattern:'solid', startCap:'none', endCap:'arrow', weight:1.5, color:'#C8A84B'
+  };
+  DIAGRAM_DATA.connectors.push(newConnector);
+  rowPush({type:'connector-add', connector:newConnector});
+  autoSave();
+  renderDiagramConnectors();
+  _onConnectorCommitted();
 }
 
 /* Right-angle connectors support TWO gestures:
