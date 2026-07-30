@@ -1763,10 +1763,18 @@ function _exitConnectorMode(){
   document.getElementById('dcanvas')?.classList.remove('ann-connector-mode');
 }
 
-/* Called after a connector is successfully committed — exit mode */
-function _onConnectorCommitted(){
-  if(_connectorModeActive) _exitConnectorMode();
-}
+/* Called after a connector is successfully committed. Locked mode
+   (entered via the "Draw Connector" toolbar button) now deliberately
+   PERSISTS across multiple connectors — draw several in a row without
+   re-toggling the button each time — on both desktop and mobile, since
+   both the drag path (startConnectorDraw's onUp) and the tap path
+   (_commitConnectorTap) call this same hook. The mode only ends when the
+   user explicitly clicks "Draw Connector" again to unlock it. (A
+   transient Ctrl-held drag, which never sets _connectorModeActive in the
+   first place, already behaved this way — each new mousedown while Ctrl
+   stays down starts a fresh connector — so this brings locked mode in
+   line with that, rather than introducing a new pattern.) */
+function _onConnectorCommitted(){}
 
 /* Pre-wrap + visual connector mode on Ctrl keydown/keyup ─────────────────
    When Ctrl is held in diagram view:
