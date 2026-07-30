@@ -1483,7 +1483,7 @@ function _ensureCapMarker(svg, color, kind){
   const marker=document.createElementNS('http://www.w3.org/2000/svg','marker');
   marker.setAttribute('id',id);
   marker.setAttribute('markerWidth','8'); marker.setAttribute('markerHeight','8');
-  marker.setAttribute('refX', kind==='dot'?'4':'6');
+  marker.setAttribute('refX', kind==='dot'?'4':'4.5');
   marker.setAttribute('refY','4');
   if(kind==='arrow') marker.setAttribute('orient','auto-start-reverse'); // dots are rotationally symmetric — no orient needed
   marker.setAttribute('markerUnits','userSpaceOnUse');
