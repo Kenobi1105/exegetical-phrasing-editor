@@ -6619,6 +6619,24 @@ function addDivider(){
    label (Diagram View). Deliberately its own type/functions rather than
    generalizing addDivider/deleteDivider, so the well-tested existing
    Proposition Divider code path is never at risk of being disturbed. */
+// True if row index `idx` (into `rids`, the canonical DOM row order) falls
+// within any section's [startRid,endRid] span, other than `excludeId` —
+// used both to refuse creating a new section on an already-covered row,
+// and to stop a drag-resize handle from expanding into another section's
+// territory. Sections are never meant to overlap: "if there is a section
+// divider from verse 1-3, another section divider should not occupy
+// those verses."
+function _rowInOtherSection(rids, idx, excludeId){
+  return ANNOTATIONS.some(sec=>{
+    if(sec.type!=='section' || sec.id===excludeId) return false;
+    const si=rids.indexOf(String(sec.startRid));
+    const ei=rids.indexOf(String(sec.endRid));
+    if(si<0||ei<0) return false;
+    const lo=Math.min(si,ei), hi=Math.max(si,ei);
+    return idx>=lo && idx<=hi;
+  });
+}
+
 function addSection(){
   // lastFocusedRowEl only updates from Phrasing View's text-field focus
   // handlers — clicking a diagram block never touches it, so Add Section
@@ -6639,6 +6657,12 @@ function addSection(){
   // next section" point) — starts as a single-row span; startRid/endRid
   // are then independently drag-resizable, same interaction as the
   // Diagram bracket's start/end handles.
+  const rids=Array.from(document.querySelectorAll('.xrow')).map(r=>r.dataset.rid);
+  const anchorIdx=rids.indexOf(String(anchorRid));
+  if(anchorIdx>=0 && _rowInOtherSection(rids, anchorIdx, null)){
+    toast(typeof t==='function'?t('toast.section-overlap'):'This row is already inside another section.');
+    return;
+  }
   const ann = { id:_annId(), type:'section', startRid:anchorRid, endRid:anchorRid, label:'', color:'#534AB7' };
   ANNOTATIONS.push(ann);
   renderSectionStrips();
@@ -6905,6 +6929,7 @@ function _secStartDrag(ev, annId, which){
     rowMids.forEach((mid,i)=>{
       if(which==='start' && i>fixedIdx) return; // can't drag start past end
       if(which==='end'   && i<fixedIdx) return; // can't drag end before start
+      if(_rowInOtherSection(rids, i, annId)) return; // can't expand into another section
       const dist=Math.abs(mid-mouseY);
       if(dist<nearestDist){ nearestDist=dist; nearest=i; }
     });
