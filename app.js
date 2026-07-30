@@ -1393,9 +1393,17 @@ const PATTERN_DASH={solid:'none', dotted:'4,4'};
 function _connectorPathD(p1,p2,fromY,toY){
   const dy=p2.y-p1.y;
   const absDy=Math.abs(dy);
+  const absDx=Math.abs(p2.x-p1.x);
   const vSign=dy>=0?1:-1;
 
-  const V=Math.min(100, Math.max(14, absDy*0.4)); // vertical run at departure/arrival
+  // V scales with whichever is larger: the vertical span, or a fraction
+  // of the horizontal span. A short-but-wide hop (adjacent rows, words
+  // far apart horizontally) previously got the same tiny V as a
+  // short-and-narrow one, leaving almost no vertical room to execute the
+  // diagonal — the curve had to whip sideways abruptly, looking pinched/
+  // cramped. Factoring in dx gives it the room it actually needs to bend
+  // gracefully, without changing already-fine narrow or long-distance cases.
+  const V=Math.min(100, Math.max(20, Math.max(absDy*0.4, absDx*0.15)));
 
   const c1x=p1.x, c1y=p1.y+vSign*V; // straight down (or up) out of the source
   const c2x=p2.x, c2y=p2.y-vSign*V; // straight down (or up) into the target
