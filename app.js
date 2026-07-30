@@ -2947,6 +2947,28 @@ function mergeRowUp(rid){
   const insertOffset=prevOc.childNodes.length;
   while(tmp.firstChild) prevOc.appendChild(tmp.firstChild);
 
+  // Translation cells are a separate sibling structure (#tc-<rid>, not
+  // nested under #oc-<rid>) and don't exist at all in single-language
+  // sessions — move it the same way as the original text, but only if
+  // both sides actually have one.
+  const curTc=curRow.querySelector(`#tc-${rid} .cedit`);
+  const prevTc=prevRow.querySelector(`#tc-${prevRid} .cedit`);
+  let prevTransHTMLBefore='', curTransHTML='';
+  if(curTc && prevTc){
+    curTransHTML=curTc.innerHTML;
+    prevTransHTMLBefore=prevTc.innerHTML;
+    // Translation is plain prose (not word-span-wrapped like the
+    // original text), so two merged phrases need an explicit separator
+    // or they'd visually run together as one word — but only insert it
+    // if the destination already has real content to separate from.
+    if(prevTc.textContent.trim().length>0 && curTc.textContent.trim().length>0){
+      prevTc.appendChild(document.createTextNode(' '));
+    }
+    const transTmp=document.createElement('div');
+    transTmp.innerHTML=curTransHTML;
+    while(transTmp.firstChild) prevTc.appendChild(transTmp.firstChild);
+  }
+
   // Remove cur row
   const removedVerse=curRow.querySelector('.vin')?.value||'';
   curRow.remove();
@@ -2960,6 +2982,8 @@ function mergeRowUp(rid){
     removedRid:String(rid),
     prevHTML:prevHTMLBefore,
     removedHTML:curHTML,
+    prevTransHTML:prevTransHTMLBefore,
+    removedTransHTML:curTransHTML,
     removedVerse
   });
 
@@ -3195,8 +3219,12 @@ function applyRowUndo(op){
     if(prevRow){
       const oc=prevRow.querySelector(`#oc-${op.prevRid} .cedit`);
       if(oc) oc.innerHTML=op.prevHTML;
+      if(op.prevTransHTML!==undefined){
+        const tc=prevRow.querySelector(`#tc-${op.prevRid} .cedit`);
+        if(tc) tc.innerHTML=op.prevTransHTML;
+      }
     }
-    const restored=makeRowEl(op.removedRid, op.removedVerse, op.removedHTML,'',null);
+    const restored=makeRowEl(op.removedRid, op.removedVerse, op.removedHTML, op.removedTransHTML||'', null);
     restored.dataset.rid=op.removedRid;
     if(prevRow) prevRow.insertAdjacentElement('afterend',restored);
     else document.getElementById('rows-body').appendChild(restored);
@@ -3349,6 +3377,17 @@ function applyRowRedo(op){
         const tmp=document.createElement('div');
         tmp.innerHTML=op.removedHTML;
         while(tmp.firstChild) prevOc.appendChild(tmp.firstChild);
+        if(op.removedTransHTML){
+          const prevTc=prevRow.querySelector(`#tc-${op.prevRid} .cedit`);
+          if(prevTc){
+            if(prevTc.textContent.trim().length>0 && op.removedTransHTML.trim().length>0){
+              prevTc.appendChild(document.createTextNode(' '));
+            }
+            const transTmp=document.createElement('div');
+            transTmp.innerHTML=op.removedTransHTML;
+            while(transTmp.firstChild) prevTc.appendChild(transTmp.firstChild);
+          }
+        }
         removedRow.remove();
         prevOc.focus();
         // Place caret at join point
