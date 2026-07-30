@@ -2968,6 +2968,7 @@ sup.bfn:hover { opacity: .7; }
   border-radius:4px;
   outline:none;
   transition:border-color .12s,background .12s;
+  position:relative;z-index:1;
 }
 .dblock-trans:hover{border-color:rgba(73,53,72,.18)}
 .dblock-trans:focus{

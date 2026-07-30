@@ -1395,7 +1395,7 @@ function _connectorPathD(p1,p2,fromY,toY){
   const absDy=Math.abs(dy);
   const vSign=dy>=0?1:-1;
 
-  const V=Math.min(150, Math.max(30, absDy*0.4)); // vertical run at departure/arrival
+  const V=Math.min(100, Math.max(14, absDy*0.4)); // vertical run at departure/arrival
 
   const c1x=p1.x, c1y=p1.y+vSign*V; // straight down (or up) out of the source
   const c2x=p2.x, c2y=p2.y-vSign*V; // straight down (or up) into the target
@@ -6021,14 +6021,26 @@ function _brkRenderDiagram(){
     const lo = Math.min(si,ei), hi = Math.max(si,ei);
     const spannedRids = rids.slice(lo, hi+1);
 
-    // Rightmost block right-edge among spanned rows
+    // Rightmost edge among spanned rows — checks BOTH the Greek/Hebrew
+    // block AND its translation (a separate sibling element, not nested
+    // inside the block, with its own independent width), since a
+    // translation longer than the original-text line was previously
+    // invisible to this calculation and could overlap the bracket.
     let maxRight = 0;
     spannedRids.forEach(rid=>{
       const block = canvas.querySelector(`.dblock[data-rid="${rid}"]`);
-      if(!block) return;
-      const r = block.getBoundingClientRect();
-      const right = (r.right - canvasRect.left) / zoom;
-      if(right > maxRight) maxRight = right;
+      if(block){
+        const r = block.getBoundingClientRect();
+        const right = (r.right - canvasRect.left) / zoom;
+        if(right > maxRight) maxRight = right;
+      }
+      const drow = canvas.querySelector(`.drow[data-rid="${rid}"]`);
+      const trans = drow ? drow.querySelector('.dblock-trans') : null;
+      if(trans){
+        const tr = trans.getBoundingClientRect();
+        const transRight = (tr.right - canvasRect.left) / zoom;
+        if(transRight > maxRight) maxRight = transRight;
+      }
     });
 
     // Baseline X for this bracket if it were lane 1
@@ -6442,9 +6454,21 @@ function _brkApplyRedo(op){
   return false;
 }
 
+/* Shared guard for the Shift-key listeners below: while the user is
+   actively typing (a translation field, a label, a comment, any
+   contentEditable or input/textarea), Shift is just part of normal
+   typing (capitalizing a letter, etc.) and must never also trigger a
+   diagram-wide mode like Bracket pips or Diagram Edit Mode. */
+function _isEditingText(){
+  const el=document.activeElement;
+  if(!el) return false;
+  const tag=el.tagName;
+  return tag==='INPUT' || tag==='TEXTAREA' || el.isContentEditable===true;
+}
+
 /* ── Show pips while Shift is physically held down ── */
 document.addEventListener('keydown', ev=>{
-  if(ev.key==='Shift' && EDITOR_VIEW==='diagram'){
+  if(ev.key==='Shift' && EDITOR_VIEW==='diagram' && !_isEditingText()){
     document.body.classList.add('brk-shift');
   }
 });
@@ -7583,6 +7607,7 @@ let _demAltTemp=false; // true = edit mode was entered by Shift keydown, not by 
 document.addEventListener('keydown', ev=>{
   if(ev.key!=='Shift'||EDITOR_VIEW!=='diagram') return;
   if(DIAGRAM_EDIT_MODE) return; // already on (locked by button)
+  if(_isEditingText()) return; // Shift is part of normal typing here, not a mode trigger
   _demAltTemp=true;
   _applyDiagramEditMode(true);
 });
