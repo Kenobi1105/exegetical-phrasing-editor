@@ -4552,3 +4552,11 @@ body.hide-sections #section-strips{display:none}
 .sl-snap-guide{position:absolute;background:#FF3B6B;pointer-events:none;z-index:50;display:none}
 .sl-snap-guide-v{left:50%;top:0;width:1px;height:100%;transform:translateX(-0.5px)}
 .sl-snap-guide-h{top:50%;left:0;height:1px;width:100%;transform:translateY(-0.5px)}
+
+/* ── Critical-apparatus reference letter superscripts (e.g. "a", "b") in
+   Diagram blocks — plain <sup> tags, not .crit-mark (that class is for
+   symbolic signs like *, °, ˸ matched by _CRIT_RE, which doesn't include
+   plain letters). Same blue as .crit-mark for visual consistency across
+   both kinds of apparatus markers, but no cursor:help yet — tooltip
+   content for these is a separate, later addition. ── */
+.dblock-text sup{color:var(--crit,#1E6AFE)}

@@ -7811,6 +7811,24 @@ function _applyDiagramEditMode(on){
 }
 
 /* ── Red slash hover indicator ── */
+// The invisible .dedit-sp marker _insertSplitPoints creates for each word
+// is already correctly positioned at that word's true group boundary —
+// before any preceding critical-apparatus mark or superscript that
+// belongs with it, per all the same-side/opposite-side rules that
+// function works out. Reusing its position (rather than duplicating that
+// logic a second time here) is what makes the VISIBLE hover slash match it.
+function _demFindSplitMarkerFor(wordEl){
+  let n=wordEl.previousSibling;
+  while(n){
+    if(n.nodeType===Node.ELEMENT_NODE){
+      if(n.classList && n.classList.contains('dedit-sp')) return n;
+      if(n.classList && n.classList.contains('dedit-word')) return null; // hit the previous word first — shouldn't normally happen, every word gets a marker
+    }
+    n=n.previousSibling;
+  }
+  return null;
+}
+
 function _demWireWordHover(wordEl){
   if(wordEl.dataset.demHoverWired) return;
   wordEl.dataset.demHoverWired='1';
@@ -7823,8 +7841,15 @@ function _demWireWordHover(wordEl){
     const slash=document.createElement('span');
     slash.id='dem-slash';
     slash.setAttribute('aria-hidden','true');
-    // Position just before this word in the DOM
-    wordEl.parentNode.insertBefore(slash, wordEl);
+    // Position at this word's true group boundary — before any critical-
+    // apparatus mark or plain superscript (e.g. an "a" apparatus-note
+    // reference letter) that belongs with this word, matching the
+    // already-correct invisible split marker rather than naively
+    // landing right before the word span, which would ignore anything
+    // sitting between it and the previous word.
+    const marker=_demFindSplitMarkerFor(wordEl);
+    if(marker) marker.parentNode.insertBefore(slash, marker);
+    else wordEl.parentNode.insertBefore(slash, wordEl);
   });
 
   wordEl.addEventListener('mouseleave', ()=>{
