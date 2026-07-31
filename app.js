@@ -9058,14 +9058,19 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         const onMove=mv=>{
           const dx=(mv.clientX-startX)/w*100;
           const dy=(mv.clientY-startY)/h*100;
-          ca.x=Math.max(0,Math.min(100-ca.w,startCax+dx));
-          ca.y=Math.max(0,Math.min(100-ca.h,startCay+dy));
+          let x=Math.max(0,Math.min(100-ca.w,startCax+dx));
+          let y=Math.max(0,Math.min(100-ca.h,startCay+dy));
+          const snap=_slCheckSnap(x,y,ca.w,ca.h,w,h);
+          x=snap.x; y=snap.y;
+          _slUpdateSnapGuides(snap.snappedH, snap.snappedV);
+          ca.x=x; ca.y=y;
           passageEl.style.left=(ca.x/100*w)+'px';
           passageEl.style.top=(ca.y/100*h)+'px';
         };
         const onUp=()=>{
           document.removeEventListener('pointermove',onMove);
           document.removeEventListener('pointerup',onUp);
+          _slHideSnapGuides();
           if(ca.x!==oldCA.x||ca.y!==oldCA.y){
             _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
             autoSave();
@@ -9343,6 +9348,50 @@ function slSelectEl(id){
 }
 
 /* ── Element drag ── */
+/* ── Snap-to-center/middle guides (Phase 5) ──
+   Scoped to drag-positioning only, not resize — matches the request as
+   phrased ("boxes are close to the middle/center" describes position,
+   not size). Snaps against the slide's own horizontal center and
+   vertical middle only, not against other elements' edges — PowerPoint/
+   Canva also do element-to-element snapping, but that's a meaningfully
+   bigger feature (tracking every other element's geometry live during a
+   drag) than what was actually asked for here. */
+const SL_SNAP_THRESHOLD_PX=8;
+
+function _slCheckSnap(x,y,w,h,cw,ch){
+  const centerX=x+w/2, centerY=y+h/2;
+  const threshX=(SL_SNAP_THRESHOLD_PX/cw)*100;
+  const threshY=(SL_SNAP_THRESHOLD_PX/ch)*100;
+  let snappedH=false, snappedV=false;
+  if(Math.abs(centerX-50)<=threshX){ x=50-w/2; snappedH=true; }
+  if(Math.abs(centerY-50)<=threshY){ y=50-h/2; snappedV=true; }
+  return {x,y,snappedH,snappedV};
+}
+
+function _slUpdateSnapGuides(snappedH,snappedV){
+  const canvas=document.getElementById('sl-canvas');
+  if(!canvas) return;
+  let vLine=document.getElementById('sl-snap-v');
+  let hLine=document.getElementById('sl-snap-h');
+  if(!vLine){
+    vLine=document.createElement('div');
+    vLine.id='sl-snap-v'; vLine.className='sl-snap-guide sl-snap-guide-v';
+    canvas.appendChild(vLine);
+  }
+  if(!hLine){
+    hLine=document.createElement('div');
+    hLine.id='sl-snap-h'; hLine.className='sl-snap-guide sl-snap-guide-h';
+    canvas.appendChild(hLine);
+  }
+  vLine.style.display=snappedH?'':'none';
+  hLine.style.display=snappedV?'':'none';
+}
+
+function _slHideSnapGuides(){
+  document.getElementById('sl-snap-v')?.style.setProperty('display','none');
+  document.getElementById('sl-snap-h')?.style.setProperty('display','none');
+}
+
 function slStartElDrag(ev, el, div, cw, ch){
   const startX=ev.clientX, startY=ev.clientY;
   const startElX=el.x, startElY=el.y;
@@ -9350,14 +9399,19 @@ function slStartElDrag(ev, el, div, cw, ch){
   const onMove=mv=>{
     const dx=(mv.clientX-startX)/cw*100;
     const dy=(mv.clientY-startY)/ch*100;
-    el.x=Math.max(0,Math.min(100-el.w, startElX+dx));
-    el.y=Math.max(0,Math.min(100-el.h, startElY+dy));
+    let x=Math.max(0,Math.min(100-el.w, startElX+dx));
+    let y=Math.max(0,Math.min(100-el.h, startElY+dy));
+    const snap=_slCheckSnap(x,y,el.w,el.h,cw,ch);
+    x=snap.x; y=snap.y;
+    _slUpdateSnapGuides(snap.snappedH, snap.snappedV);
+    el.x=x; el.y=y;
     div.style.left=(el.x/100*cw)+'px';
     div.style.top =(el.y/100*ch)+'px';
   };
   const onUp=()=>{
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
+    _slHideSnapGuides();
     if(el.x!==oldPos.x||el.y!==oldPos.y){
       _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'pos',oldVal:oldPos,newVal:{x:el.x,y:el.y,w:el.w,h:el.h}});
       autoSave();
