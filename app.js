@@ -64,6 +64,7 @@ let LBL=0; // floating label ID counter
 let SELECTED_CNX_ID=null;
 let DIAGRAM_ZOOM=100;
 const DIAGRAM_ZOOM_MIN=50, DIAGRAM_ZOOM_MAX=200, DIAGRAM_ZOOM_STEP=10;
+let _dzoomRefreshRAF=null; // pending requestAnimationFrame id for the debounced connector/label refresh in setDiagramZoom
 let DIAGRAM_FONT_SIZE=18; // px — default larger than the original 14px
 const DIAGRAM_FONT_MIN=10, DIAGRAM_FONT_MAX=28, DIAGRAM_FONT_STEP=1;
 
@@ -695,10 +696,24 @@ function setDiagramZoom(pct){
   });
   const label=document.getElementById('dzoom-pct');
   if(label) label.textContent=DIAGRAM_ZOOM+'%';
-  refreshDiagramConnectors();
-  // Re-derive all bracket top/height from fresh DOM rects at the new zoom
-  // level so brackets stay locked to their anchor rows after zoom changes.
-  refreshDiagramLabels();
+  // CSS zoom is applied synchronously above, but measuring positions
+  // from it immediately (via getBoundingClientRect(), which is what the
+  // connector/bracket/label refresh below does) can read stale,
+  // pre-zoom layout on some browsers — most notably Safari/WebKit,
+  // where zoom's interaction with reflow timing has known quirks that
+  // Chromium doesn't share. Deferring one frame gives the browser time
+  // to have actually settled the new layout first. Debounced so pinch
+  // (which calls this many times per second) doesn't queue a pile of
+  // redundant refreshes — only the latest requested one actually runs.
+  if(_dzoomRefreshRAF) cancelAnimationFrame(_dzoomRefreshRAF);
+  _dzoomRefreshRAF=requestAnimationFrame(()=>{
+    _dzoomRefreshRAF=null;
+    refreshDiagramConnectors();
+    // Re-derive all bracket top/height from fresh DOM rects at the new
+    // zoom level so brackets stay locked to their anchor rows after
+    // zoom changes.
+    refreshDiagramLabels();
+  });
 }
 function diagramZoomIn(){ setDiagramZoom(DIAGRAM_ZOOM+DIAGRAM_ZOOM_STEP); }
 function diagramZoomOut(){ setDiagramZoom(DIAGRAM_ZOOM-DIAGRAM_ZOOM_STEP); }
