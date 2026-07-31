@@ -8243,6 +8243,29 @@ function slAddTextBox(){
 }
 
 /* ── View / visibility / notes change ── */
+// Which visibility checkboxes are relevant to each internal slide view
+// (sl.view — the Phrasing/Diagram toggle inside the Slides properties
+// panel, not the app's main top-level tabs). Based on what
+// slBuildPassageDOM/slSyncDerivedElements actually check, not the
+// checkbox names — translation and comments are referenced in BOTH
+// rendering branches (or have no view-gating at all, for comments), so
+// they stay visible regardless of which view is selected; only
+// indentation (phrasing-only) and connectors/brackets/labels
+// (diagram-only) are actually exclusive to one branch.
+function _slUpdateVisRowsForView(view){
+  const phrasingOnly=['sl-vis-indent'];
+  const diagramOnly=['sl-vis-connectors','sl-vis-brackets','sl-vis-labels'];
+  phrasingOnly.forEach(id=>{
+    const row=document.getElementById(id)?.closest('.sl-vis-row');
+    if(row) row.style.display = view==='phrasing' ? '' : 'none';
+  });
+  diagramOnly.forEach(id=>{
+    const row=document.getElementById(id)?.closest('.sl-vis-row');
+    if(row) row.style.display = view==='diagram' ? '' : 'none';
+  });
+  // sl-vis-trans and sl-vis-comments are intentionally left alone — always visible.
+}
+
 function slSetView(view){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const old=sl.view; if(old===view) return;
@@ -8250,6 +8273,7 @@ function slSetView(view){
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'view',oldVal:old,newVal:view});
   document.getElementById('sl-view-phrasing')?.classList.toggle('active',view==='phrasing');
   document.getElementById('sl-view-diagram')?.classList.toggle('active',view==='diagram');
+  _slUpdateVisRowsForView(view);
   autoSave();
   // No live re-render — user clicks Refresh or selects slide to update
 }
@@ -8285,6 +8309,7 @@ function slUpdatePropsPanel(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   document.getElementById('sl-view-phrasing')?.classList.toggle('active',sl.view==='phrasing');
   document.getElementById('sl-view-diagram')?.classList.toggle('active',sl.view==='diagram');
+  _slUpdateVisRowsForView(sl.view);
   document.getElementById('sl-vis-indent')   .checked=!!sl.visibility.indentation;
   document.getElementById('sl-vis-trans')    .checked=!!sl.visibility.translation;
   document.getElementById('sl-vis-comments') .checked=!!sl.visibility.comments;
