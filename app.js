@@ -8314,31 +8314,63 @@ function slFmtFontSizeAbs(px){
   px=Math.max(6,Math.min(200,parseInt(px)||18));
   const input=document.getElementById('sl-fmt-size');
   if(input) input.value=px;
-  slFmtRestoreRange();
-  document.execCommand('fontSize',false,'7');
-  const replaced=[];
-  SL_FMT_ACTIVE_INNER.querySelectorAll('font[size="7"]').forEach(f=>{
-    const span=document.createElement('span');
-    span.style.fontSize=px+'px';
-    while(f.firstChild) span.appendChild(f.firstChild);
-    f.replaceWith(span);
-    replaced.push(span);
-  });
-  // Replacing the <font> node(s) invalidates the browser's selection
-  // even though the text itself is unchanged — reconstruct a range
-  // spanning the new span(s) so the visual highlight survives, letting
-  // a second formatting action (another size change, a color, etc.)
-  // apply without needing to re-select the same text.
-  if(replaced.length){
+
+  if(document.activeElement!==SL_FMT_ACTIVE_INNER) SL_FMT_ACTIVE_INNER.focus();
+
+  // fontSize is one of execCommand's oldest, most unusual features — a
+  // value-based command that generates legacy <font size="N"> tags,
+  // very different from the simple boolean toggles bold/italic/
+  // underline use. Those are confirmed working; fontSize specifically
+  // was not, on this device. Rather than keep guessing at why a
+  // deprecated API behaves inconsistently on a browser this project
+  // can't directly test against, this bypasses execCommand entirely and
+  // manipulates the selection Range directly instead — standard,
+  // dependency-free DOM APIs with no reliance on any particular
+  // browser's own interpretation of a legacy command.
+  const sel=window.getSelection();
+  let range=null;
+  if(sel && sel.rangeCount>0 && SL_FMT_ACTIVE_INNER.contains(sel.getRangeAt(0).commonAncestorContainer)){
+    range=sel.getRangeAt(0);
+  } else if(SL_FMT_SAVED_RANGE){
+    range=SL_FMT_SAVED_RANGE;
+  }
+  if(!range) return;
+
+  const span=document.createElement('span');
+  span.style.fontSize=px+'px';
+
+  if(range.collapsed){
+    // Just a cursor, no selected text — nothing existing to wrap.
+    // Insert an empty styled span at the cursor and place the cursor
+    // inside it; browsers continue typing inside whatever element the
+    // cursor currently sits within, so subsequently-typed characters
+    // inherit the size. A zero-width space keeps the span from being
+    // an empty, easy-to-lose insertion point.
+    span.appendChild(document.createTextNode('\u200B'));
+    range.insertNode(span);
+    const newRange=document.createRange();
+    newRange.setStart(span.firstChild,1);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    SL_FMT_SAVED_RANGE=null;
+  } else {
     try{
-      const range=document.createRange();
-      range.setStartBefore(replaced[0]);
-      range.setEndAfter(replaced[replaced.length-1]);
-      const s=window.getSelection();
-      s.removeAllRanges();
-      s.addRange(range);
-      SL_FMT_SAVED_RANGE=range.cloneRange();
-    }catch(_){}
+      range.surroundContents(span);
+    }catch(_){
+      // surroundContents throws if the range's boundaries partially
+      // overlap existing elements (a very common case for real-world
+      // selections that already contain other formatting) — extract
+      // and re-wrap works for any range shape.
+      const contents=range.extractContents();
+      span.appendChild(contents);
+      range.insertNode(span);
+    }
+    const newRange=document.createRange();
+    newRange.selectNodeContents(span);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    SL_FMT_SAVED_RANGE=newRange.cloneRange();
   }
 }
 function slFmtFontSize(delta){
