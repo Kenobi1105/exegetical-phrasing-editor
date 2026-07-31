@@ -680,20 +680,84 @@ function _repositionCmtCards(isDiagram){
    every existing rect-based connector/drag calculation keeps working
    unmodified at any zoom level (see the DIAGRAM_ZOOM state comment for
    why `transform:scale` specifically would double-scale connectors). */
+// Touch-device zoom path — transform:scale() instead of CSS zoom (see the
+// comment in setDiagramZoom for why). transform doesn't affect layout the
+// way zoom does, so #dcanvas-scroll's own scrollable area wouldn't
+// otherwise grow to include the visually-scaled content at zoom > 100% —
+// an invisible spacer sized to the SCALED footprint is added as a
+// sibling of #dcanvas (not a wrapper around it, so it isn't itself
+// affected by the transform) to force the scroll container to provide
+// the correct scrollable area, matching what CSS zoom gives desktop for
+// free through its native layout-affecting behavior.
+function _applyDiagramZoomTransform(dcanvas){
+  if(!dcanvas) return;
+  const scroll=document.getElementById('dcanvas-scroll');
+  const factor=DIAGRAM_ZOOM/100;
+
+  // Measure the canvas's natural (unscaled) footprint — reset any
+  // previous transform first so this measurement isn't itself scaled.
+  dcanvas.style.transform='';
+  const naturalW=dcanvas.scrollWidth, naturalH=dcanvas.scrollHeight;
+
+  dcanvas.style.transformOrigin='0 0';
+  dcanvas.style.transform=`scale(${factor})`;
+
+  if(scroll){
+    let spacer=document.getElementById('dzoom-spacer');
+    if(!spacer){
+      spacer=document.createElement('div');
+      spacer.id='dzoom-spacer';
+      spacer.style.cssText='position:absolute;top:0;left:0;pointer-events:none;visibility:hidden;';
+      scroll.appendChild(spacer);
+    }
+    spacer.style.width=(naturalW*factor)+'px';
+    spacer.style.height=(naturalH*factor)+'px';
+  }
+
+  // Counter-scale the SVG connector layers the same way desktop
+  // counter-zooms them — these are children of #dcanvas and would
+  // otherwise inherit its scale, diverging from _connectorPoint's
+  // logical-pixel math.
+  const counterFactor=1/factor;
+  ['dconns','dconns-back'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el){
+      el.style.transformOrigin='0 0';
+      el.style.transform=`scale(${counterFactor})`;
+    }
+  });
+}
+
 function setDiagramZoom(pct){
   DIAGRAM_ZOOM=Math.max(DIAGRAM_ZOOM_MIN, Math.min(DIAGRAM_ZOOM_MAX, pct));
   const dcanvas=document.getElementById('dcanvas');
-  if(dcanvas) dcanvas.style.zoom=String(DIAGRAM_ZOOM/100);
-  // Counter-zoom the SVG connector layers so their internal coordinate
-  // space stays at logical (unzoomed) pixels — exactly matching what
-  // _connectorPoint computes via getBoundingClientRect() subtractions.
-  // Without this, the SVGs inherit #dcanvas's zoom and their viewport
-  // diverges from the path coordinates, distorting lines at non-100% zoom.
-  const counterZoom=String(100/DIAGRAM_ZOOM);
-  ['dconns','dconns-back'].forEach(id=>{
-    const el=document.getElementById(id);
-    if(el) el.style.zoom=counterZoom;
-  });
+  // CSS zoom has a long history of inconsistent cross-browser behavior —
+  // desktop (tested extensively throughout this app's development on
+  // Chromium) works correctly with it, but WebKit (Safari, and every
+  // other iOS "browser" underneath, per Apple's platform requirement)
+  // does not reliably apply it here, particularly for the nested
+  // counter-zoom trick below. Rather than risk regressing the desktop
+  // path that's already proven to work, touch devices get a completely
+  // separate transform:scale()-based path instead — standard CSS with
+  // consistent behavior everywhere — while desktop's code is untouched.
+  const useTransform = window.matchMedia && window.matchMedia('(pointer:coarse)').matches;
+
+  if(!useTransform){
+    // ── DESKTOP: unchanged from before this fix ──
+    if(dcanvas) dcanvas.style.zoom=String(DIAGRAM_ZOOM/100);
+    // Counter-zoom the SVG connector layers so their internal coordinate
+    // space stays at logical (unzoomed) pixels — exactly matching what
+    // _connectorPoint computes via getBoundingClientRect() subtractions.
+    // Without this, the SVGs inherit #dcanvas's zoom and their viewport
+    // diverges from the path coordinates, distorting lines at non-100% zoom.
+    const counterZoom=String(100/DIAGRAM_ZOOM);
+    ['dconns','dconns-back'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el) el.style.zoom=counterZoom;
+    });
+  } else {
+    _applyDiagramZoomTransform(dcanvas);
+  }
   const label=document.getElementById('dzoom-pct');
   if(label) label.textContent=DIAGRAM_ZOOM+'%';
   // CSS zoom is applied synchronously above, but measuring positions
