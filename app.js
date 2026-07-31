@@ -7630,6 +7630,36 @@ function _demTokenize(blockEl){
   let groupIdx=0;
   let prevWordNode=null; // the last .dedit-word seen
 
+  // A bare <sup>letter</sup> (not a symbolic .crit-mark sign) can ALSO be
+  // part of a matched pair — BHS brackets a phrase spanning MULTIPLE
+  // words with the same letter repeated once before and once after it
+  // (e.g. "aבִּימֵי שְׁפֹטa" — the note covers the whole phrase, not
+  // either word alone), the same bracketing convention as [TM...TM]
+  // frame markers, just using a letter instead of a symbol. Computed
+  // once upfront: if the same letter appears in exactly two <sup>
+  // elements in this block, the first is the opening half (sweeps
+  // forward, attaches to the following word) and the second is the
+  // closing half (attaches to the preceding word) — mirroring the
+  // existing [ / ‹ opening vs ] / › closing logic for symbolic
+  // crit-marks exactly. A letter appearing only once (or more than
+  // twice, which shouldn't normally happen) is treated as standalone.
+  const allSups=[...textEl.querySelectorAll('sup')];
+  function _effectiveSupLetter(el){
+    if(el.nodeName==='SUP') return el;
+    if(el.querySelectorAll){
+      const sups=el.querySelectorAll('sup');
+      if(sups.length===1 && (el.textContent||'').trim()===(sups[0].textContent||'').trim()) return sups[0];
+    }
+    return null;
+  }
+  function _supLetterSide(sup){
+    const letter=(sup.textContent||'').trim();
+    if(!letter) return 'standalone';
+    const matches=allSups.filter(s=>(s.textContent||'').trim()===letter);
+    if(matches.length!==2) return 'standalone';
+    return matches[0]===sup ? 'opening' : 'closing';
+  }
+
   // Collect all top-level and inline children in DOM order using a flat walk
   function _insertSplitPoints(parent){
     const children=[...parent.childNodes];
@@ -7720,6 +7750,14 @@ function _demTokenize(blockEl){
                 if(n && n.nodeType===Node.ELEMENT_NODE && n.classList.contains('dedit-word')) break;
               }
             }
+            // Same opening/closing principle, for a bare <sup>letter</sup>
+            // that's part of a matched pair (not a symbolic .crit-mark
+            // sign, which was already handled above) — the closing half
+            // stops the walk here (belongs to whatever precedes it,
+            // never sweeps forward), the opening half falls through and
+            // keeps walking (belongs to whatever follows it).
+            const sup=_effectiveSupLetter(prev);
+            if(sup && _supLetterSide(sup)==='closing') break;
           }
           groupStart=prev;
           prev=prev.previousSibling;
