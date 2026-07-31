@@ -8254,7 +8254,7 @@ function slFmtSaveRange(){
 }
 function slFmtRestoreRange(){
   if(!SL_FMT_ACTIVE_INNER) return;
-  SL_FMT_ACTIVE_INNER.focus();
+  if(document.activeElement!==SL_FMT_ACTIVE_INNER) SL_FMT_ACTIVE_INNER.focus();
   if(!SL_FMT_SAVED_RANGE) return;
   try{
     const s=window.getSelection();
@@ -8316,12 +8316,30 @@ function slFmtFontSizeAbs(px){
   if(input) input.value=px;
   slFmtRestoreRange();
   document.execCommand('fontSize',false,'7');
+  const replaced=[];
   SL_FMT_ACTIVE_INNER.querySelectorAll('font[size="7"]').forEach(f=>{
     const span=document.createElement('span');
     span.style.fontSize=px+'px';
     while(f.firstChild) span.appendChild(f.firstChild);
     f.replaceWith(span);
+    replaced.push(span);
   });
+  // Replacing the <font> node(s) invalidates the browser's selection
+  // even though the text itself is unchanged — reconstruct a range
+  // spanning the new span(s) so the visual highlight survives, letting
+  // a second formatting action (another size change, a color, etc.)
+  // apply without needing to re-select the same text.
+  if(replaced.length){
+    try{
+      const range=document.createRange();
+      range.setStartBefore(replaced[0]);
+      range.setEndAfter(replaced[replaced.length-1]);
+      const s=window.getSelection();
+      s.removeAllRanges();
+      s.addRange(range);
+      SL_FMT_SAVED_RANGE=range.cloneRange();
+    }catch(_){}
+  }
 }
 function slFmtFontSize(delta){
   if(!SL_FMT_ACTIVE_INNER) return;
@@ -9020,14 +9038,28 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       inner.style.cursor="default";
       inner.innerHTML=el.html||"";
       const commitText=()=>{
-        inner.contentEditable="false"; inner.style.cursor="default";
-        const old=el.html; const newHtml=inner.innerHTML;
-        if(newHtml!==old){ el.html=newHtml; _slPush({type:"sl-el-prop",slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:"html",oldVal:old,newVal:newHtml}); autoSave(); }
-        slRenderThumb(SL_ACTIVE_IDX);
-        if(SL_FMT_ACTIVE_INNER===inner){
-          SL_FMT_ACTIVE_INNER=null;
-          document.getElementById('sl-textfmt-section').style.display='none';
-        }
+        // Blur fires whenever focus leaves the textbox — including when
+        // the user clicks a formatting control that can't use
+        // preventDefault (the font <select>, native color pickers,
+        // which must actually receive focus to work at all). Checking
+        // one tick later, after the browser has settled the new focus
+        // target, distinguishes "genuinely done editing" from "just
+        // interacting with the formatting panel" — the standard pattern
+        // for a contentEditable with an external toolbar.
+        setTimeout(()=>{
+          const active=document.activeElement;
+          const stillFormatting = active===inner ||
+            (active && active.closest && active.closest('#sl-textfmt-section'));
+          if(stillFormatting) return;
+          inner.contentEditable="false"; inner.style.cursor="default";
+          const old=el.html; const newHtml=inner.innerHTML;
+          if(newHtml!==old){ el.html=newHtml; _slPush({type:"sl-el-prop",slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:"html",oldVal:old,newVal:newHtml}); autoSave(); }
+          slRenderThumb(SL_ACTIVE_IDX);
+          if(SL_FMT_ACTIVE_INNER===inner){
+            SL_FMT_ACTIVE_INNER=null;
+            document.getElementById('sl-textfmt-section').style.display='none';
+          }
+        },0);
       };
       inner.addEventListener("blur", commitText);
       inner.addEventListener("keydown",ev=>{ if(ev.key==="Escape"){ev.preventDefault();inner.blur();} ev.stopPropagation(); });

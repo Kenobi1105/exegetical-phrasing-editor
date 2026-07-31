@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607232100"/>
+<meta name="app-version" content="202607232110"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -505,7 +505,7 @@
               <button class="sl-fmt-btn" id="sl-fmt-i" onpointerdown="event.preventDefault()" onclick="slFmtCmd('italic')" title="Italic"><i>I</i></button>
               <button class="sl-fmt-btn" id="sl-fmt-u" onpointerdown="event.preventDefault()" onclick="slFmtCmd('underline')" title="Underline"><u>U</u></button>
             </div>
-            <select class="sl-fmt-select" id="sl-fmt-font" onpointerdown="event.stopPropagation()" onchange="slFmtFontFamily(this.value)">
+            <select class="sl-fmt-select" id="sl-fmt-font" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtFontFamily(this.value)">
               <option value="" data-i18n="slides.fmt.font-default">Default</option>
               <option value="Georgia, 'Times New Roman', serif">Georgia</option>
               <option value="'Times New Roman', Times, serif">Times New Roman</option>
