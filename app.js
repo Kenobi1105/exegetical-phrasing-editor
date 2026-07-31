@@ -8234,6 +8234,111 @@ function slRefreshSlide(){
 }
 
 /* ── Add text box ── */
+/* ── Slide textbox rich-text formatting ──
+   Applies directly to the live contentEditable DOM via execCommand —
+   deliberately does NOT touch el.html or push its own undo entries.
+   The existing blur-triggered commitText() (in slRenderSlideInto) already
+   captures whatever the final innerHTML is as one consolidated undo step,
+   exactly the same way it already does for plain text edits. Formatting
+   commands piggybacking on that same, already-proven mechanism avoids
+   corrupting its "old value" capture (which happens at blur time) and
+   avoids cluttering undo history with one entry per formatting click. */
+let SL_FMT_ACTIVE_INNER=null; // the .sl-el-textbox-inner currently being edited
+let SL_FMT_SAVED_RANGE=null;  // selection range preserved across native color-picker focus theft
+
+function slFmtSaveRange(){
+  const s=window.getSelection();
+  if(s && s.rangeCount && SL_FMT_ACTIVE_INNER && SL_FMT_ACTIVE_INNER.contains(s.anchorNode)){
+    SL_FMT_SAVED_RANGE=s.getRangeAt(0).cloneRange();
+  }
+}
+function slFmtRestoreRange(){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  SL_FMT_ACTIVE_INNER.focus();
+  if(!SL_FMT_SAVED_RANGE) return;
+  try{
+    const s=window.getSelection();
+    s.removeAllRanges();
+    s.addRange(SL_FMT_SAVED_RANGE);
+  }catch(_){}
+}
+
+// B/I/U buttons use onpointerdown="event.preventDefault()" in the HTML,
+// which keeps focus (and the live selection) on the textbox the whole
+// time — no save/restore needed here, unlike the color inputs below,
+// which open a native OS picker that unavoidably steals focus.
+function slFmtCmd(cmd){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  document.execCommand(cmd,false,null);
+  slUpdateFmtToolbarState();
+}
+
+function slFmtFontFamily(family){
+  if(!SL_FMT_ACTIVE_INNER || !family) return;
+  slFmtRestoreRange();
+  document.execCommand('fontName',false,family);
+}
+
+function slFmtColor(hex){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  slFmtRestoreRange();
+  document.execCommand('foreColor',false,hex);
+}
+
+function slFmtHighlight(hex){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  slFmtRestoreRange();
+  // hiliteColor has a history of unreliable support in Safari/WebKit —
+  // and per the zoom investigation earlier in this project, this app's
+  // iPad testing runs on WebKit regardless of which "browser" app is
+  // used. backColor is the more consistently-supported fallback.
+  const ok=document.execCommand('hiliteColor',false,hex);
+  if(!ok) document.execCommand('backColor',false,hex);
+}
+function slFmtHighlightClear(){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  slFmtRestoreRange();
+  const ok=document.execCommand('hiliteColor',false,'transparent');
+  if(!ok) document.execCommand('backColor',false,'transparent');
+}
+
+// Browsers only expose execCommand fontSize as legacy HTML <font
+// size="1"-"7"> indices, not pixel values — there's no direct "set
+// pixel size on selection" command. Standard workaround: apply the
+// otherwise-unused index 7 (guaranteed not to collide with any
+// existing formatting), then immediately find and replace that
+// specific <font size="7"> with a <span style="font-size:Npx">,
+// giving real pixel control without hand-rolling range-wrapping logic.
+function slFmtFontSizeAbs(px){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  px=Math.max(6,Math.min(200,parseInt(px)||18));
+  const input=document.getElementById('sl-fmt-size');
+  if(input) input.value=px;
+  slFmtRestoreRange();
+  document.execCommand('fontSize',false,'7');
+  SL_FMT_ACTIVE_INNER.querySelectorAll('font[size="7"]').forEach(f=>{
+    const span=document.createElement('span');
+    span.style.fontSize=px+'px';
+    while(f.firstChild) span.appendChild(f.firstChild);
+    f.replaceWith(span);
+  });
+}
+function slFmtFontSize(delta){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  const input=document.getElementById('sl-fmt-size');
+  const cur=parseInt(input?.value)||18;
+  slFmtFontSizeAbs(cur+delta);
+}
+
+function slUpdateFmtToolbarState(){
+  const b=document.getElementById('sl-fmt-b'), i=document.getElementById('sl-fmt-i'), u=document.getElementById('sl-fmt-u');
+  try{
+    b?.classList.toggle('active', document.queryCommandState('bold'));
+    i?.classList.toggle('active', document.queryCommandState('italic'));
+    u?.classList.toggle('active', document.queryCommandState('underline'));
+  }catch(_){}
+}
+
 function slAddTextBox(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const el={id:'el-'+(++SL_EL_CTR),type:'textbox',x:10,y:65,w:80,h:18,html:'',fontSize:18,color:'#1F1E1E',align:'left'};
@@ -8919,9 +9024,15 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         const old=el.html; const newHtml=inner.innerHTML;
         if(newHtml!==old){ el.html=newHtml; _slPush({type:"sl-el-prop",slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:"html",oldVal:old,newVal:newHtml}); autoSave(); }
         slRenderThumb(SL_ACTIVE_IDX);
+        if(SL_FMT_ACTIVE_INNER===inner){
+          SL_FMT_ACTIVE_INNER=null;
+          document.getElementById('sl-textfmt-section').style.display='none';
+        }
       };
       inner.addEventListener("blur", commitText);
       inner.addEventListener("keydown",ev=>{ if(ev.key==="Escape"){ev.preventDefault();inner.blur();} ev.stopPropagation(); });
+      inner.addEventListener("keyup",()=>{ if(SL_FMT_ACTIVE_INNER===inner) slUpdateFmtToolbarState(); });
+      inner.addEventListener("pointerup",()=>{ if(SL_FMT_ACTIVE_INNER===inner) slUpdateFmtToolbarState(); });
       div.appendChild(inner);
       if(EDITOR_VIEW==="slides"){
         div.style.touchAction="none";
@@ -8930,6 +9041,11 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           inner.contentEditable="true"; inner.style.cursor="text"; inner.focus();
           const range=document.caretRangeFromPoint?.(clientX,clientY);
           if(range){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
+          SL_FMT_ACTIVE_INNER=inner;
+          const sizeInput=document.getElementById('sl-fmt-size');
+          if(sizeInput) sizeInput.value=el.fontSize||18;
+          document.getElementById('sl-textfmt-section').style.display='';
+          slUpdateFmtToolbarState();
         };
         div.addEventListener("pointerdown",ev=>{
           if(inner.contentEditable==="true") return;

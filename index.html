@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607232050"/>
+<meta name="app-version" content="202607232100"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -498,6 +498,39 @@
         </div>
         <!-- Right: properties panel -->
         <div id="sl-props-panel">
+          <div class="sl-prop-section" id="sl-textfmt-section" style="display:none">
+            <div class="sl-prop-label" data-i18n="slides.fmt.section">Text Formatting</div>
+            <div class="sl-fmt-row">
+              <button class="sl-fmt-btn" id="sl-fmt-b" onpointerdown="event.preventDefault()" onclick="slFmtCmd('bold')" title="Bold"><b>B</b></button>
+              <button class="sl-fmt-btn" id="sl-fmt-i" onpointerdown="event.preventDefault()" onclick="slFmtCmd('italic')" title="Italic"><i>I</i></button>
+              <button class="sl-fmt-btn" id="sl-fmt-u" onpointerdown="event.preventDefault()" onclick="slFmtCmd('underline')" title="Underline"><u>U</u></button>
+            </div>
+            <select class="sl-fmt-select" id="sl-fmt-font" onpointerdown="event.stopPropagation()" onchange="slFmtFontFamily(this.value)">
+              <option value="" data-i18n="slides.fmt.font-default">Default</option>
+              <option value="Georgia, 'Times New Roman', serif">Georgia</option>
+              <option value="'Times New Roman', Times, serif">Times New Roman</option>
+              <option value="Arial, Helvetica, sans-serif">Arial</option>
+              <option value="'Courier New', Courier, monospace">Courier New</option>
+              <option value="'Brush Script MT', cursive">Brush Script</option>
+            </select>
+            <div class="sl-fmt-row">
+              <span class="sl-fmt-sub-label" data-i18n="slides.fmt.size">Size</span>
+              <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtFontSize(-2)">−</button>
+              <input type="number" class="sl-fmt-size-input" id="sl-fmt-size" value="18" min="6" max="200" onpointerdown="event.stopPropagation()" onchange="slFmtFontSizeAbs(this.value)"/>
+              <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtFontSize(2)">+</button>
+            </div>
+            <div class="sl-fmt-row">
+              <label class="sl-fmt-color-label" data-i18n="slides.fmt.color">
+                Text color
+                <input type="color" id="sl-fmt-color" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtColor(this.value)"/>
+              </label>
+              <label class="sl-fmt-color-label" data-i18n="slides.fmt.highlight">
+                Highlight
+                <input type="color" id="sl-fmt-hl" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtHighlight(this.value)"/>
+              </label>
+              <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtHighlightClear()" data-i18n="slides.fmt.no-highlight">None</button>
+            </div>
+          </div>
           <div class="sl-prop-section">
             <div class="sl-prop-label" data-i18n="view.diagram">View</div>
             <div class="sl-view-toggle">
