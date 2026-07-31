@@ -8397,6 +8397,42 @@ function slAddTextBox(){
   SL_SEL_EL_ID=el.id; slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
 }
 
+function slAddShape(shapeType){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el={id:'el-'+(++SL_EL_CTR),type:'shape',shapeType:shapeType||'rect',x:30,y:35,w:40,h:30,fill:'#C8A84B',stroke:'#493548',strokeWidth:2};
+  sl.elements.push(el);
+  _slPush({type:'sl-add-el',slideIdx:SL_ACTIVE_IDX,el:{...el}});
+  SL_SEL_EL_ID=el.id; slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+}
+
+function slAddImage(){
+  document.getElementById('sl-image-file')?.click();
+}
+function slImageFileSelected(ev){
+  const file=ev.target.files && ev.target.files[0];
+  ev.target.value=''; // allow re-selecting the same file later
+  if(!file || !file.type.startsWith('image/')) return;
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const reader=new FileReader();
+  reader.onload=()=>{
+    const dataUrl=reader.result;
+    // Read the image's natural dimensions so the initial box preserves
+    // aspect ratio instead of stretching into an arbitrary default shape.
+    const img=new Image();
+    img.onload=()=>{
+      const naturalRatio=img.naturalWidth/(img.naturalHeight||1);
+      let w=50, h=w/naturalRatio; // percentages of slide canvas
+      if(h>60){ h=60; w=h*naturalRatio; } // cap height, keep ratio
+      const el={id:'el-'+(++SL_EL_CTR),type:'image',x:(100-w)/2,y:(100-h)/2,w,h,src:dataUrl};
+      sl.elements.push(el);
+      _slPush({type:'sl-add-el',slideIdx:SL_ACTIVE_IDX,el:{...el}});
+      SL_SEL_EL_ID=el.id; slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+    };
+    img.src=dataUrl;
+  };
+  reader.readAsDataURL(file);
+}
+
 /* ── View / visibility / notes change ── */
 // Which visibility checkboxes are relevant to each internal slide view
 // (sl.view — the Phrasing/Diagram toggle inside the Slides properties
@@ -9047,12 +9083,14 @@ function slRenderSlideInto(slide, container, w, h, isExport){
     container.appendChild(passageEl);
   }
 
-  // All overlay elements: textbox, floatlabel, commentbox
+  // All overlay elements: textbox, floatlabel, commentbox, shape, image
   slide.elements.forEach(el=>{
     const isTextbox  = el.type==="textbox";
     const isFloatLbl = el.type==="floatlabel";
     const isCmtBox   = el.type==="commentbox";
-    if(!isTextbox && !isFloatLbl && !isCmtBox) return;
+    const isShape    = el.type==="shape";
+    const isImage    = el.type==="image";
+    if(!isTextbox && !isFloatLbl && !isCmtBox && !isShape && !isImage) return;
     if(isFloatLbl && !slide.visibility.labels) return;
     if(isCmtBox  && !slide.visibility.comments) return;
     const div=document.createElement("div");
@@ -9135,6 +9173,31 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
         if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
       }
+    } else if(isShape){
+      div.style.background = el.fill||"transparent";
+      div.style.border = (el.strokeWidth??2)+"px solid "+(el.stroke||"#493548");
+      div.style.borderRadius = el.shapeType==="ellipse" ? "50%" : "2px";
+      div.style.boxSizing="border-box";
+      if(EDITOR_VIEW==="slides"){
+        div.style.cursor="move";
+        div.style.touchAction="none";
+        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
+      }
+    } else if(isImage){
+      const img=document.createElement("img");
+      img.src=el.src||"";
+      img.draggable=false;
+      img.style.cssText="width:100%;height:100%;object-fit:fill;display:block;pointer-events:none;";
+      div.appendChild(img);
+      if(EDITOR_VIEW==="slides"){
+        div.style.cursor="move";
+        div.style.touchAction="none";
+        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
+      }
     } else {
       div.style.background = isCmtBox ? "rgba(247,243,233,.95)" : "rgba(73,53,72,.06)";
       div.style.border      = isCmtBox ? "1px solid rgba(73,53,72,.2)" : "1px solid rgba(73,53,72,.15)";
@@ -9170,12 +9233,47 @@ function slRenderSlideInto(slide, container, w, h, isExport){
 }
 
 /* ── Element selection — no re-render, just toggle visual state ── */
+function slShapeSetFill(hex){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='shape') return;
+  const old=el.fill; el.fill=hex;
+  _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'fill',oldVal:old,newVal:hex});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+function slShapeSetStroke(hex){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='shape') return;
+  const old=el.stroke; el.stroke=hex;
+  _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'stroke',oldVal:old,newVal:hex});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+function _slUpdateShapePropsVisibility(id){
+  const section=document.getElementById('sl-shapeprops-section');
+  if(!section) return;
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX];
+  const el=sl && id ? sl.elements.find(e=>e.id===id) : null;
+  if(el && el.type==='shape'){
+    section.style.display='';
+    const fillInput=document.getElementById('sl-shape-fill');
+    const strokeInput=document.getElementById('sl-shape-stroke');
+    // Color inputs require a value in strict "#rrggbb" form — fall back
+    // to a neutral default rather than passing through anything else
+    // (e.g. "transparent"), which would make the input silently ignore
+    // the assignment and show a stale value.
+    if(fillInput) fillInput.value=/^#[0-9a-fA-F]{6}$/.test(el.fill) ? el.fill : '#c8a84b';
+    if(strokeInput) strokeInput.value=/^#[0-9a-fA-F]{6}$/.test(el.stroke) ? el.stroke : '#493548';
+  } else {
+    section.style.display='none';
+  }
+}
+
 function slSelectEl(id){
   // NOTE: Do NOT early-return when id===SL_SEL_EL_ID. After any canvas rebuild
   // (slRenderActive), the overlay DOM is recreated without resize handles even
   // though SL_SEL_EL_ID still holds the same id. We must always re-apply the
   // full selection (class + handles) to whichever DOM element is currently live.
   SL_SEL_EL_ID=id;
+  _slUpdateShapePropsVisibility(id);
   const cv=document.getElementById('sl-canvas'); if(!cv) return;
 
   // Remove selection from all elements

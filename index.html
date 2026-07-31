@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607232120"/>
+<meta name="app-version" content="202607232130"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -476,6 +476,19 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="14" x2="13" y2="14"/></svg>
               <span data-i18n="slides.add-textbox">Add Text Box</span>
             </button>
+            <button class="sl-tbtn" onclick="slAddShape('rect')" title="Add Rectangle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
+              <span data-i18n="slides.add-rect">Rectangle</span>
+            </button>
+            <button class="sl-tbtn" onclick="slAddShape('ellipse')" title="Add Ellipse">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
+              <span data-i18n="slides.add-ellipse">Ellipse</span>
+            </button>
+            <button class="sl-tbtn" onclick="slAddImage()" title="Add Image">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              <span data-i18n="slides.add-image">Add Image</span>
+            </button>
+            <input type="file" id="sl-image-file" accept="image/*" style="display:none" onchange="slImageFileSelected(event)"/>
             <div class="sl-tsep"></div>
             <button class="sl-tbtn" id="sl-present-btn" onclick="slStartPresent()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
@@ -498,6 +511,19 @@
         </div>
         <!-- Right: properties panel -->
         <div id="sl-props-panel">
+          <div class="sl-prop-section" id="sl-shapeprops-section" style="display:none">
+            <div class="sl-prop-label" data-i18n="slides.shape.section">Shape</div>
+            <div class="sl-fmt-row">
+              <label class="sl-fmt-color-label" data-i18n="slides.shape.fill">
+                Fill
+                <input type="color" id="sl-shape-fill" onchange="slShapeSetFill(this.value)"/>
+              </label>
+              <label class="sl-fmt-color-label" data-i18n="slides.shape.stroke">
+                Border
+                <input type="color" id="sl-shape-stroke" onchange="slShapeSetStroke(this.value)"/>
+              </label>
+            </div>
+          </div>
           <div class="sl-prop-section" id="sl-textfmt-section" style="display:none">
             <div class="sl-prop-label" data-i18n="slides.fmt.section">Text Formatting</div>
             <div class="sl-fmt-row">
