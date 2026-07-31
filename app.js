@@ -1147,6 +1147,7 @@ function _makeLabelEl(lb){
     ev.preventDefault();ev.stopPropagation();
     const startX=ev.clientX, startW=el.offsetWidth;
     function onMove(e){
+      if(_pinchActive) return;
       const dx=IS_RTL?(startX-e.clientX):(e.clientX-startX);
       const newW=Math.max(80, startW+dx);
       el.style.width=newW+'px';
@@ -1174,6 +1175,7 @@ function _makeLabelEl(lb){
     const beforeSnap={x:lb.x, y:lb.y};
     let didMove=false;
     function onMove(e){
+      if(_pinchActive) return;
       didMove=true;
       const zr=DIAGRAM_ZOOM/100;
       const cW=canvas.clientWidth||1;
@@ -1288,6 +1290,7 @@ function startBlockDrag(ev, rid){
   block.classList.add('dragging');
 
   const onMove=mv=>{
+    if(_pinchActive) return;
     const dxRaw=mv.clientX-startX;
     // Mirror RTL: dragging LEFT increases indent in an RTL session,
     // dragging RIGHT increases indent in LTR — matches applyIndentStyle()'s
@@ -2065,6 +2068,7 @@ function _armConnectorTap(fromRid, fromEl, fromWordEl, fromWordIdx){
 
   let hoverTarget=null;
   const onMove=mv=>{
+    if(_pinchActive) return;
     updateRubberband(mv.clientX, mv.clientY);
     const el=document.elementFromPoint?document.elementFromPoint(mv.clientX, mv.clientY):null;
     const block=el?el.closest('.dblock'):null;
@@ -2246,6 +2250,7 @@ function startRightAngleDraw(ev, fromRid){
   };
 
   const onDragMove=mv=>{
+    if(_pinchActive) return;
     if(Math.abs(mv.clientX-startX)>3||Math.abs(mv.clientY-startY)>3) dragged=true;
     updateRubberband(mv.clientX, mv.clientY);
     updateHover(mv.clientX, mv.clientY);
@@ -2277,6 +2282,7 @@ function startRightAngleDraw(ev, fromRid){
   };
 
   const onArmedMove=mv=>{
+    if(_pinchActive) return;
     updateRubberband(mv.clientX, mv.clientY);
     updateHover(mv.clientX, mv.clientY);
   };
@@ -6257,6 +6263,7 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
     let dragActive = false;
 
     const onMove = mv=>{
+      if(_pinchActive) return;
       if(dragActive) return;
       if(Math.abs(mv.clientY - downY) > 4){
         dragActive = true;
@@ -6266,6 +6273,7 @@ function _brkDrawSVG(svg, brk, laneX, yStart, yEnd){
         const mid = (yStart + yEnd) / 2;
         const halfLabel = 10;
         const onDragMove = dmv=>{
+          if(_pinchActive) return;
           const dy = (dmv.clientY - downY) / zoom;
           const newAbsY = Math.max(yStart+halfLabel, Math.min(yEnd-halfLabel, mid+startOffset+dy));
           brk.labelOffsetY = Math.round(newAbsY - mid);
@@ -6328,6 +6336,7 @@ function _brkStartSerifDrag(ev, brkId, which){
   let currentRid = oldRid;
 
   const onMove = mv=>{
+    if(_pinchActive) return;
     // Convert mouse Y to canvas-local Y
     const mouseY = (mv.clientY - canvasRect.top) / zoom;
     // Find nearest row
@@ -7020,6 +7029,7 @@ function startFreeArrow(){
     }
 
     const onMove=ev2=>{
+      if(_pinchActive) return;
       const r2=canvas.getBoundingClientRect();
       let x2=((ev2.clientX-r2.left)/zoom)/canvas.scrollWidth*100;
       let y2=((ev2.clientY-r2.top+canvas.scrollTop)/zoom)/canvas.scrollHeight*100;
@@ -7288,6 +7298,7 @@ function _addDragHandle(svg, ann, x, y, point, W, H){
     ev.stopPropagation(); ev.preventDefault();
     const canvas=document.getElementById('dcanvas');
     const onMove=ev2=>{
+      if(_pinchActive) return;
       const r=canvas.getBoundingClientRect();
       const zoom=DIAGRAM_ZOOM/100;
       const px=((ev2.clientX-r.left)/zoom)/W*100;
@@ -10547,3 +10558,72 @@ if(window.matchMedia){
   if(mq.addEventListener) mq.addEventListener('change', _syncMobileToolbarLayout);
   else if(mq.addListener) mq.addListener(_syncMobileToolbarLayout); // older Safari
 }
+
+/* ════════════════════════════════════════
+   DIAGRAM VIEW PINCH-TO-ZOOM (Stage 1)
+   Touch-only, two-finger gesture wired directly into setDiagramZoom() —
+   same clamping (50–200%) the existing +/- buttons already use. Pointer
+   Events are inherently single-finger per event, so each finger's own
+   down/move/up sequence is tracked independently by pointerId; when
+   exactly two are simultaneously down, their distance is measured on
+   each move and the CHANGE in distance (relative to where the pinch
+   started) drives the zoom percentage.
+
+   _pinchActive is checked at the top of every OTHER diagram drag
+   handler's onMove (block drag, label drag/resize, bracket serif/label
+   drag, free arrow draw/handle-drag, right-angle and curve connector
+   drag/tap-tracking) — those listeners aren't scoped to a specific
+   pointerId, so a second finger touching down mid-drag would otherwise
+   feed its own movement into the same handler and make whatever was
+   being dragged jump around erratically. Freezing those handlers the
+   moment a pinch starts (rather than trying to actively cancel an
+   already-in-progress drag, which the closure-based structure of those
+   functions doesn't cleanly support) is what actually makes pinch safe
+   to use near existing draggable content.
+
+   No anchor-point compensation yet (Stage 2) — zoom applies from the
+   same fixed origin the +/- buttons already use, just gesture-driven
+   instead of click-driven.
+════════════════════════════════════════ */
+let _pinchActive=false;
+const _pinchPointers=new Map(); // pointerId -> {x,y}
+let _pinchStartDist=null;
+let _pinchStartZoom=null;
+
+function _initDiagramPinchZoom(){
+  const scroll=document.getElementById('dcanvas-scroll');
+  if(!scroll) return;
+
+  scroll.addEventListener('pointerdown', ev=>{
+    if(ev.pointerType!=='touch' || EDITOR_VIEW!=='diagram') return;
+    _pinchPointers.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
+    if(_pinchPointers.size===2){
+      _pinchActive=true;
+      const pts=[..._pinchPointers.values()];
+      _pinchStartDist=Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+      _pinchStartZoom=DIAGRAM_ZOOM;
+    }
+  });
+
+  scroll.addEventListener('pointermove', ev=>{
+    if(!_pinchPointers.has(ev.pointerId)) return;
+    _pinchPointers.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
+    if(_pinchActive && _pinchPointers.size===2 && _pinchStartDist>0){
+      const pts=[..._pinchPointers.values()];
+      const dist=Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
+      setDiagramZoom(Math.round(_pinchStartZoom*(dist/_pinchStartDist)));
+    }
+  });
+
+  const endPointer=ev=>{
+    _pinchPointers.delete(ev.pointerId);
+    if(_pinchPointers.size<2){
+      _pinchActive=false;
+      _pinchStartDist=null;
+      _pinchStartZoom=null;
+    }
+  };
+  scroll.addEventListener('pointerup', endPointer);
+  scroll.addEventListener('pointercancel', endPointer);
+}
+_initDiagramPinchZoom();
