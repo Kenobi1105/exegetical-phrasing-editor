@@ -8829,7 +8829,8 @@ function slRenderSlideInto(slide, container, w, h, isExport){
     // Drag in editor — passage area is draggable
     if(EDITOR_VIEW==='slides'){
       passageEl.style.cursor='move';
-      passageEl.addEventListener('mousedown',ev=>{
+      passageEl.style.touchAction='none';
+      passageEl.addEventListener('pointerdown',ev=>{
         if(ev.target.closest('.sl-resize-handle')) return;
         ev.stopPropagation();
         // Select without re-rendering — slSelectEl handles visual state
@@ -8847,16 +8848,16 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           passageEl.style.top=(ca.y/100*h)+'px';
         };
         const onUp=()=>{
-          document.removeEventListener('mousemove',onMove);
-          document.removeEventListener('mouseup',onUp);
+          document.removeEventListener('pointermove',onMove);
+          document.removeEventListener('pointerup',onUp);
           if(ca.x!==oldCA.x||ca.y!==oldCA.y){
             _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
             autoSave();
           }
           slRenderThumb(SL_ACTIVE_IDX);
         };
-        document.addEventListener('mousemove',onMove);
-        document.addEventListener('mouseup',onUp);
+        document.addEventListener('pointermove',onMove);
+        document.addEventListener('pointerup',onUp);
       });
       passageEl.addEventListener('click',ev=>{ev.stopPropagation(); slSelectEl('__passage__');});
       // Apply selection state without re-render
@@ -8898,15 +8899,33 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       inner.addEventListener("keydown",ev=>{ if(ev.key==="Escape"){ev.preventDefault();inner.blur();} ev.stopPropagation(); });
       div.appendChild(inner);
       if(EDITOR_VIEW==="slides"){
-        div.addEventListener("mousedown",ev=>{
+        div.style.touchAction="none";
+        const enterEditMode=(clientX,clientY)=>{
+          slSelectEl(el.id);
+          inner.contentEditable="true"; inner.style.cursor="text"; inner.focus();
+          const range=document.caretRangeFromPoint?.(clientX,clientY);
+          if(range){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
+        };
+        div.addEventListener("pointerdown",ev=>{
           if(inner.contentEditable==="true") return;
-          ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h);
+          ev.stopPropagation();
+          // dblclick (below) handles mouse/trackpad entry into edit mode,
+          // but touch doesn't reliably generate dblclick the same way —
+          // tapping an ALREADY-selected textbox enters edit mode instead,
+          // a common mobile pattern that doesn't rely on double-tap
+          // (which risks colliding with the browser's own double-tap-to-
+          // zoom). Scoped to touch specifically so mouse's existing
+          // "click a selected textbox to re-drag it" behavior is
+          // completely unchanged.
+          if(ev.pointerType==="touch" && SL_SEL_EL_ID===el.id){
+            enterEditMode(ev.clientX, ev.clientY);
+            return;
+          }
+          slSelectEl(el.id); slStartElDrag(ev,el,div,w,h);
         });
         div.addEventListener("dblclick",ev=>{
-          ev.stopPropagation(); slSelectEl(el.id);
-          inner.contentEditable="true"; inner.style.cursor="text"; inner.focus();
-          const range=document.caretRangeFromPoint?.(ev.clientX,ev.clientY);
-          if(range){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
+          ev.stopPropagation();
+          enterEditMode(ev.clientX, ev.clientY);
         });
         div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
         if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
@@ -8928,7 +8947,8 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       div.innerHTML=el.html||"";
       if(EDITOR_VIEW==="slides"){
         div.style.cursor="move";
-        div.addEventListener("mousedown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
+        div.style.touchAction="none";
+        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
         div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
         if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
       }
@@ -8938,7 +8958,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
 
   // Deselect on canvas click
   if(EDITOR_VIEW==='slides'){
-    container.addEventListener('mousedown',ev=>{
+    container.addEventListener('pointerdown',ev=>{
       if(ev.target===container){ slSelectEl(null); }
     });
   }
@@ -8978,7 +8998,8 @@ function slSelectEl(id){
     ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
       const rh=document.createElement('div');
       rh.className=`sl-resize-handle sl-rh-${dir}`;
-      rh.addEventListener('mousedown',ev=>{
+      rh.style.touchAction='none';
+      rh.addEventListener('pointerdown',ev=>{
         ev.stopPropagation();
         const startX=ev.clientX,startY=ev.clientY;
         const oldCA={...ca};
@@ -8996,13 +9017,13 @@ function slSelectEl(id){
           target.style.width=(ca.w/100*cw)+'px'; target.style.height=(ca.h/100*ch)+'px';
         };
         const onUp=()=>{
-          document.removeEventListener('mousemove',onMove);
-          document.removeEventListener('mouseup',onUp);
+          document.removeEventListener('pointermove',onMove);
+          document.removeEventListener('pointerup',onUp);
           _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
           autoSave(); slRenderThumb(SL_ACTIVE_IDX);
         };
-        document.addEventListener('mousemove',onMove);
-        document.addEventListener('mouseup',onUp);
+        document.addEventListener('pointermove',onMove);
+        document.addEventListener('pointerup',onUp);
       });
       target.appendChild(rh);
     });
@@ -9011,7 +9032,8 @@ function slSelectEl(id){
     ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
       const rh=document.createElement('div');
       rh.className=`sl-resize-handle sl-rh-${dir}`;
-      rh.addEventListener('mousedown',ev=>{ ev.stopPropagation(); slStartElResize(ev,el,target,dir,cw,ch); });
+      rh.style.touchAction='none';
+      rh.addEventListener('pointerdown',ev=>{ ev.stopPropagation(); slStartElResize(ev,el,target,dir,cw,ch); });
       target.appendChild(rh);
     });
   }
@@ -9031,16 +9053,16 @@ function slStartElDrag(ev, el, div, cw, ch){
     div.style.top =(el.y/100*ch)+'px';
   };
   const onUp=()=>{
-    document.removeEventListener('mousemove',onMove);
-    document.removeEventListener('mouseup',onUp);
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
     if(el.x!==oldPos.x||el.y!==oldPos.y){
       _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'pos',oldVal:oldPos,newVal:{x:el.x,y:el.y,w:el.w,h:el.h}});
       autoSave();
     }
     slRenderThumb(SL_ACTIVE_IDX);
   };
-  document.addEventListener('mousemove',onMove);
-  document.addEventListener('mouseup',onUp);
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 
 /* ── Element resize ── */
@@ -9062,8 +9084,8 @@ function slStartElResize(ev, el, div, dir, cw, ch){
     div.style.width=(el.w/100*cw)+'px'; div.style.height=(el.h/100*ch)+'px';
   };
   const onUp=()=>{
-    document.removeEventListener('mousemove',onMove);
-    document.removeEventListener('mouseup',onUp);
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
     _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'pos',oldVal:oldPos,newVal:{x:el.x,y:el.y,w:el.w,h:el.h}});
     // Do NOT call slRenderActive() here — the overlay div is already at the correct
     // size/position (updated live in onMove), and a full canvas rebuild would destroy
@@ -9071,8 +9093,8 @@ function slStartElResize(ev, el, div, dir, cw, ch){
     autoSave();
     slRenderThumb(SL_ACTIVE_IDX);
   };
-  document.addEventListener('mousemove',onMove);
-  document.addEventListener('mouseup',onUp);
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 
 /* ── Context menu ── */
@@ -9110,7 +9132,7 @@ function slCtxAction(action){
     slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
   }
 }
-document.addEventListener('mousedown',ev=>{ if(!ev.target.closest('#sl-ctx-menu')) slHideCtxMenu(); });
+document.addEventListener('pointerdown',ev=>{ if(!ev.target.closest('#sl-ctx-menu')) slHideCtxMenu(); });
 document.addEventListener('keydown',ev=>{
   if(ev.key==='Delete'||ev.key==='Backspace'){
     if(EDITOR_VIEW==='slides'){
@@ -9162,7 +9184,8 @@ function slRenderThumbList(){
       }
     };
     // Drag-to-reorder handle on the thumbnail itself
-    thumb.addEventListener('mousedown', ev=>{
+    thumb.style.touchAction='none';
+    thumb.addEventListener('pointerdown', ev=>{
       if(ev.target===dots||dots.contains(ev.target)) return; // let dots handle itself
       if(ev.button!==0) return;
       slStartThumbDrag(ev, i, thumb);
@@ -9210,8 +9233,8 @@ function slStartThumbDrag(ev, fromIdx, thumbEl){
   };
 
   const onUp=mv=>{
-    document.removeEventListener('mousemove',onMove);
-    document.removeEventListener('mouseup',onUp);
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
     if(ghost){ ghost.remove(); ghost=null; }
     thumbEl.style.opacity='';
     if(!dragStarted){ return; } // was just a click — handled by onclick
@@ -9239,8 +9262,8 @@ function slStartThumbDrag(ev, fromIdx, thumbEl){
     }
   };
 
-  document.addEventListener('mousemove',onMove);
-  document.addEventListener('mouseup',onUp);
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 
 function slRenderThumbContent(idx, container){
@@ -9529,9 +9552,9 @@ function slPresStartResize(ev){
     const preview=document.getElementById('sl-pres-preview');
     if(preview){ const pw=preview.offsetWidth; preview.style.height=(pw/SL_RATIO)+'px'; }
   };
-  const onUp=()=>{ document.removeEventListener('mousemove',onMove); document.removeEventListener('mouseup',onUp); };
-  document.addEventListener('mousemove',onMove);
-  document.addEventListener('mouseup',onUp);
+  const onUp=()=>{ document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp); };
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 
 /* ════════════════════════════════
