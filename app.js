@@ -10599,6 +10599,14 @@ function _initDiagramPinchZoom(){
     _pinchPointers.set(ev.pointerId, {x:ev.clientX, y:ev.clientY});
     if(_pinchPointers.size===2){
       _pinchActive=true;
+      // touch-action:pan-x pan-y (set in CSS) still lets the browser's
+      // own native panning respond to the same two fingers while our JS
+      // is independently driving zoom — two systems touching the
+      // canvas's geometry at once. Fully disabling touch-action for the
+      // duration of the gesture removes that possible race; pan-x pan-y
+      // is restored the moment the pinch ends so normal one-finger
+      // scrolling keeps working immediately after.
+      scroll.style.touchAction='none';
       const pts=[..._pinchPointers.values()];
       _pinchStartDist=Math.hypot(pts[0].x-pts[1].x, pts[0].y-pts[1].y);
       _pinchStartZoom=DIAGRAM_ZOOM;
@@ -10618,9 +10626,19 @@ function _initDiagramPinchZoom(){
   const endPointer=ev=>{
     _pinchPointers.delete(ev.pointerId);
     if(_pinchPointers.size<2){
+      const wasActive=_pinchActive;
       _pinchActive=false;
       _pinchStartDist=null;
       _pinchStartZoom=null;
+      scroll.style.touchAction='';
+      // Defensive final correction: whatever the cause of any drift
+      // during the live gesture, force one definitive recompute against
+      // the settled DOM once nothing else is still moving, so connectors
+      // are guaranteed correct by the time the user's fingers lift, even
+      // if the continuous mid-gesture updates weren't perfectly in sync.
+      if(wasActive && typeof refreshDiagramConnectors==='function'){
+        refreshDiagramConnectors();
+      }
     }
   };
   scroll.addEventListener('pointerup', endPointer);
