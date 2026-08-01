@@ -7582,6 +7582,25 @@ function _demTokenize(blockEl){
   const textEl=blockEl.querySelector('.dblock-text');
   if(!textEl||textEl.querySelector('.dedit-word')) return;
 
+  // A block can arrive here already wrapped with .ann-word spans — every
+  // block gets pre-wrapped that way the moment Ctrl is pressed in
+  // Diagram View, for connector word-anchoring (_wrapBlockTextWords_
+  // single), and that wrapping never gets removed short of a full
+  // re-render. Unlike a color/formatting span, which wraps a whole RUN
+  // of text together, .ann-word wraps EACH WORD in its own individual
+  // span — so if tokenization ran on top of that, a preceding critical-
+  // apparatus mark or superscript sitting just outside a word's own
+  // .ann-word span would be structurally invisible to this function's
+  // backward-walk group-boundary logic (which can only see siblings
+  // within whatever span it's currently recursing inside). Stripping
+  // any pre-existing .ann-word wrapping back to plain text first keeps
+  // this function's input consistent no matter what touched the block
+  // beforehand.
+  if(textEl.querySelector('.ann-word')){
+    textEl.querySelectorAll('.ann-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    textEl.normalize();
+  }
+
   /* Phase 1: walk all text nodes (skipping <sup> and .crit-mark subtrees —
      apparatus/discourse markers are annotation markup, never real "words"
      that should be independently splittable or connector-anchorable) */
