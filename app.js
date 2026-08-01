@@ -741,6 +741,11 @@ function setEditorView(view){
   // Disable comment pane toggle in Slides View
   const cmtBtn=document.getElementById('btn-cmt-pane');
   if(cmtBtn) cmtBtn.disabled=isSlides;
+  // Disable Clear in Slides View — it acts on Phrasing/Diagram content,
+  // not the slide deck (clearAll() itself also guards this, for the
+  // Ctrl+Shift+L path)
+  const clearBtn=document.getElementById('btn-clear');
+  if(clearBtn) clearBtn.disabled=isSlides;
   if(isDiagram) renderDiagram();
   if(isSlides) setTimeout(()=>slRenderAll(), 80);
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
@@ -5555,6 +5560,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
 
   // ── Page slicing with block-snap ─────────────────────────────────
   let srcY=0, pageIdx=0;
+  let lastContentBottom=0; // tracks where content ends on the final page, for the citation block below
   while(srcY<capturedCanvas.height){
     const baseUsableH=pageIdx===0?usableH1:usableHN;
     const preEndY=srcY+Math.round((baseUsableH/imgH)*capturedCanvas.height);
@@ -5588,9 +5594,15 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
     const pageContentY=drawDiagHeader();
     doc.addImage(sliceC.toDataURL('image/png'),'PNG',MAR,pageContentY,imgW,sliceImgH);
     if(thisFns.length) drawFnsDiag(thisFns);
+    const thisFnZone=fnZonePt(thisFns);
+    lastContentBottom=thisFnZone?Math.max(pageContentY+sliceImgH,pH-MAR-thisFnZone):pageContentY+sliceImgH;
     srcY+=slicePxH;
     pageIdx++;
   }
+
+  // Source citation, if any — placed below whichever sits lower on the
+  // last page: the diagram image or the pinned-to-bottom footnote zone.
+  _drawPdfCitation(doc, lastContentBottom, MAR, usableW, pH);
 
   return doc;
 }
@@ -5735,6 +5747,16 @@ function loadFromScreen1(e){
   reader.readAsText(f);e.target.value='';
 }
 function clearAll(){
+  // Clear wipes Phrasing/Diagram content (rows, comments, brackets,
+  // annotations) — it has no meaning in Slides View and was previously
+  // reachable there too (button + Ctrl+Shift+L both live outside #szone),
+  // silently nuking the passage behind the active slide deck. Guarded
+  // here (not just by disabling the button) so the keyboard shortcut is
+  // blocked the same way.
+  if(EDITOR_VIEW==='slides'){
+    toast(typeof t==='function'?t('toast.clear-slides-blocked'):'Switch to Phrasing or Diagram view to clear content');
+    return;
+  }
   if(!confirm(typeof t==='function'?t('confirm.clear'):'Clear all content?'))return;
   // Snapshot full state so Clear can be undone
   const snapshot=collectData();
@@ -5759,6 +5781,40 @@ function clearAll(){
   addEmptyRow();
   localStorage.removeItem(storeKey());
   toast(typeof t==='function'?t('toast.cleared'):'Cleared — press Ctrl+Z to undo');
+}
+
+/* Draws the passage's source citation (SOURCE_CITATION — see
+   setSourceCitation), if any, as a small italic block starting at
+   startY. Adds a fresh page first if it wouldn't fit on the current one.
+   Standalone (no closure vars) so both the Phrasing and Diagram PDF
+   exporters can share it. Returns nothing — mutates doc directly. */
+function _drawPdfCitation(doc, startY, MAR, usableW, pH){
+  if(!SOURCE_CITATION) return;
+  const citText=SOURCE_CITATION
+    .replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'')
+    .replace(/&nbsp;/g,' ').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>')
+    .trim();
+  if(!citText) return;
+  const FONT=8.5, LINE_H=11;
+  const charsPerLine=Math.max(20,Math.floor(usableW/4.6));
+  const words=citText.split(' ');
+  const lines=[]; let line='';
+  words.forEach(w=>{
+    const test=line?line+' '+w:w;
+    if(test.length>charsPerLine&&line){ lines.push(line); line=w; }
+    else line=test;
+  });
+  if(line) lines.push(line);
+  const blockH=12+lines.length*LINE_H+8;
+  let y=startY;
+  if(y+blockH>pH-28){ doc.addPage(); y=40; }
+  else y+=10;
+  doc.setDrawColor(73,53,72); doc.setLineWidth(0.4);
+  doc.line(MAR,y,MAR+usableW*0.3,y);
+  y+=12;
+  doc.setFont('helvetica','italic'); doc.setFontSize(FONT);
+  doc.setTextColor(120,112,100);
+  lines.forEach(l=>{ doc.text(l,MAR,y); y+=LINE_H; });
 }
 
 /* ════════════════════════════════════════
@@ -6054,6 +6110,10 @@ function exportPDF(){
 
     // Flush last page footnotes
     drawFns(pageFns);
+    // Source citation, if any — placed below whichever sits lower on the
+    // last page: the row content or the pinned-to-bottom footnote zone.
+    const lastFnZone=fnZoneH(pageFns);
+    _drawPdfCitation(doc, lastFnZone?Math.max(curY,pH-MAR-lastFnZone):curY, MAR, usableW, pH);
 
     showProgress(95,'Saving PDF…');
     doc.save(fname+'.pdf');
@@ -11312,10 +11372,19 @@ document.addEventListener('DOMContentLoaded',()=>{
     critTip.classList.remove('show');
   });
   document.addEventListener('scroll',()=>critTip.classList.remove('show'),true);
+  // Read the version straight from sw.js's APP_VERSION at runtime rather
+  // than a separately-maintained <meta> tag — the two drifted apart
+  // because APP_VERSION gets bumped on every deploy but nothing ever
+  // touched the meta tag, so Screen 1 quietly stopped updating. sw.js is
+  // always fetched fresh from the network (never cached — see sw.js's own
+  // comment on this), so this is guaranteed current with no second place
+  // to remember to update.
   const vEl=document.getElementById('s1-version-num');
   if(vEl){
-    const v=document.querySelector('meta[name="app-version"]')?.content||'';
-    if(v) vEl.textContent=v;
+    fetch('./sw.js',{cache:'no-store'}).then(r=>r.text()).then(txt=>{
+      const m=txt.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+      if(m) vEl.textContent=m[1];
+    }).catch(()=>{});
   }
   // Show "Updated" toast if page just reloaded after a SW update
   if(sessionStorage.getItem('sw-just-updated')){

@@ -3,7 +3,6 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<meta name="app-version" content="202607232210"/>
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
@@ -668,7 +667,7 @@
       <button class="bbtn g" data-i18n-title="bbar.load-json" title="Load JSON file from disk (Ctrl+O)" onclick="document.getElementById('lfile').click()"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg><span data-i18n="bbar.load-json">Load JSON</span></button>
       <input type="file" id="lfile" accept=".json" style="display:none" onchange="loadFile(event)"/>
       <button class="bbtn p" data-i18n-title="bbar.export" title="Export as PDF or JSON (Ctrl+Shift+E)" onclick="toggleExportPopup(event)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/><line x1="3" y1="21" x2="21" y2="21"/></svg><span data-i18n="bbar.export">Export ▾</span></button>
-      <button class="bbtn d" data-i18n-title="bbar.clear" title="Clear all content (Ctrl+Shift+L)" onclick="clearAll()" data-i18n="bbar.clear">Clear</button>
+      <button class="bbtn d" id="btn-clear" data-i18n-title="bbar.clear" title="Clear all content (Ctrl+Shift+L)" onclick="clearAll()" data-i18n="bbar.clear">Clear</button>
       <div class="bbst" id="stbar" data-i18n="stbar.ready">Ready</div>
     </div>
   </div>
