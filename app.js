@@ -2662,12 +2662,18 @@ function _makePaletteSwatchBtn(color){
   return b;
 }
 
+// Tools whose preset row uses the 8-color "spec" set (PALETTE_PRESETS_TEXT)
+// rather than the 4 soft highlight tones (PALETTE_PRESETS_HL) — solid
+// foreground/border colors read better from a wider spread than the soft
+// highlight tones do.
+const PALETTE_TEXT_LIKE_TOOLS=['textColor','slTextColor','slShapeFill','slShapeStroke'];
+
 function _renderPaletteRows(){
   const presetRow=document.getElementById('cpp-preset-row');
   const recentRow=document.getElementById('cpp-recent-row');
   if(!presetRow||!recentRow) return;
   presetRow.innerHTML='';
-  const presets=(PALETTE_ACTIVE_TOOL==='textColor')?PALETTE_PRESETS_TEXT:PALETTE_PRESETS_HL;
+  const presets=PALETTE_TEXT_LIKE_TOOLS.includes(PALETTE_ACTIVE_TOOL)?PALETTE_PRESETS_TEXT:PALETTE_PRESETS_HL;
   presets.forEach(c=>presetRow.appendChild(_makePaletteSwatchBtn(c)));
   recentRow.innerHTML='';
   if(PALETTE_ACTIVE_TOOL){
@@ -2687,9 +2693,9 @@ function openColorPalette(toolKey, triggerEl, currentColor){
   const nativeInput=document.getElementById('cpp-native');
   if(nativeInput) nativeInput.value=currentColor||'#000000';
   _renderPaletteRows();
-  // Show remove-highlight button only for the highlight tool
+  // Show remove-highlight button only for highlight-like tools
   const removeBtn=document.getElementById('cpp-remove-hl');
-  if(removeBtn) removeBtn.style.display=toolKey==='highlight'?'block':'none';
+  if(removeBtn) removeBtn.style.display=(toolKey==='highlight'||toolKey==='slHighlight')?'block':'none';
 
   pop.style.display='flex';
   const r=triggerEl.getBoundingClientRect();
@@ -2730,6 +2736,24 @@ function applyPaletteColor(color){
     setConnectorColor(color);
 
     autoSave();
+  } else if(PALETTE_ACTIVE_TOOL==='slTextColor'){
+    slFmtColor(color);
+    const btn=document.getElementById('sl-fmt-color-btn'); if(btn) btn.style.background=color;
+  } else if(PALETTE_ACTIVE_TOOL==='slHighlight'){
+    slFmtHighlight(color);
+    const btn=document.getElementById('sl-fmt-hl-btn'); if(btn) btn.style.background=color;
+    // Highlighting is a one-shot "paint and done" action, same as the main
+    // editor's highlight tool — close immediately rather than leaving the
+    // popover open (which invites re-clicking a preset against a selection
+    // that's already been consumed/rewrapped in a span).
+    closeColorPalette();
+    return;
+  } else if(PALETTE_ACTIVE_TOOL==='slShapeFill'){
+    slShapeSetFill(color);
+    const btn=document.getElementById('sl-shape-fill-btn'); if(btn){ btn.style.background=color; btn.classList.remove('sl-swatch-none'); }
+  } else if(PALETTE_ACTIVE_TOOL==='slShapeStroke'){
+    slShapeSetStroke(color);
+    const btn=document.getElementById('sl-shape-stroke-btn'); if(btn){ btn.style.background=color; btn.classList.remove('sl-swatch-none'); }
   }
   if(PALETTE_ACTIVE_TOOL){
     pushRecentColor(PALETTE_ACTIVE_TOOL, color);
@@ -2743,16 +2767,40 @@ function onPaletteNativeChange(color){
   applyPaletteColor(color);
 }
 
+// Dispatches the popover's "Remove highlight" button to whichever
+// highlight-like tool currently owns it — the main editor's cell highlight
+// (removeHl) or the Slides text-box highlight (slFmtHighlightClear).
+function cppRemoveHl(){
+  if(PALETTE_ACTIVE_TOOL==='slHighlight'){
+    slFmtHighlightClear();
+    closeColorPalette();
+  } else {
+    removeHl();
+  }
+}
+
 // Clicking anywhere outside the color palette popover (and outside its
 // own trigger buttons, whose onclick already called openColorPalette
 // again — reopening is harmless) closes it.
+//
+// Uses e.composedPath() rather than pop.contains(e.target): clicking a
+// preset swatch calls applyPaletteColor() synchronously, which rebuilds
+// the preset/recent rows (_renderPaletteRows) — that replaces the very
+// swatch button the click landed on. By the time this bubbled listener
+// runs, e.target is a now-detached node, so pop.contains(e.target) reads
+// false even though the click was genuinely inside the popover, and the
+// popover would incorrectly close itself immediately after every pick.
+// composedPath() is captured at dispatch time and still lists the
+// popover as an ancestor regardless of any DOM mutation the click's own
+// handler made afterward.
 document.addEventListener('click', e=>{
   const pop=document.getElementById('color-palette-popover');
   if(!pop || pop.style.display==='none') return;
-  if(pop.contains(e.target)) return;
-  // Also ignore clicks on either trigger button — their own onclick
+  const path=e.composedPath?e.composedPath():[e.target];
+  if(path.includes(pop)) return;
+  // Also ignore clicks on any trigger button — their own onclick
   // handlers already manage opening/repositioning correctly.
-  if(e.target.closest('#cep-color-swatch, #tb-hl, #tb-txt-color, #bep-color-swatch')) return;
+  if(path.some(n=>n.closest && n.closest('#cep-color-swatch, #tb-hl, #tb-txt-color, #bep-color-swatch, #sl-shape-fill-btn, #sl-shape-stroke-btn, #sl-fmt-color-btn, #sl-fmt-hl-btn'))) return;
   closeColorPalette();
 });
 
@@ -8343,6 +8391,7 @@ function slRefreshSlide(){
    avoids cluttering undo history with one entry per formatting click. */
 let SL_FMT_ACTIVE_INNER=null; // the .sl-el-textbox-inner currently being edited
 let SL_FMT_SAVED_RANGE=null;  // selection range preserved across native color-picker focus theft
+let SL_FMT_COMMIT_FN=null;    // forces the active textbox out of edit mode synchronously (see slSelectEl)
 
 function slFmtSaveRange(){
   const s=window.getSelection();
@@ -9153,14 +9202,18 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         const startX=ev.clientX,startY=ev.clientY;
         const startCax=ca.x,startCay=ca.y;
         const oldCA={...ca};
+        const othersForCA=slide.elements||[];
         const onMove=mv=>{
           const dx=(mv.clientX-startX)/w*100;
           const dy=(mv.clientY-startY)/h*100;
           let x=Math.max(0,Math.min(100-ca.w,startCax+dx));
           let y=Math.max(0,Math.min(100-ca.h,startCay+dy));
-          const snap=_slCheckSnap(x,y,ca.w,ca.h,w,h);
+          const snap=_slCheckSnap(x,y,ca.w,ca.h,w,h,othersForCA);
           x=snap.x; y=snap.y;
-          _slUpdateSnapGuides(snap.snappedH, snap.snappedV);
+          _slUpdateSnapGuides(
+            snap.snappedH ? (snap.guideXPct/100*w) : null,
+            snap.snappedV ? (snap.guideYPct/100*h) : null
+          );
           ca.x=x; ca.y=y;
           passageEl.style.left=(ca.x/100*w)+'px';
           passageEl.style.top=(ca.y/100*h)+'px';
@@ -9210,6 +9263,29 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       inner.style.textAlign=el.align||"left";
       inner.style.cursor="default";
       inner.innerHTML=el.html||"";
+      // force=true skips the "still interacting with the formatting panel"
+      // check — used when slSelectEl switches the selection to a DIFFERENT
+      // element while this textbox is still mid-edit. That path can't wait
+      // for the async blur below (whose timing relative to the new
+      // selection isn't guaranteed — see slSelectEl), so it calls this
+      // directly and synchronously instead.
+      const commitTextNow=(force)=>{
+        if(!force){
+          const active=document.activeElement;
+          const stillFormatting = active===inner ||
+            (active && active.closest && active.closest('#sl-textfmt-section'));
+          if(stillFormatting) return;
+        }
+        inner.contentEditable="false"; inner.style.cursor="default";
+        const old=el.html; const newHtml=inner.innerHTML;
+        if(newHtml!==old){ el.html=newHtml; _slPush({type:"sl-el-prop",slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:"html",oldVal:old,newVal:newHtml}); autoSave(); }
+        slRenderThumb(SL_ACTIVE_IDX);
+        if(SL_FMT_ACTIVE_INNER===inner){
+          SL_FMT_ACTIVE_INNER=null; SL_FMT_COMMIT_FN=null;
+          document.getElementById('sl-textfmt-section').style.display='none';
+          _slPositionFloatToolbar(SL_SEL_EL_ID);
+        }
+      };
       const commitText=()=>{
         // Blur fires whenever focus leaves the textbox — including when
         // the user clicks a formatting control that can't use
@@ -9219,21 +9295,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         // target, distinguishes "genuinely done editing" from "just
         // interacting with the formatting panel" — the standard pattern
         // for a contentEditable with an external toolbar.
-        setTimeout(()=>{
-          const active=document.activeElement;
-          const stillFormatting = active===inner ||
-            (active && active.closest && active.closest('#sl-textfmt-section'));
-          if(stillFormatting) return;
-          inner.contentEditable="false"; inner.style.cursor="default";
-          const old=el.html; const newHtml=inner.innerHTML;
-          if(newHtml!==old){ el.html=newHtml; _slPush({type:"sl-el-prop",slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:"html",oldVal:old,newVal:newHtml}); autoSave(); }
-          slRenderThumb(SL_ACTIVE_IDX);
-          if(SL_FMT_ACTIVE_INNER===inner){
-            SL_FMT_ACTIVE_INNER=null;
-            document.getElementById('sl-textfmt-section').style.display='none';
-            _slPositionFloatToolbar(SL_SEL_EL_ID);
-          }
-        },0);
+        setTimeout(()=>commitTextNow(false),0);
       };
       inner.addEventListener("blur", commitText);
       inner.addEventListener("keydown",ev=>{ if(ev.key==="Escape"){ev.preventDefault();inner.blur();} ev.stopPropagation(); });
@@ -9247,7 +9309,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           inner.contentEditable="true"; inner.style.cursor="text"; inner.focus();
           const range=document.caretRangeFromPoint?.(clientX,clientY);
           if(range){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
-          SL_FMT_ACTIVE_INNER=inner;
+          SL_FMT_ACTIVE_INNER=inner; SL_FMT_COMMIT_FN=commitTextNow;
           const sizeInput=document.getElementById('sl-fmt-size');
           if(sizeInput) sizeInput.value=el.fontSize||18;
           document.getElementById('sl-textfmt-section').style.display='';
@@ -9360,6 +9422,26 @@ function slShapeClearFill(){
   _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'fill',oldVal:old,newVal:'transparent'});
   autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
+// "No border" — width 0 already renders as border:none (see the shape
+// render branch), so clearing the border just zeroes the weight rather
+// than needing a separate "hasBorder" flag.
+function slShapeClearStroke(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='shape') return;
+  const old=el.strokeWidth; el.strokeWidth=0;
+  _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'strokeWidth',oldVal:old,newVal:0});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+// Current fill/stroke color for the selected shape, coerced to a strict
+// #rrggbb hex — used to seed both the swatch button preview and the
+// palette popover's "Custom" native input when opened.
+function _slShapeColorFor(prop){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX];
+  const el=sl && sl.elements.find(e=>e.id===SL_SEL_EL_ID);
+  const v=el && el[prop];
+  if(/^#[0-9a-fA-F]{6}$/.test(v)) return v;
+  return prop==='stroke' ? '#000000' : '#c8a84b';
+}
 function slShapeSetStrokeWidth(px){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='shape') return;
@@ -9382,16 +9464,19 @@ function _slUpdateShapePropsVisibility(id){
   const el=sl && id ? sl.elements.find(e=>e.id===id) : null;
   if(el && el.type==='shape'){
     section.style.display='';
-    const fillInput=document.getElementById('sl-shape-fill');
-    const strokeInput=document.getElementById('sl-shape-stroke');
+    const fillBtn=document.getElementById('sl-shape-fill-btn');
+    const strokeBtn=document.getElementById('sl-shape-stroke-btn');
     const widthInput=document.getElementById('sl-shape-strokewidth');
     const styleInput=document.getElementById('sl-shape-strokestyle');
-    // Color inputs require a value in strict "#rrggbb" form — fall back
-    // to a neutral default rather than passing through anything else
-    // (e.g. "transparent"), which would make the input silently ignore
-    // the assignment and show a stale value.
-    if(fillInput) fillInput.value=/^#[0-9a-fA-F]{6}$/.test(el.fill) ? el.fill : '#c8a84b';
-    if(strokeInput) strokeInput.value=/^#[0-9a-fA-F]{6}$/.test(el.stroke) ? el.stroke : '#000000';
+    const fillIsNone=!/^#[0-9a-fA-F]{6}$/.test(el.fill);
+    if(fillBtn){
+      fillBtn.style.background=fillIsNone?'':el.fill;
+      fillBtn.classList.toggle('sl-swatch-none', fillIsNone);
+    }
+    if(strokeBtn){
+      strokeBtn.style.background=/^#[0-9a-fA-F]{6}$/.test(el.stroke) ? el.stroke : '#000000';
+      strokeBtn.classList.remove('sl-swatch-none');
+    }
     if(widthInput) widthInput.value=el.strokeWidth??2;
     if(styleInput) styleInput.value=el.strokeStyle||'solid';
   } else {
@@ -9433,6 +9518,18 @@ function _slPositionFloatToolbar(id){
 }
 
 function slSelectEl(id){
+  // If a different element is being selected while a text box is still
+  // mid-edit, commit + exit edit mode synchronously right now rather than
+  // waiting for the textbox's async blur handler. That handler's timing
+  // relative to THIS selection change isn't guaranteed — the new
+  // element's own pointerdown handler (which called us) runs before the
+  // browser's default focus-change action fires the blur — so without
+  // this, the text-formatting toolbar could still read as "visible" by
+  // the time _slUpdateShapePropsVisibility below checks it, leaving both
+  // the shape and text sections showing at once.
+  if(SL_FMT_ACTIVE_INNER && id!==SL_SEL_EL_ID && typeof SL_FMT_COMMIT_FN==='function'){
+    SL_FMT_COMMIT_FN(true);
+  }
   // NOTE: Do NOT early-return when id===SL_SEL_EL_ID. After any canvas rebuild
   // (slRenderActive), the overlay DOM is recreated without resize handles even
   // though SL_SEL_EL_ID still holds the same id. We must always re-apply the
@@ -9508,27 +9605,49 @@ function slSelectEl(id){
 }
 
 /* ── Element drag ── */
-/* ── Snap-to-center/middle guides (Phase 5) ──
+/* ── Snap guides ──
    Scoped to drag-positioning only, not resize — matches the request as
    phrased ("boxes are close to the middle/center" describes position,
-   not size). Snaps against the slide's own horizontal center and
-   vertical middle only, not against other elements' edges — PowerPoint/
-   Canva also do element-to-element snapping, but that's a meaningfully
-   bigger feature (tracking every other element's geometry live during a
-   drag) than what was actually asked for here. */
+   not size). Snaps against the slide's own horizontal center and vertical
+   middle, AND against every other element on the slide (left/right/top/
+   bottom edges plus centers) — whichever candidate is closest within
+   SL_SNAP_THRESHOLD_PX wins. A single shared v-line/h-line pair is reused
+   for both kinds of snap (slide-center or element-edge) since only one of
+   each axis can be showing at a time regardless of source. */
 const SL_SNAP_THRESHOLD_PX=8;
 
-function _slCheckSnap(x,y,w,h,cw,ch){
-  const centerX=x+w/2, centerY=y+h/2;
+function _slCheckSnap(x,y,w,h,cw,ch,others){
   const threshX=(SL_SNAP_THRESHOLD_PX/cw)*100;
   const threshY=(SL_SNAP_THRESHOLD_PX/ch)*100;
-  let snappedH=false, snappedV=false;
-  if(Math.abs(centerX-50)<=threshX){ x=50-w/2; snappedH=true; }
-  if(Math.abs(centerY-50)<=threshY){ y=50-h/2; snappedV=true; }
-  return {x,y,snappedH,snappedV};
+  const centerX=x+w/2, centerY=y+h/2, right=x+w, bottom=y+h;
+
+  // Candidate positions (in canvas %) to snap the dragged element's edges/
+  // center against: the slide's own center/middle, plus every other
+  // element's left/right/centerX and top/bottom/centerY.
+  const vTargets=[50], hTargets=[50];
+  (others||[]).forEach(o=>{
+    vTargets.push(o.x, o.x+o.w, o.x+o.w/2);
+    hTargets.push(o.y, o.y+o.h, o.y+o.h/2);
+  });
+
+  let snappedH=false, guideXPct=null, bestXDelta=threshX;
+  vTargets.forEach(t=>{
+    [[x,t],[right,t-w],[centerX,t-w/2]].forEach(([edge,newX])=>{
+      const d=Math.abs(edge-t);
+      if(d<=bestXDelta){ bestXDelta=d; x=newX; snappedH=true; guideXPct=t; }
+    });
+  });
+  let snappedV=false, guideYPct=null, bestYDelta=threshY;
+  hTargets.forEach(t=>{
+    [[y,t],[bottom,t-h],[centerY,t-h/2]].forEach(([edge,newY])=>{
+      const d=Math.abs(edge-t);
+      if(d<=bestYDelta){ bestYDelta=d; y=newY; snappedV=true; guideYPct=t; }
+    });
+  });
+  return {x,y,snappedH,snappedV,guideXPct,guideYPct};
 }
 
-function _slUpdateSnapGuides(snappedH,snappedV){
+function _slUpdateSnapGuides(guideXPx,guideYPx){
   const canvas=document.getElementById('sl-canvas');
   if(!canvas) return;
   let vLine=document.getElementById('sl-snap-v');
@@ -9543,8 +9662,10 @@ function _slUpdateSnapGuides(snappedH,snappedV){
     hLine.id='sl-snap-h'; hLine.className='sl-snap-guide sl-snap-guide-h';
     canvas.appendChild(hLine);
   }
-  vLine.style.display=snappedH?'':'none';
-  hLine.style.display=snappedV?'':'none';
+  if(guideXPx!=null){ vLine.style.left=guideXPx+'px'; vLine.style.display=''; }
+  else vLine.style.display='none';
+  if(guideYPx!=null){ hLine.style.top=guideYPx+'px'; hLine.style.display=''; }
+  else hLine.style.display='none';
 }
 
 function _slHideSnapGuides(){
@@ -9556,14 +9677,22 @@ function slStartElDrag(ev, el, div, cw, ch){
   const startX=ev.clientX, startY=ev.clientY;
   const startElX=el.x, startElY=el.y;
   const oldPos={x:el.x,y:el.y,w:el.w,h:el.h};
+  // Snapshot the rest of the slide's elements once — their geometry
+  // doesn't change while this element is being dragged.
+  const slideNow=SL_DECK.slides[SL_ACTIVE_IDX];
+  const others=(slideNow?.elements||[]).filter(o=>o!==el);
+  if(slideNow?.contentArea) others.push(slideNow.contentArea);
   const onMove=mv=>{
     const dx=(mv.clientX-startX)/cw*100;
     const dy=(mv.clientY-startY)/ch*100;
     let x=Math.max(0,Math.min(100-el.w, startElX+dx));
     let y=Math.max(0,Math.min(100-el.h, startElY+dy));
-    const snap=_slCheckSnap(x,y,el.w,el.h,cw,ch);
+    const snap=_slCheckSnap(x,y,el.w,el.h,cw,ch,others);
     x=snap.x; y=snap.y;
-    _slUpdateSnapGuides(snap.snappedH, snap.snappedV);
+    _slUpdateSnapGuides(
+      snap.snappedH ? (snap.guideXPct/100*cw) : null,
+      snap.snappedV ? (snap.guideYPct/100*ch) : null
+    );
     el.x=x; el.y=y;
     div.style.left=(el.x/100*cw)+'px';
     div.style.top =(el.y/100*ch)+'px';

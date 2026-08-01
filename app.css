@@ -4536,13 +4536,22 @@ body.hide-sections #section-strips{display:none}
   border:1px solid rgba(73,53,72,.2);background:transparent;color:var(--sig);
   font-family:var(--ui);font-size:11px;
 }
-.sl-fmt-color-label{
-  display:flex;align-items:center;gap:4px;font-family:var(--ui);
-  font-size:10px;color:var(--muted);cursor:pointer;
+/* Swatch trigger button — opens the shared color-palette popover
+   (#color-palette-popover) instead of a plain native <input type=color>,
+   so Slides text/highlight/shape colors use the same preset+recent
+   palette as the main phrasing toolbar. */
+.sl-swatch-btn{
+  width:20px;height:20px;padding:0;border:1px solid rgba(73,53,72,.3);
+  border-radius:4px;cursor:pointer;background:#000;flex-shrink:0;
 }
-.sl-fmt-color-label input[type="color"]{
-  width:20px;height:20px;padding:0;border:1px solid rgba(73,53,72,.2);
-  border-radius:4px;cursor:pointer;background:transparent;
+.sl-swatch-btn:hover{ border-color:rgba(73,53,72,.5); }
+.sl-swatch-btn.sl-swatch-none{
+  background:
+    linear-gradient(to top left,
+      rgba(0,0,0,0) 0%, rgba(0,0,0,0) calc(50% - 1px),
+      rgba(200,40,40,.8) 50%,
+      rgba(0,0,0,0) calc(50% + 1px), rgba(0,0,0,0) 100%),
+    repeating-conic-gradient(#fff 0% 25%, #eee 0% 50%) 0 0/8px 8px;
 }
 
 /* ── Floating per-element toolbar (Slides view) ──
@@ -4561,14 +4570,17 @@ body.hide-sections #section-strips{display:none}
 .sl-float-sep{ width:1px; align-self:stretch; background:rgba(73,53,72,.15); margin:0 2px; }
 .sl-fmt-select-sm{ width:auto; max-width:110px; margin-bottom:0; }
 
-/* ── Slides snap-to-center/middle guides (Phase 5) ──
+/* ── Slides snap guides ──
    A distinct, high-visibility color (not the app's own gold/purple
    theme) deliberately, matching PowerPoint/Canva's convention of a
    guide color that stands apart from normal UI chrome so it reads
-   unambiguously as a transient alignment aid, not a permanent element. */
+   unambiguously as a transient alignment aid, not a permanent element.
+   Position (left/top) is set dynamically by JS — it may land on the
+   slide's own center/middle or on another element's edge/center,
+   whichever the drag snapped to — so no fixed 50% here. */
 .sl-snap-guide{position:absolute;background:#FF3B6B;pointer-events:none;z-index:50;display:none}
-.sl-snap-guide-v{left:50%;top:0;width:1px;height:100%;transform:translateX(-0.5px)}
-.sl-snap-guide-h{top:50%;left:0;height:1px;width:100%;transform:translateY(-0.5px)}
+.sl-snap-guide-v{top:0;width:1px;height:100%;transform:translateX(-0.5px)}
+.sl-snap-guide-h{left:0;height:1px;width:100%;transform:translateY(-0.5px)}
 
 /* ── Critical-apparatus reference letter superscripts (e.g. "a", "b") in
    Diagram blocks — plain <sup> tags, not .crit-mark (that class is for

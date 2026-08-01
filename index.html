@@ -513,16 +513,13 @@
           <div id="sl-float-toolbar" style="display:none">
             <div class="sl-prop-section sl-float-section" id="sl-shapeprops-section" style="display:none">
               <div class="sl-fmt-row">
-                <label class="sl-fmt-color-label">
-                  <span data-i18n="slides.shape.fill">Fill</span>
-                  <input type="color" id="sl-shape-fill" onchange="slShapeSetFill(this.value)"/>
-                </label>
+                <span class="sl-fmt-sub-label" data-i18n="slides.shape.fill">Fill</span>
+                <button type="button" class="sl-swatch-btn" id="sl-shape-fill-btn" title="Fill" onclick="openColorPalette('slShapeFill', this, _slShapeColorFor('fill'))"></button>
                 <button class="sl-micro-btn" onclick="slShapeClearFill()" data-i18n="slides.shape.no-fill">None</button>
                 <div class="sl-float-sep"></div>
-                <label class="sl-fmt-color-label">
-                  <span data-i18n="slides.shape.stroke">Border</span>
-                  <input type="color" id="sl-shape-stroke" onchange="slShapeSetStroke(this.value)"/>
-                </label>
+                <span class="sl-fmt-sub-label" data-i18n="slides.shape.stroke">Border</span>
+                <button type="button" class="sl-swatch-btn" id="sl-shape-stroke-btn" title="Border" onclick="openColorPalette('slShapeStroke', this, _slShapeColorFor('stroke'))"></button>
+                <button class="sl-micro-btn" onclick="slShapeClearStroke()" data-i18n="slides.shape.no-border">None</button>
                 <div class="sl-float-sep"></div>
                 <span class="sl-fmt-sub-label" data-i18n="slides.shape.weight">Weight</span>
                 <input type="number" class="sl-fmt-size-input" id="sl-shape-strokewidth" value="2" min="0" max="20" onchange="slShapeSetStrokeWidth(this.value)"/>
@@ -554,14 +551,10 @@
                 <input type="number" class="sl-fmt-size-input" id="sl-fmt-size" value="18" min="6" max="200" onpointerdown="event.stopPropagation()" onchange="slFmtFontSizeAbs(this.value)"/>
                 <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtFontSize(2)">+</button>
                 <div class="sl-float-sep"></div>
-                <label class="sl-fmt-color-label">
-                  <span data-i18n="slides.fmt.color">Text color</span>
-                  <input type="color" id="sl-fmt-color" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtColor(this.value)"/>
-                </label>
-                <label class="sl-fmt-color-label">
-                  <span data-i18n="slides.fmt.highlight">Highlight</span>
-                  <input type="color" id="sl-fmt-hl" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtHighlight(this.value)"/>
-                </label>
+                <span class="sl-fmt-sub-label" data-i18n="slides.fmt.color">Text color</span>
+                <button type="button" class="sl-swatch-btn" id="sl-fmt-color-btn" style="background:#1F1E1E" title="Text color" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slTextColor', this, '#1F1E1E')"></button>
+                <span class="sl-fmt-sub-label" data-i18n="slides.fmt.highlight">Highlight</span>
+                <button type="button" class="sl-swatch-btn" id="sl-fmt-hl-btn" style="background:#F0D08F" title="Highlight" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slHighlight', this, '#F0D08F')"></button>
                 <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtHighlightClear()" data-i18n="slides.fmt.no-highlight">None</button>
               </div>
             </div>
@@ -944,7 +937,7 @@
     <span class="cpp-section-label" data-i18n="palette.custom">Custom</span>
     <input type="color" id="cpp-native" class="cpp-native" value="#000000" onchange="onPaletteNativeChange(this.value)"/>
   </div>
-  <button id="cpp-remove-hl" class="cpp-remove-btn" data-i18n="toolbar.hl-remove" onclick="removeHl()" style="display:none">Remove highlight</button>
+  <button id="cpp-remove-hl" class="cpp-remove-btn" data-i18n="toolbar.hl-remove" onclick="cppRemoveHl()" style="display:none">Remove highlight</button>
 </div>
 
 
