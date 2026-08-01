@@ -173,19 +173,23 @@ const PROP_LABELS=['sentence','complex','elaboration','sub-point','bullet',
                    'principle','support','application','circumstance'];
 
 /* ── Source citation detection (paste import) ──────────────────────────
-   Bible software (Logos, Accordance, BibleArc, ...) commonly appends a
-   full bibliographic citation of the source edition after the copied
-   verse text, e.g. "Elliger, K., Rudolph, W. ... Biblia Hebraica
-   Stuttgartensia (electronic ed.). Stuttgart: Deutsche Bibelgesellschaft,
-   (1997)." Left alone, parsePasteIntoRows would turn every line of that
-   into extra verse rows. Instead it's detected, pulled out, and shown in
-   the dedicated #citation-bar (see setSourceCitation) — kept, just not
-   mixed into the passage.
-   Detection is anchored on a parenthesized 4-digit year: near-universal
-   in bibliographic citations across citation styles, and essentially
-   never appears in raw Biblical source text or a plain translation. */
+   Bible software (Logos, Accordance, BibleArc, Lexham, ...) commonly
+   appends a full bibliographic citation of the source edition after the
+   copied verse text — e.g. "...Biblia Hebraica Stuttgartensia (electronic
+   ed.). Stuttgart: Deutsche Bibelgesellschaft, (1997)." or "Kurt Aland et
+   al., Novum Testamentum Graece, 28th Edition (Stuttgart: Deutsche
+   Bibelgesellschaft, 2012), 1 Pe 1." Left alone, parsePasteIntoRows would
+   turn every line of that into extra verse rows. Instead it's detected,
+   pulled out, and shown in the dedicated #citation-bar (see
+   setSourceCitation) — kept, just not mixed into the passage.
+   Detection is anchored on a modern (19xx/20xx) year appearing anywhere
+   inside a parenthesized group — near-universal in bibliographic
+   citations across citation styles (the year isn't always the ENTIRE
+   parenthetical, e.g. "(Stuttgart: Deutsche Bibelgesellschaft, 2012)"),
+   and essentially never appears in raw Biblical source text or a plain
+   translation. */
 function _isCitationLikeText(text){
-  return /\(\s*\d{4}\s*\)/.test(text||'');
+  return /\([^()]*\b(?:19|20)\d{2}\b[^()]*\)/.test(text||'');
 }
 
 /* Scans block-line elements from the END backward, collecting a
