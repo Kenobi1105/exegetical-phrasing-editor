@@ -3459,6 +3459,7 @@ body.brk-locked .dbrk-pip:hover {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 #sl-toolbar {
   display: flex;
@@ -4543,6 +4544,22 @@ body.hide-sections #section-strips{display:none}
   width:20px;height:20px;padding:0;border:1px solid rgba(73,53,72,.2);
   border-radius:4px;cursor:pointer;background:transparent;
 }
+
+/* ── Floating per-element toolbar (Slides view) ──
+   Positioned by JS (top/left, px) directly above whichever text box or
+   shape is selected, so formatting controls sit next to the element being
+   edited instead of requiring a trip to the right-hand properties panel. */
+#sl-float-toolbar{
+  position:absolute;top:0;left:0;z-index:20;
+  background:var(--surface,#fff);
+  border:1px solid rgba(73,53,72,.15);border-radius:8px;
+  box-shadow:0 6px 20px rgba(0,0,0,.2);
+  pointer-events:auto;
+}
+.sl-float-section{ padding:6px 8px; border-bottom:none; }
+.sl-float-section .sl-fmt-row{ margin-bottom:0; flex-wrap:nowrap; }
+.sl-float-sep{ width:1px; align-self:stretch; background:rgba(73,53,72,.15); margin:0 2px; }
+.sl-fmt-select-sm{ width:auto; max-width:110px; margin-bottom:0; }
 
 /* ── Slides snap-to-center/middle guides (Phase 5) ──
    A distinct, high-visibility color (not the app's own gold/purple

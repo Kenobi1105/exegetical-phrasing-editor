@@ -8106,6 +8106,12 @@ function _slApplyUndo(op){
     SL_ACTIVE_IDX=op.fromIdx;
     slRenderAll(); return true;
   }
+  if(op.type==='sl-add-el'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    sl.elements=sl.elements.filter(e=>e.id!==op.el.id);
+    if(SL_SEL_EL_ID===op.el.id){ SL_SEL_EL_ID=null; _slUpdateShapePropsVisibility(null); }
+    slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
   if(op.type==='sl-remove-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
     sl.elements.splice(op.elIdx,0,op.el);
@@ -8150,10 +8156,16 @@ function _slApplyRedo(op){
     SL_ACTIVE_IDX=op.toIdx;
     slRenderAll(); return true;
   }
+  if(op.type==='sl-add-el'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    if(!sl.elements.some(e=>e.id===op.el.id)) sl.elements.push({...op.el});
+    SL_SEL_EL_ID=op.el.id;
+    slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
   if(op.type==='sl-remove-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
     sl.elements=sl.elements.filter(e=>e.id!==op.el.id);
-    if(SL_SEL_EL_ID===op.el.id) SL_SEL_EL_ID=null;
+    if(SL_SEL_EL_ID===op.el.id){ SL_SEL_EL_ID=null; _slUpdateShapePropsVisibility(null); }
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-el-prop'){
@@ -8230,6 +8242,10 @@ function slDuplicateSlide(idx){
 function slSelectSlide(idx){
   SL_SEL_EL_ID=null; // always deselect elements when switching slides
   SL_ACTIVE_IDX=idx;
+  document.getElementById('sl-shapeprops-section').style.display='none';
+  document.getElementById('sl-textfmt-section').style.display='none';
+  document.getElementById('sl-float-toolbar').style.display='none';
+  SL_FMT_ACTIVE_INNER=null;
   slUpdatePropsPanel();
   slRefreshSlide();
   document.querySelectorAll('.sl-thumb').forEach((t,i)=>t.classList.toggle('active',i===idx));
@@ -8481,7 +8497,7 @@ function slAddTextBox(){
 
 function slAddShape(shapeType){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  const el={id:'el-'+(++SL_EL_CTR),type:'shape',shapeType:shapeType||'rect',x:30,y:35,w:40,h:30,fill:'#C8A84B',stroke:'#493548',strokeWidth:2};
+  const el={id:'el-'+(++SL_EL_CTR),type:'shape',shapeType:shapeType||'rect',x:30,y:35,w:40,h:30,fill:'transparent',stroke:'#000000',strokeWidth:2,strokeStyle:'solid'};
   sl.elements.push(el);
   _slPush({type:'sl-add-el',slideIdx:SL_ACTIVE_IDX,el:{...el}});
   SL_SEL_EL_ID=el.id; slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
@@ -9215,6 +9231,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           if(SL_FMT_ACTIVE_INNER===inner){
             SL_FMT_ACTIVE_INNER=null;
             document.getElementById('sl-textfmt-section').style.display='none';
+            _slPositionFloatToolbar(SL_SEL_EL_ID);
           }
         },0);
       };
@@ -9234,6 +9251,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           const sizeInput=document.getElementById('sl-fmt-size');
           if(sizeInput) sizeInput.value=el.fontSize||18;
           document.getElementById('sl-textfmt-section').style.display='';
+          _slPositionFloatToolbar(el.id);
           slUpdateFmtToolbarState();
         };
         div.addEventListener("pointerdown",ev=>{
@@ -9261,8 +9279,9 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
       }
     } else if(isShape){
+      const sw=el.strokeWidth??2;
       div.style.background = el.fill||"transparent";
-      div.style.border = (el.strokeWidth??2)+"px solid "+(el.stroke||"#493548");
+      div.style.border = sw<=0 ? "none" : sw+"px "+(el.strokeStyle||"solid")+" "+(el.stroke||"#000000");
       div.style.borderRadius = el.shapeType==="ellipse" ? "50%" : "2px";
       div.style.boxSizing="border-box";
       if(EDITOR_VIEW==="slides"){
@@ -9334,6 +9353,28 @@ function slShapeSetStroke(hex){
   _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'stroke',oldVal:old,newVal:hex});
   autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
+function slShapeClearFill(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='shape') return;
+  const old=el.fill; el.fill='transparent';
+  _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'fill',oldVal:old,newVal:'transparent'});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+function slShapeSetStrokeWidth(px){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='shape') return;
+  px=Math.max(0,Math.min(20,parseInt(px)||0));
+  const old=el.strokeWidth; el.strokeWidth=px;
+  _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'strokeWidth',oldVal:old,newVal:px});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+function slShapeSetStrokeStyle(style){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='shape') return;
+  const old=el.strokeStyle; el.strokeStyle=style;
+  _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'strokeStyle',oldVal:old,newVal:style});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
 function _slUpdateShapePropsVisibility(id){
   const section=document.getElementById('sl-shapeprops-section');
   if(!section) return;
@@ -9343,15 +9384,52 @@ function _slUpdateShapePropsVisibility(id){
     section.style.display='';
     const fillInput=document.getElementById('sl-shape-fill');
     const strokeInput=document.getElementById('sl-shape-stroke');
+    const widthInput=document.getElementById('sl-shape-strokewidth');
+    const styleInput=document.getElementById('sl-shape-strokestyle');
     // Color inputs require a value in strict "#rrggbb" form — fall back
     // to a neutral default rather than passing through anything else
     // (e.g. "transparent"), which would make the input silently ignore
     // the assignment and show a stale value.
     if(fillInput) fillInput.value=/^#[0-9a-fA-F]{6}$/.test(el.fill) ? el.fill : '#c8a84b';
-    if(strokeInput) strokeInput.value=/^#[0-9a-fA-F]{6}$/.test(el.stroke) ? el.stroke : '#493548';
+    if(strokeInput) strokeInput.value=/^#[0-9a-fA-F]{6}$/.test(el.stroke) ? el.stroke : '#000000';
+    if(widthInput) widthInput.value=el.strokeWidth??2;
+    if(styleInput) styleInput.value=el.strokeStyle||'solid';
   } else {
     section.style.display='none';
   }
+  _slPositionFloatToolbar(id);
+}
+
+/* ── Floating toolbar positioning (Slides view) ──
+   Shows the shape/text formatting controls in a small floating bar directly
+   above whichever element is selected, instead of the always-visible right
+   panel. Flips to below the element when there isn't enough room above. */
+function _slPositionFloatToolbar(id){
+  const toolbar=document.getElementById('sl-float-toolbar');
+  const wrap=document.getElementById('sl-canvas-wrap');
+  const cv=document.getElementById('sl-canvas');
+  if(!toolbar || !wrap || !cv) return;
+  const shapeSection=document.getElementById('sl-shapeprops-section');
+  const textSection=document.getElementById('sl-textfmt-section');
+  const shapeVisible = shapeSection && shapeSection.style.display!=='none';
+  const textVisible  = textSection && textSection.style.display!=='none';
+  if(!id || id==='__passage__' || (!shapeVisible && !textVisible)){
+    toolbar.style.display='none';
+    return;
+  }
+  const target=cv.querySelector(`.sl-el[data-el-id="${id}"]`);
+  if(!target){ toolbar.style.display='none'; return; }
+  toolbar.style.display='block';
+  const tRect=target.getBoundingClientRect();
+  const wRect=wrap.getBoundingClientRect();
+  const GAP=8;
+  const tbH=toolbar.offsetHeight, tbW=toolbar.offsetWidth;
+  let top = tRect.top - wRect.top - tbH - GAP;
+  if(top < 4) top = tRect.bottom - wRect.top + GAP; // flip below if no room above
+  let left = tRect.left - wRect.left;
+  left = Math.max(4, Math.min(left, wRect.width - tbW - 4));
+  toolbar.style.top = top+'px';
+  toolbar.style.left = left+'px';
 }
 
 function slSelectEl(id){
@@ -9489,6 +9567,7 @@ function slStartElDrag(ev, el, div, cw, ch){
     el.x=x; el.y=y;
     div.style.left=(el.x/100*cw)+'px';
     div.style.top =(el.y/100*ch)+'px';
+    if(SL_SEL_EL_ID===el.id) _slPositionFloatToolbar(el.id);
   };
   const onUp=()=>{
     document.removeEventListener('pointermove',onMove);
@@ -9521,6 +9600,7 @@ function slStartElResize(ev, el, div, dir, cw, ch){
     el.x=x;el.y=y;el.w=w;el.h=h;
     div.style.left=(el.x/100*cw)+'px'; div.style.top=(el.y/100*ch)+'px';
     div.style.width=(el.w/100*cw)+'px'; div.style.height=(el.h/100*ch)+'px';
+    if(SL_SEL_EL_ID===el.id) _slPositionFloatToolbar(el.id);
   };
   const onUp=()=>{
     document.removeEventListener('pointermove',onMove);
@@ -9567,7 +9647,7 @@ function slCtxAction(action){
     const el={...sl.elements[elIdx]};
     sl.elements.splice(elIdx,1);
     _slPush({type:'sl-remove-el',slideIdx:SL_ACTIVE_IDX,elIdx,el});
-    if(SL_SEL_EL_ID===id) SL_SEL_EL_ID=null;
+    if(SL_SEL_EL_ID===id){ SL_SEL_EL_ID=null; _slUpdateShapePropsVisibility(null); }
     slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
   }
 }
