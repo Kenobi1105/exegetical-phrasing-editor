@@ -8421,9 +8421,44 @@ function slFmtCmd(cmd){
 }
 
 function slFmtFontFamily(family){
-  if(!SL_FMT_ACTIVE_INNER || !family) return;
+  if(!SL_FMT_ACTIVE_INNER) return;
   slFmtRestoreRange();
+  // Default option (value="") — execCommand has no reliable "clear just
+  // this one property" mode, so strip <font face> / font-family styling
+  // from whatever intersects the selection directly, same approach as
+  // removeHl/_unwrapHl below use for highlights.
+  if(!family){
+    const sel=window.getSelection();
+    let range=null;
+    if(sel && sel.rangeCount>0 && SL_FMT_ACTIVE_INNER.contains(sel.getRangeAt(0).commonAncestorContainer)){
+      range=sel.getRangeAt(0);
+    } else if(SL_FMT_SAVED_RANGE){
+      range=SL_FMT_SAVED_RANGE;
+    }
+    if(range && !range.collapsed) _slClearFontFamilyInRange(range);
+    SL_FMT_SAVED_RANGE=null;
+    return;
+  }
   document.execCommand('fontName',false,family);
+}
+
+// Clears font-family styling (both legacy <font face> tags from
+// execCommand('fontName',...) and inline style.fontFamily) from whatever
+// intersects the given range, leaving bold/italic/color/size/highlight on
+// the same text untouched. Clears the whole intersecting carrier rather
+// than splitting at the exact selection boundary — same "whole-carrier"
+// simplification removeHl already uses for highlights.
+function _slClearFontFamilyInRange(range){
+  const candidates=SL_FMT_ACTIVE_INNER.querySelectorAll('font[face], [style*="font-family" i]');
+  candidates.forEach(node=>{
+    if(!range.intersectsNode(node)) return;
+    if(node.tagName==='FONT' && node.hasAttribute('face')) node.removeAttribute('face');
+    if(node.style && node.style.fontFamily) node.style.removeProperty('font-family');
+    const nowEmpty = node.tagName==='FONT'
+      ? node.attributes.length===0
+      : (!node.getAttribute('style') && node.attributes.length===0);
+    if(nowEmpty) _unwrapHl(node); // generic unwrap — name is highlight-specific but body isn't
+  });
 }
 
 function slFmtColor(hex){
@@ -8565,12 +8600,16 @@ function slImageFileSelected(ev){
     const dataUrl=reader.result;
     // Read the image's natural dimensions so the initial box preserves
     // aspect ratio instead of stretching into an arbitrary default shape.
+    // Sized in PIXEL space (via SL_CANVAS_W/H) rather than directly against
+    // percent, since the canvas is a fixed 960x540 (16:9, not square) — a
+    // percent-space ratio doesn't equal the on-screen pixel ratio.
     const img=new Image();
     img.onload=()=>{
       const naturalRatio=img.naturalWidth/(img.naturalHeight||1);
-      let w=50, h=w/naturalRatio; // percentages of slide canvas
-      if(h>60){ h=60; w=h*naturalRatio; } // cap height, keep ratio
-      const el={id:'el-'+(++SL_EL_CTR),type:'image',x:(100-w)/2,y:(100-h)/2,w,h,src:dataUrl};
+      let wPx=0.5*SL_CANVAS_W, hPx=wPx/naturalRatio;
+      if(hPx>0.6*SL_CANVAS_H){ hPx=0.6*SL_CANVAS_H; wPx=hPx*naturalRatio; } // cap height, keep ratio
+      const w=wPx/SL_CANVAS_W*100, h=hPx/SL_CANVAS_H*100;
+      const el={id:'el-'+(++SL_EL_CTR),type:'image',x:(100-w)/2,y:(100-h)/2,w,h,src:dataUrl,naturalRatio};
       sl.elements.push(el);
       _slPush({type:'sl-add-el',slideIdx:SL_ACTIVE_IDX,el:{...el}});
       SL_SEL_EL_ID=el.id; slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
@@ -9357,7 +9396,20 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       const img=document.createElement("img");
       img.src=el.src||"";
       img.draggable=false;
-      img.style.cssText="width:100%;height:100%;object-fit:fill;display:block;pointer-events:none;";
+      // contain (not fill) — the image keeps its own proportions and
+      // letterboxes inside its box rather than stretching/squishing to
+      // match whatever shape the box currently is.
+      img.style.cssText="width:100%;height:100%;object-fit:contain;display:block;pointer-events:none;";
+      // Backfill naturalRatio for images saved before this field existed —
+      // quiet data-only mutation, no undo entry / autoSave, matching other
+      // passive derived-metadata fills elsewhere in this file.
+      if(!el.naturalRatio){
+        img.addEventListener("load",()=>{
+          if(!el.naturalRatio && img.naturalWidth && img.naturalHeight){
+            el.naturalRatio=img.naturalWidth/img.naturalHeight;
+          }
+        });
+      }
       div.appendChild(img);
       if(EDITOR_VIEW==="slides"){
         div.style.cursor="move";
@@ -9713,19 +9765,52 @@ function slStartElDrag(ev, el, div, cw, ch){
 }
 
 /* ── Element resize ── */
+/* Shift-lock proportional resize (corner handles only — the standard
+   convention in PowerPoint/Figma/Illustrator/Google Slides; single-edge
+   handles have no unambiguous "other axis" to derive, so they stay plain
+   free-resize even with Shift held).
+   `ratio` is a PIXEL-space width/height ratio, not a percent ratio — the
+   canvas is a fixed 960x540 (16:9), not square, so comparing/locking raw
+   percentages would render a "circle" as an ellipse. Whichever axis moved
+   more in actual on-screen pixels drives; the other is derived from ratio. */
+function _slResizeWithRatio(dir, startEl, dx, dy, cw, ch, ratio){
+  const hasE=dir.includes('e'), hasW=dir.includes('w');
+  const hasS=dir.includes('s'), hasN=dir.includes('n');
+  let w=startEl.w, h=startEl.h;
+  if(hasE) w=Math.max(5, startEl.w+dx);
+  if(hasW) w=Math.max(5, startEl.w-dx);
+  if(hasS) h=Math.max(5, startEl.h+dy);
+  if(hasN) h=Math.max(5, startEl.h-dy);
+  const widthDriven=Math.abs(dx*cw)>=Math.abs(dy*ch);
+  if(widthDriven) h=Math.max(5, (w*cw/ratio)/ch);
+  else            w=Math.max(5, (h*ch*ratio)/cw);
+  const x=hasW ? startEl.x+startEl.w-w : startEl.x;
+  const y=hasN ? startEl.y+startEl.h-h : startEl.y;
+  return {x,y,w,h};
+}
+
 function slStartElResize(ev, el, div, dir, cw, ch){
   ev.stopPropagation();
   const startX=ev.clientX, startY=ev.clientY;
   const startEl={x:el.x,y:el.y,w:el.w,h:el.h};
   const oldPos={...startEl};
+  const isCorner=(dir.includes('e')||dir.includes('w'))&&(dir.includes('n')||dir.includes('s'));
   const onMove=mv=>{
     const dx=(mv.clientX-startX)/cw*100;
     const dy=(mv.clientY-startY)/ch*100;
-    let {x,y,w,h}=startEl;
-    if(dir.includes('e'))  w=Math.max(5,w+dx);
-    if(dir.includes('s'))  h=Math.max(5,h+dy);
-    if(dir.includes('w')){ x=Math.min(x+w-5,x+dx); w=Math.max(5,w-dx); }
-    if(dir.includes('n')){ y=Math.min(y+h-5,y+dy); h=Math.max(5,h-dy); }
+    let x,y,w,h;
+    if(isCorner && mv.shiftKey && (el.type==='shape' || el.type==='image')){
+      const ratio = (el.type==='shape' && el.shapeType==='ellipse') ? 1
+                  : (el.type==='image' && el.naturalRatio) ? el.naturalRatio
+                  : (startEl.w*cw)/(Math.max(startEl.h,0.0001)*ch); // rect: ratio at drag start
+      ({x,y,w,h}=_slResizeWithRatio(dir,startEl,dx,dy,cw,ch,ratio));
+    } else {
+      ({x,y,w,h}=startEl);
+      if(dir.includes('e'))  w=Math.max(5,w+dx);
+      if(dir.includes('s'))  h=Math.max(5,h+dy);
+      if(dir.includes('w')){ x=Math.min(x+w-5,x+dx); w=Math.max(5,w-dx); }
+      if(dir.includes('n')){ y=Math.min(y+h-5,y+dy); h=Math.max(5,h-dy); }
+    }
     el.x=x;el.y=y;el.w=w;el.h=h;
     div.style.left=(el.x/100*cw)+'px'; div.style.top=(el.y/100*ch)+'px';
     div.style.width=(el.w/100*cw)+'px'; div.style.height=(el.h/100*ch)+'px';
