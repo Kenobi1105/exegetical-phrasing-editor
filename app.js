@@ -21,6 +21,10 @@ let asT=null;
 let lastFocusedRowEl=null;
 let FONT_B64=null; // pre-loaded Unicode font for PDF export
 let CURRENT_FILENAME=null; // set when a JSON file is loaded — Ctrl+S updates it in-place
+// Bibliographic citation extracted from a paste (e.g. Logos's BHS/SBLGNT
+// edition citation) — see _findTrailingCitationLines / setSourceCitation.
+// Shown in #citation-bar instead of becoming extra verse rows.
+let SOURCE_CITATION='';
 
 // Tracks user-adjusted column widths (null = use flex/default)
 const COL_WIDTHS={v:null, o:null, t:null};
@@ -168,6 +172,75 @@ function skipPaste(){
 const PROP_LABELS=['sentence','complex','elaboration','sub-point','bullet',
                    'principle','support','application','circumstance'];
 
+/* ── Source citation detection (paste import) ──────────────────────────
+   Bible software (Logos, Accordance, BibleArc, ...) commonly appends a
+   full bibliographic citation of the source edition after the copied
+   verse text, e.g. "Elliger, K., Rudolph, W. ... Biblia Hebraica
+   Stuttgartensia (electronic ed.). Stuttgart: Deutsche Bibelgesellschaft,
+   (1997)." Left alone, parsePasteIntoRows would turn every line of that
+   into extra verse rows. Instead it's detected, pulled out, and shown in
+   the dedicated #citation-bar (see setSourceCitation) — kept, just not
+   mixed into the passage.
+   Detection is anchored on a parenthesized 4-digit year: near-universal
+   in bibliographic citations across citation styles, and essentially
+   never appears in raw Biblical source text or a plain translation. */
+function _isCitationLikeText(text){
+  return /\(\s*\d{4}\s*\)/.test(text||'');
+}
+
+/* Scans block-line elements from the END backward, collecting a
+   contiguous trailing run of citation-like lines. Blank lines within
+   that trailing run are skipped over rather than treated as a stop
+   condition — citations are often separated from the passage (and, when
+   duplicated, from each other) by a blank line. Returns the citation
+   line elements in original top-to-bottom order; does not mutate
+   lineEls. Real passage content never matches, so this only ever grabs
+   trailing citation material, never verse text further up. */
+function _findTrailingCitationLines(lineEls){
+  const citationEls=[];
+  for(let idx=lineEls.length-1; idx>=0; idx--){
+    const text=(lineEls[idx].textContent||'').trim();
+    if(!text) continue; // blank line — keep scanning past it
+    if(!_isCitationLikeText(text)) break;
+    citationEls.unshift(lineEls[idx]);
+  }
+  return citationEls;
+}
+
+/* Collapses exact-duplicate citation blocks (compared by normalised
+   plain text) down to one copy, keeping the first occurrence's HTML.
+   Fixes sources (observed with Logos over RTF — see _RTF_SKIP_DESTS'
+   footnote note) that embed the same citation twice. */
+function _dedupeCitationEls(citationEls){
+  const seen=new Set();
+  const keep=[];
+  citationEls.forEach(el=>{
+    const key=(el.textContent||'').trim().replace(/\s+/g,' ').toLowerCase();
+    if(seen.has(key)) return;
+    seen.add(key);
+    keep.push(el);
+  });
+  return keep;
+}
+
+/* Sets/clears the passage's source citation and reflects it into
+   #citation-bar. html='' hides the bar entirely (default state, and
+   the state every new/cleared session resets to). */
+function setSourceCitation(html){
+  SOURCE_CITATION=html||'';
+  const bar=document.getElementById('citation-bar');
+  if(!bar) return;
+  if(SOURCE_CITATION){
+    bar.innerHTML=SOURCE_CITATION;
+    bar.title=bar.textContent.trim();
+    bar.style.display='';
+  } else {
+    bar.innerHTML='';
+    bar.removeAttribute('title');
+    bar.style.display='none';
+  }
+}
+
 function parsePasteIntoRows(div){
   // Collect line elements. Block children (<div>/<p>) are lines; any loose
   // inline/text nodes at the top level — including trailing content the
@@ -193,6 +266,22 @@ function parsePasteIntoRows(div){
       }
     });
     flush();
+  }
+
+  // Pull a trailing bibliographic citation (if any) out before it can be
+  // turned into verse rows — see _findTrailingCitationLines.
+  {
+    const citationEls=_dedupeCitationEls(_findTrailingCitationLines(lineEls));
+    if(citationEls.length){
+      setSourceCitation(citationEls.map(el=>el.innerHTML.trim()).join('<br>'));
+      citationEls.forEach(el=>{
+        const idx=lineEls.indexOf(el);
+        if(idx!==-1) lineEls.splice(idx,1);
+      });
+      // Drop any now-trailing blank lines left behind so a stray empty
+      // line doesn't become the passage's last row.
+      while(lineEls.length && !(lineEls[lineEls.length-1].textContent||'').trim()) lineEls.pop();
+    }
   }
 
   const parsed=[];
@@ -327,6 +416,7 @@ function parsePasteIntoRows(div){
   });
   if(madeDivider) renderDividers();
   recomputeIds();
+  autoSave();
   toast(parsed.length+' line'+(parsed.length!==1?'s':'')+' imported');
 }
 
@@ -450,6 +540,7 @@ function openEditor(){
   // Reset bracket and annotation state for new session
   BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
   ANNOTATIONS=[]; ANN_CTR=0;
+  setSourceCitation(''); // parsePasteIntoRows (below, if pasting) sets it fresh
   if(typeof _brkCancelPending==='function') _brkCancelPending();
   if(typeof _brkCloseEditPopup==='function') _brkCloseEditPopup();
   document.getElementById('dbrk-svg')?.remove();
@@ -4249,6 +4340,7 @@ function restartSess(){
   document.getElementById('refin').value='';
   document.getElementById('svgl').innerHTML='';
   const pta=document.getElementById('paste-ta');if(pta)pta.innerHTML='';
+  setSourceCitation('');
   RC=CC=0;ROW_STACK.length=0;ROW_REDO.length=0;SESS='';
   COL_WIDTHS.v=null;COL_WIDTHS.o=null;COL_WIDTHS.t=null;
   CURRENT_FILENAME=null;CURRENT_PROJECT_ID=null;
@@ -4459,6 +4551,7 @@ function collectData(){
     brackets: typeof collectBracketData==='function' ? collectBracketData() : [],
     annotations: ANNOTATIONS.map(a=>({...a})),
     annCtr: ANN_CTR,
+    sourceCitation: SOURCE_CITATION,
     deck: typeof slCollectDeck==='function' ? slCollectDeck() : {slides:[]}};
 }
 
@@ -4498,6 +4591,7 @@ function loadData(data){
     }
   }
   if(data.verseRef)document.getElementById('refin').value=data.verseRef;
+  setSourceCitation(data.sourceCitation||'');
   const isSingle=data.isSingle||false,isRTL=data.isRTL||false;
   (data.rows||[]).forEach(rd=>{
     const rid=rd.rid||++RC;const rtl=isRTL?' rtl':'';
@@ -5646,6 +5740,7 @@ function clearAll(){
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
   document.getElementById('refin').value='';
   document.getElementById('svgl').innerHTML='';
+  setSourceCitation('');
   RC=CC=0;
   DIAGRAM_DATA={connectors:[], labels:[]};
   CNX=0;LBL=0;
@@ -10404,7 +10499,14 @@ async function slExportPDF(){
 const _RTF_SKIP_DESTS=new Set(['fonttbl','stylesheet','info','themedata','colorschememapping',
   'datastore','latentstyles','listtable','listoverridetable','rsidtbl','generator',
   'pict','object','header','footer','headerl','headerr','footerl','footerr','xmlnstbl',
-  'ftnsep','ftnsepc','aftnsep','aftnsepc']);
+  'ftnsep','ftnsepc','aftnsep','aftnsepc',
+  // Footnote/endnote destination groups. Per RTF spec these hold the note's
+  // own text, separate from the reference mark left inline in the body —
+  // but some sources (observed with Logos, which embeds its Bible-edition
+  // citation as a footnote) omit the \* optional-destination prefix that
+  // would otherwise make the generic \{\*\...\} skip above catch it,
+  // causing the citation text to be inlined into the body an extra time.
+  'footnote','ftn','aftn']);
 
 /* Windows-1252 upper range (0x80–0x9F) → Unicode; rest of \'xx is latin-1 */
 const _CP1252_HI={
@@ -11128,6 +11230,20 @@ document.addEventListener('DOMContentLoaded',()=>{
     // preview reads correctly (matches what import will do to the text).
     _markupCriticalSigns(pasteTA);
     _isolateLatinRunsForPreview(pasteTA);
+    // Best-effort preview cleanup: some sources (observed with Logos over
+    // RTF) embed the trailing source citation twice — collapse an exact
+    // duplicate down to one visible copy right here, so the preview
+    // itself doesn't show it twice before the user ever confirms. The
+    // authoritative pass (which actually routes the citation to
+    // #citation-bar) runs later in parsePasteIntoRows regardless.
+    {
+      const lineEls=Array.from(pasteTA.children);
+      const trailing=_findTrailingCitationLines(lineEls);
+      const deduped=_dedupeCitationEls(trailing);
+      if(deduped.length<trailing.length){
+        trailing.filter(el=>!deduped.includes(el)).forEach(el=>el.remove());
+      }
+    }
   });
   renderS1Recent();
   // ── Critical-mark hover tooltip (one shared element, event delegation) ──

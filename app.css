@@ -4589,3 +4589,24 @@ body.hide-sections #section-strips{display:none}
    both kinds of apparatus markers, but no cursor:help yet — tooltip
    content for these is a separate, later addition. ── */
 .dblock-text sup{color:var(--crit,#1E6AFE)}
+
+/* ── Source citation bar (bottom of Screen 3, above #bbar) ──
+   Shows a bibliographic citation pulled out of a paste (e.g. Logos's BHS/
+   SBLGNT citation) so it's kept but doesn't become extra verse rows. Kept
+   thin/muted/single-line-with-ellipsis specifically so it stays visible
+   without competing with the Save/Load/Export/Clear action bar right
+   below it — full text is available via the native title tooltip. */
+#citation-bar{
+  flex-shrink:0;
+  padding:3px 20px;
+  font-family:var(--ui);
+  font-size:10.5px;
+  font-style:italic;
+  color:var(--muted);
+  background:var(--surface);
+  border-top:1px solid rgba(0,0,0,.06);
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  cursor:default;
+}
