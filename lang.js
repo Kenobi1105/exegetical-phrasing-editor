@@ -300,6 +300,33 @@ const LANGS = {
     'proj.save-btn':       'Save current project',
     'proj.export-all-btn': 'Export all projects',
 
+    /* ── Account / cloud sync (optional — local saving works without it) ── */
+    'toolbar.account':          'Account & Sync',
+    'account.title':            'Account & Sync',
+    'account.loading':          'Checking sync status…',
+    'account.unavailable':      "Cloud sync isn't available in this build. Your projects still save normally on this device.",
+    'account.offline':          "You're offline. Your projects are saved on this device and will sync once you're back online.",
+    'account.retry':            'Retry',
+    'account.signedout.sub':    'Sign in with Google to sync your projects across devices. Local saving works either way.',
+    'account.google':           'Continue with Google',
+    'account.signout':          'Sign out',
+    'account.signed-in-as':     'Signed in as',
+    'account.sync-now':         'Sync now',
+    'account.toast.signed-in':      'Signed in',
+    'account.toast.signed-out':     'Signed out. Your projects stay on this device.',
+    'account.toast.synced':         'Synced',
+    'account.toast.migrated':       'Local projects uploaded to your account',
+    'account.toast.remote-newer':   'A newer cloud version exists — save here to keep your current edits',
+    'account.toast.oversize':       'This project is too large to sync to the cloud',
+    'account.toast.oauth-cancelled':'Sign-in was cancelled.',
+    'account.err.offline':                       "You're offline right now.",
+    'account.err.not-configured':                'Cloud sync is not set up for this build.',
+    'account.err.missing-supabase-config':       'Cloud sync is not set up for this build.',
+    'account.err.supabase-library-unavailable':  'Could not reach the cloud sync service. Try again later.',
+    'account.err.signed-out':                    'Please sign in first.',
+    'account.err.invalid-project':               'This project could not be synced.',
+    'account.err.generic':                       'Something went wrong. Please try again.',
+
     /* ── Bible panel ── */
     'bible.title':         'Bible Module',
     'bible.offline':       '⚠ Offline — NET Bible unavailable.',
@@ -746,6 +773,33 @@ const LANGS = {
     'proj.save-btn':       '保存当前项目',
     'proj.export-all-btn': '导出所有项目',
 
+    /* ── Account / cloud sync (optional — local saving works without it) ── */
+    'toolbar.account':          '账户与同步',
+    'account.title':            '账户与同步',
+    'account.loading':          '正在检查同步状态…',
+    'account.unavailable':      '此版本不支持云同步。您的项目仍会正常保存在本设备上。',
+    'account.offline':          '您当前处于离线状态。项目已保存在本设备上，恢复连接后将自动同步。',
+    'account.retry':            '重试',
+    'account.signedout.sub':    '使用 Google 登录后可在多台设备间同步项目。无论是否登录，本地保存都照常工作。',
+    'account.google':           '使用 Google 继续',
+    'account.signout':          '登出',
+    'account.signed-in-as':     '当前登录：',
+    'account.sync-now':         '立即同步',
+    'account.toast.signed-in':      '已登录',
+    'account.toast.signed-out':     '已登出。您的项目仍保留在本设备上。',
+    'account.toast.synced':         '已同步',
+    'account.toast.migrated':       '本地项目已上传到您的账户',
+    'account.toast.remote-newer':   '云端存在更新的版本——请在此保存以保留您当前的编辑内容',
+    'account.toast.oversize':       '此项目过大，无法同步到云端',
+    'account.toast.oauth-cancelled':'登录已取消。',
+    'account.err.offline':                       '您当前处于离线状态。',
+    'account.err.not-configured':                '此版本未配置云同步。',
+    'account.err.missing-supabase-config':       '此版本未配置云同步。',
+    'account.err.supabase-library-unavailable':  '暂时无法连接云同步服务，请稍后重试。',
+    'account.err.signed-out':                    '请先登录。',
+    'account.err.invalid-project':               '此项目无法同步。',
+    'account.err.generic':                       '出现问题，请重试。',
+
     /* ── Bible panel ── */
     'bible.title':         '圣经模块',
     'bible.offline':       '⚠ 离线——NET 圣经不可用。',
@@ -974,6 +1028,10 @@ function applyLang() {
 
   // Re-render Screen 1 recent projects (translates "No saved projects yet.")
   if (typeof renderS1Recent === 'function') renderS1Recent();
+
+  // Re-render the account modal (no-op while hidden) and its status badges
+  if (typeof acctRender === 'function') acctRender();
+  if (typeof acctRenderBadges === 'function') acctRenderBadges();
 
   // Re-apply session-specific labels (session badge, column headers)
   if (typeof _applySessionLabels === 'function') _applySessionLabels();

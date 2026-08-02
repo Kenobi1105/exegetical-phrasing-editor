@@ -13,10 +13,13 @@ exegetical-phrasing-editor/
 ├── app.css           — All styles (~1100+ lines, append-only pattern)
 ├── app.js            — Editor canvas logic, sessions, projects, export
 ├── bible.js          — Bible Module: data loading, picker, tabs, scroll sync
+├── account.js        — Cloud sync integration layer (see "Cloud Sync" below)
 ├── sw.js             — Service worker for automatic cache-busting on deploy
 ├── CLAUDE.md         — This file
 ├── deploy.bat        — Windows deployment (git add/commit/push)
 ├── deploy.sh         — Mac/Linux deployment
+├── sync/             — Cloud sync module + config (see "Cloud Sync")
+├── supabase/         — SQL schema for the Supabase project (run manually)
 └── data/
     ├── index.json    — Book/chapter/verse count index for all versions
     ├── sblgnt.json   — Greek NT (SBL Greek New Testament)
@@ -109,11 +112,13 @@ Defined on `:root`:
 ### Projects localStorage schema
 ```js
 // Index key
-'exeg-proj-index'  →  JSON array of {id, name, savedAt, lang}
+'exeg-proj-index'  →  JSON array of {id, name, savedAt, lang, verseRef, cloudAt?}
 
 // Data key per project
-'exeg-proj-data-{id}'  →  JSON with full editor state
+'exeg-proj-{id}'  →  JSON with full editor state (PROJ_DATA_KEY = id => 'exeg-proj-'+id)
 ```
+`cloudAt` is optional and only present once cloud sync has synced that project at least
+once — see "Cloud sync" below. Older entries simply lack it and render as local-only.
 
 ### Row DOM structure
 ```html
@@ -413,9 +418,63 @@ Key CSS variables (set on `:root`):
    - `hebrew` — RTL, two columns (Original Hebrew + Translation)
    - `custom` — LTR, single column (any language)
 
-9. **Projects are stored in localStorage** (not IndexedDB). Key prefix: `exeg-proj-`. Max storage depends on browser (~5MB). No server sync.
+9. **Projects are stored in localStorage** (not IndexedDB). Key prefix: `exeg-proj-`. Max storage depends on browser (~5MB). Optional cloud sync (see below) mirrors project JSON to Supabase — localStorage remains the primary, authoritative store either way.
 
 10. **Color theme** persists in localStorage key `exeg-colors`. On load, `applySettings()` reads it and sets CSS custom properties.
+
+---
+
+## Cloud Sync (account.js + sync/)
+
+Optional, additive account/cloud-sync layer built on Supabase, sharing a project with
+the separate "Personal Dashboard" app so both apps' users have one Auth identity.
+**Local saving is always the primary path** — every offline/signed-out/profile-
+incomplete state degrades silently to exactly today's local-only behavior; nothing
+about editing, autosave, or the Projects panel requires signing in.
+
+**Google sign-in only.** There is no email/password sign-up, sign-in, or password
+reset UI, and no SMTP/custom email provider is required — this keeps the whole
+feature free to run. The copied sync module (`sync/phrasing-supabase-sync.js`) still
+requires a `public.user_profiles` row with a username before any cloud sync call
+succeeds; `account.js`'s `acctAutoCompleteProfile()` satisfies this silently right
+after a Google sign-in by generating a random internal username (`_acctGenUsername()`,
+retried up to 5x on collision) — the user never sees or sets a username.
+
+**Never synced under any circumstances:** the Bible Module's IndexedDB cache
+(`exeg-bible-v3`) — only the phrasing project session JSON that `collectData()`/
+`loadData()` already produce ever leaves the browser.
+
+```
+sync/phrasing-supabase-sync.js       — framework-free ES module: Supabase Auth +
+                                        public.user_profiles + public.phrasing_projects.
+                                        Copied verbatim from the sibling dashboard repo;
+                                        never modified (its email/password/username
+                                        exports simply go unused by this editor).
+sync/phrasing-sync-config.js         — this editor's Supabase URL + publishable key +
+                                        EDITOR_URL (Google OAuth redirectTo), single
+                                        source of truth
+supabase/phrasing_projects.sql       — RLS schema; run manually in the Supabase SQL
+                                        Editor, never executed from the browser
+account.js                           — integration layer: bridges window.PhrasingSync
+                                        (set by the module-bridge <script type="module">
+                                        in index.html) into projSave/autoSave/projDelete,
+                                        renders the #acct-modal UI (loading/unavailable/
+                                        offline/signed-out-Google-button/signed-in only)
+```
+
+New localStorage keys this adds (all additive, none required for editing):
+```
+phrasing_editor_migrated_v1:{user-id}  — one-time local→cloud migration flag
+exeg-acct-oauth-pending                — set just before a Google OAuth redirect
+exeg-acct-seen-signin                  — "this device has signed in before" (gates
+                                          whether acctBoot() does any network work at all)
+exeg-cloud-delete-queue                — project ids queued for cloud delete while offline
+```
+
+Call-site hooks are all fire-and-forget — see `projSave`/`autoSave`/`projDelete` in
+app.js, each guarded with `typeof acctQueuePush/acctMarkDirty/acctQueueDelete==='function'`
+so the app behaves identically if `account.js` fails to load for any reason. `projLoad`
+has no cloud hook at all.
 
 ---
 
@@ -713,6 +772,10 @@ app.js       — ~7100+ lines; bracketing system (~600 lines), slides system (~1
 lang.js      — i18n strings for EN + ZH; bracket.* and slides.* key namespaces
 tut.js       — Tutorial content; now includes Part 9 (Brackets) and Part 10 (Slides)
 bible.js     — Bible Module (unchanged)
-sw.js        — Service worker; APP_VERSION must be bumped on every deploy
+account.js   — NEW; cloud sync integration layer (Google-only) — see "Cloud Sync" above
+sw.js        — Service worker; APP_VERSION must be bumped on every deploy;
+               now also precaches account.js/sync/*
+sync/        — NEW; cloud sync module + config (Google-only, no auth pages)
+supabase/    — NEW; SQL schema, run manually in the Supabase SQL Editor
 CLAUDE.md    — This file
 ```

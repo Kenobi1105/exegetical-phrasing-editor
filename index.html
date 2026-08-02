@@ -59,6 +59,10 @@
             <span data-i18n="s1.load-json">Load JSON</span> <span style="opacity:.55;font-weight:400;font-size:10px" data-i18n="s1.load-json.hint">(Ctrl+O)</span>
           </button>
           <input type="file" id="s1-load-file" accept=".json" style="display:none" onchange="loadFromScreen1(event)"/>
+          <button title="Account &amp; Sync" onclick="openAccount()" style="position:relative;display:flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:99px;background:transparent;color:var(--sig);border:1.5px solid rgba(73,53,72,.25);font-family:var(--ui);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s" onmouseover="this.style.background='var(--sig)';this.style.color='var(--label)'" onmouseout="this.style.background='transparent';this.style.color='var(--sig)'">
+            <span data-i18n="account.title">Account &amp; Sync</span>
+            <span id="s1-account-dot" class="acct-dot" style="display:none"></span>
+          </button>
         </div>
       </div>
       <!-- Right: recent projects -->
@@ -246,6 +250,49 @@
   </div>
 </div>
 
+<!-- ══ ACCOUNT / CLOUD SYNC MODAL ══
+     Optional, additive — every view here degrades gracefully if cloud
+     sync isn't configured, the browser is offline, or the user simply
+     never signs in. Local saving (Ctrl+S, autosave, the Projects panel)
+     works identically either way. -->
+<div class="screen hidden" id="acct-modal">
+  <div class="mcard" style="padding:36px 40px;width:420px;text-align:left">
+    <button class="help-close-btn" onclick="closeAccount()" aria-label="Close" style="position:absolute;top:16px;right:16px">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+    <h2 data-i18n="account.title">Account &amp; Sync</h2>
+
+    <div id="acct-view-loading">
+      <p class="sm-sub" data-i18n="account.loading">Checking sync status…</p>
+    </div>
+
+    <div id="acct-view-unavailable" hidden>
+      <p class="sm-sub" data-i18n="account.unavailable">Cloud sync isn't available in this build. Your projects still save normally on this device.</p>
+    </div>
+
+    <div id="acct-view-offline" hidden>
+      <p class="sm-sub" data-i18n="account.offline">You're offline. Your projects are saved on this device and will sync once you're back online.</p>
+      <div class="sf"><button class="smb apl" onclick="acctBoot()" data-i18n="account.retry">Retry</button></div>
+    </div>
+
+    <div id="acct-view-signedout" hidden>
+      <p class="sm-sub" data-i18n="account.signedout.sub">Sign in with Google to sync your projects across devices. Local saving works either way.</p>
+      <button id="acct-google-btn" class="acct-google-btn" onclick="acctGoogleSignIn()">
+        <svg width="16" height="16" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3c-1.6 4.6-6 8-11.3 8-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3 12.4 3 3 12.4 3 24s9.4 21 21 21 21-9.4 21-21c0-1.4-.1-2.7-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.9 18.9 13 24 13c3.1 0 5.8 1.1 8 3l6-6C34.5 5.1 29.5 3 24 3c-7.6 0-14.1 4.3-17.7 10.7z"/><path fill="#4CAF50" d="M24 45c5.4 0 10.3-1.9 14-5.1l-6.5-5.5C29.4 36.1 26.8 37 24 37c-5.3 0-9.7-3.4-11.3-8.1l-6.6 5.1C9.8 40.5 16.3 45 24 45z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.3-2.2 4.2-4 5.6l6.5 5.5C41.4 36 45 30.5 45 24c0-1.4-.1-2.7-.4-3.5z"/></svg>
+        <span data-i18n="account.google">Continue with Google</span>
+      </button>
+    </div>
+
+    <div id="acct-view-signedin" hidden>
+      <div class="acct-row"><span data-i18n="account.signed-in-as">Signed in as</span> <b id="acct-signedin-email"></b></div>
+      <div class="sf"><button class="smb apl" onclick="acctSyncNow()" data-i18n="account.sync-now">Sync now</button></div>
+      <div class="sf"><button class="smb can" onclick="acctSignOut()" data-i18n="account.signout">Sign out</button></div>
+    </div>
+
+    <p id="acct-msg" class="acct-msg" aria-live="polite"></p>
+  </div>
+</div>
+
 <!-- ══ APP (SCREEN 3) ══ -->
 <div id="app">
   <!-- Left divider for Projects panel when locked -->
@@ -404,6 +451,10 @@
         <div class="tsep" style="margin:0 4px"></div>
         <button class="ibtn" data-i18n-title="toolbar.restart" title="Restart session (Ctrl+Shift+R)" onclick="restartSess()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H3"/></svg></button>
         <button class="ibtn" data-i18n-title="toolbar.help"    title="Keyboard shortcuts (Ctrl+H)" onclick="openHelp()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M10 9.5a2.5 2.5 0 0 1 4.5 1.5c0 1.5-2.5 2-2.5 3.5"/><circle cx="12" cy="17.5" r=".5" fill="currentColor"/></svg></button>
+        <button id="btn-account" class="ibtn" data-i18n-title="account.title" title="Account &amp; Sync" onclick="openAccount()" style="position:relative">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+          <span id="btn-account-dot" class="acct-dot" style="display:none"></span>
+        </button>
         <button class="ibtn" data-i18n-title="toolbar.settings" title="Settings (Ctrl+,)" onclick="openSettings()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2a1 1 0 0 1 1 1v1.07a7 7 0 0 1 2.83 1.17l.76-.76a1 1 0 0 1 1.41 0l1.41 1.41a1 1 0 0 1 0 1.41l-.76.76A7 7 0 0 1 19.93 11H21a1 1 0 0 1 0 2h-1.07a7 7 0 0 1-1.17 2.83l.76.76a1 1 0 0 1 0 1.41l-1.41 1.41a1 1 0 0 1-1.41 0l-.76-.76A7 7 0 0 1 13 19.93V21a1 1 0 0 1-2 0v-1.07a7 7 0 0 1-2.83-1.17l-.76.76a1 1 0 0 1-1.41 0L4.59 18.1a1 1 0 0 1 0-1.41l.76-.76A7 7 0 0 1 4.07 13H3a1 1 0 0 1 0-2h1.07A7 7 0 0 1 5.34 8.17l-.76-.76a1 1 0 0 1 0-1.41L5.99 4.59a1 1 0 0 1 1.41 0l.76.76A7 7 0 0 1 11 4.07V3a1 1 0 0 1 1-1z"/></svg></button>
         <div class="tsep" style="margin:0 6px 0 4px"></div>
         <button id="lang-toggle-btn" class="lang-pill" onclick="toggleLang()" data-i18n-title="lang.toggle.title" title="Switch to Simplified Chinese (Ctrl+Space)">
@@ -678,6 +729,7 @@
 <div id="proj-panel">
   <div id="proj-panel-hdr">
     <h3 data-i18n="proj.title">My Projects</h3>
+    <span id="acct-panel-dot" class="acct-dot" style="display:none" onclick="openAccount()" title="Account &amp; Sync"></span>
     <button class="bpanel-hbtn" onclick="closeProjects()" title="Close">
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
@@ -984,6 +1036,33 @@
 <script src="tut.js"></script>
 <script src="app.js"></script>
 <script src="bible.js"></script>
+<script src="account.js"></script>
+<script type="module">
+  /* Bridges the ES-module cloud-sync package into the classic global scope
+     the rest of this app uses. Module scripts are deferred by default —
+     this runs after every classic script above (account.js included) and
+     before DOMContentLoaded, so account.js's own DOMContentLoaded listener
+     is guaranteed to see window.PhrasingSync already set (or, if this
+     import fails for any reason, guaranteed to see it left undefined —
+     account.js treats that identically to "cloud sync unavailable" and the
+     rest of the editor is completely unaffected either way). */
+  import * as PhrasingSync from './sync/phrasing-supabase-sync.js';
+  import * as SyncConfig from './sync/phrasing-sync-config.js';
+  try {
+    const cfg = PhrasingSync.configurePhrasingSync({
+      supabaseUrl: SyncConfig.SUPABASE_URL,
+      supabaseAnonKey: SyncConfig.SUPABASE_PUBLISHABLE_KEY,
+      redirectTo: SyncConfig.EDITOR_URL
+    });
+    // export * namespaces are frozen — copy into a plain object before
+    // adding __ready, rather than mutating the namespace itself.
+    window.PhrasingSync = Object.assign({}, PhrasingSync, { __ready: !!(cfg && cfg.ok) });
+  } catch (err) {
+    console.warn('[sync] configure failed', err);
+  } finally {
+    window.dispatchEvent(new CustomEvent('phrasing-sync-ready'));
+  }
+</script>
 <script>
 /* ── Service Worker registration + update detection ── */
 if('serviceWorker' in navigator){

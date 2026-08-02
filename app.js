@@ -4332,6 +4332,8 @@ document.addEventListener('keydown',function(e){
   if(setModal&&!setModal.classList.contains('hidden')){e.preventDefault();if(typeof settingsEscOrClickOutside==='function')settingsEscOrClickOutside();return;}
   var helpModal=document.getElementById('help-modal');
   if(helpModal&&!helpModal.classList.contains('hidden')){e.preventDefault();if(typeof closeHelp==='function')closeHelp();return;}
+  var acctModal=document.getElementById('acct-modal');
+  if(acctModal&&!acctModal.classList.contains('hidden')){e.preventDefault();if(typeof closeAccount==='function')closeAccount();return;}
   var expPopup=document.getElementById('export-popup');
   if(expPopup&&expPopup.classList.contains('show')){e.preventDefault();expPopup.classList.remove('show');return;}
   var cpp=document.getElementById('color-palette-popover');
@@ -4746,13 +4748,20 @@ async function projSave(showPanel){
   if(entry){ entry.name=name;entry.lang=LANG;entry.verseRef=ref;entry.savedAt=now; }
   else { idx.unshift({id,name,lang:LANG,verseRef:ref,savedAt:now}); }
   localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx));
-  // Update status bar
-  const t=new Date(now);
-  const ts=t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  // Update status bar. Use 'd' not 't' — a LATER const t in this function
+  // would put every earlier typeof t==='function' check in this function's
+  // temporal dead zone, throwing "Cannot access 't' before initialization"
+  // instead of falling back to the English string (see projLoad for the
+  // same fix, and autoSave which already avoided this).
+  const d=new Date(now);
+  const ts=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   document.getElementById('stbar').textContent=(typeof t==='function'?t('toast.saved-ts'):'Saved · ')+ts;
   renderProjPanel();
   renderS1Recent();
   toast(typeof t==='function'?t('toast.saved'):'Saved to app');
+  // Cloud push is additive and fire-and-forget — never delays or blocks
+  // the local save above. account.js is optional; guard its absence.
+  if(typeof acctQueuePush==='function') acctQueuePush(id,data,name,true);
 }
 
 function projLoad(id){
@@ -4787,8 +4796,13 @@ function projLoad(id){
     CURRENT_PROJECT_ID=id;
     CURRENT_FILENAME=null;
     const entry=projIndex().find(e=>e.id===id);
-    const t=new Date(entry?.savedAt||Date.now());
-    const ts=t.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+    // Use 'd' not 't' — see the identical fix + explanation in projSave.
+    // This one isn't just a silent fallback: the EARLIER t('version.ph')
+    // call above (inside the versionLabel block) sits in the temporal
+    // dead zone of this const, and throws instead of falling back —
+    // which is what was actually landing every load in the catch below.
+    const d=new Date(entry?.savedAt||Date.now());
+    const ts=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     document.getElementById('stbar').textContent=(typeof t==='function'?t('toast.loaded'):'Loaded · ')+ts;
     if(typeof window.spClose==='function')window.spClose();
     toast((typeof t==='function'?t('toast.opened'):'Opened: ')+(entry?.name||'project'));
@@ -4804,6 +4818,9 @@ function projDelete(id,e){
   if(CURRENT_PROJECT_ID===id) CURRENT_PROJECT_ID=null;
   renderProjPanel();
   renderS1Recent();
+  // Queues a cloud delete (retried later if offline) so a later cloud pull
+  // can't resurrect a project just deleted locally.
+  if(typeof acctQueueDelete==='function') acctQueueDelete(id);
 }
 /* ════════════════════════════════════════
    EXPORT ALL PROJECTS
@@ -5287,11 +5304,12 @@ function renderProjPanel(){
     const when=d.toLocaleDateString([],{month:'short',day:'numeric'})+' · '+
                 d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
     const active=e.id===CURRENT_PROJECT_ID?' style="border-color:var(--sig);background:rgba(73,53,72,.04)"':'';
+    const cloudBadge=typeof acctBadgeHTML==='function'?acctBadgeHTML(e):'';
     return `<div class="proj-card" onclick="projLoad('${e.id}')"${active}>
-  <div class="proj-card-name">${e.name||'Untitled'}</div>
+  <div class="proj-card-name">${escH(e.name||'Untitled')}${cloudBadge}</div>
   <div class="proj-card-meta">
-    <span class="proj-lang-badge">${e.lang||'—'}</span>
-    <span>${e.verseRef||''}</span>
+    <span class="proj-lang-badge">${escH(e.lang||'—')}</span>
+    <span>${escH(e.verseRef||'')}</span>
     <span>·</span><span>${when}</span>
   </div>
   <button class="proj-del" onclick="projDelete('${e.id}',event)" title="Delete project">
@@ -5319,9 +5337,10 @@ function renderS1Recent(){
   el.innerHTML=recent.map(e=>{
     const d=new Date(e.savedAt);
     const when=d.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+    const cloudBadge=typeof acctBadgeHTML==='function'?acctBadgeHTML(e):'';
     return `<div class="s1-proj-row" onclick="projLoad('${e.id}')">
-  <span class="proj-lang-badge">${e.lang||'—'}</span>
-  <span class="s1-proj-name">${e.name||'Untitled'}</span>
+  <span class="proj-lang-badge">${escH(e.lang||'—')}</span>
+  <span class="s1-proj-name">${escH(e.name||'Untitled')}${cloudBadge}</span>
   <span class="s1-proj-meta">${when}</span>
   <button class="s1-proj-del" onclick="projDelete('${e.id}',event)" title="Delete project">
     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
@@ -5354,6 +5373,11 @@ function autoSave(){
       const entry=idx.find(e=>e.id===CURRENT_PROJECT_ID);
       if(entry){ entry.name=name;entry.lang=LANG;entry.verseRef=ref;entry.savedAt=now;
         localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx)); }
+      // Marks dirty only — NOT a cloud push on every keystroke burst. The
+      // actual push happens on account.js's own coarse flusher (~30s,
+      // plus visibility/online triggers), which would otherwise re-upload
+      // the whole project payload on every 700ms autosave tick.
+      if(typeof acctMarkDirty==='function') acctMarkDirty(CURRENT_PROJECT_ID);
       // Use 'd' not 't' to avoid shadowing the i18n t() function
       const d=new Date(now);
       const ts=d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});

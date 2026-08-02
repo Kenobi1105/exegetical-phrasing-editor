@@ -2,7 +2,7 @@
    SERVICE WORKER — Exegetical Phrasing Editor
    Auto cache-busting: bump APP_VERSION on each deploy
 ════════════════════════════════════════ */
-const APP_VERSION = '202608012130';
+const APP_VERSION = '202608031200';
 const CACHE_NAME  = 'exeg-app-v' + APP_VERSION;
 
 /* sw.js must never be listed in PRECACHE — the browser always fetches sw.js
@@ -16,6 +16,9 @@ const PRECACHE = [
   './bible.js',
   './lang.js',
   './tut.js',
+  './account.js',
+  './sync/phrasing-supabase-sync.js',
+  './sync/phrasing-sync-config.js',
   './data/index.json',
   './data/sblgnt.json',
   './data/byz.json',
@@ -31,9 +34,10 @@ const PRECACHE = [
    so new version detection works without needing index.html to be network-first.
    When a new sw.js is detected, the new SW installs, the banner appears, and the
    user presses Update to reload with all new files from the new cache.
-   Making index.html network-first caused the version number (in the <meta> tag)
-   to update silently on every page load before the banner appeared, giving the
-   impression of an automatic update. */
+   Making index.html network-first caused the version number (Screen 1 fetches
+   sw.js directly to read APP_VERSION — see index.html) to update silently on
+   every page load before the banner appeared, giving the impression of an
+   automatic update. */
 const NETWORK_FIRST = [];
 
 /* Install: cache all app files — individual failures are caught so one
@@ -83,7 +87,8 @@ self.addEventListener('message', e => {
    old cache was still present during the brief window between skipWaiting and the
    activate handler finishing its cleanup. */
 self.addEventListener('fetch', e => {
-  // Skip non-GET and cross-origin requests (e.g. Google Fonts, NET Bible API)
+  // Skip non-GET and cross-origin requests (e.g. Google Fonts, NET Bible API,
+  // Supabase Auth/REST calls, the jsDelivr Supabase JS import)
   if (e.request.method !== 'GET') return;
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
