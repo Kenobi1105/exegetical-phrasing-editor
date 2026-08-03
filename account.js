@@ -45,7 +45,8 @@ const ACCT = {
   flushing: false,
   lastSyncedAt: null, // ms epoch, persisted across reloads — see acctReadLastSynced/acctWriteLastSynced
   _unsub: null,
-  _flushTimer: null
+  _flushTimer: null,
+  _pulledOnce: false
 };
 ACCT.lastSyncedAt = acctReadLastSynced();
 
@@ -126,7 +127,18 @@ function acctAfterState(){
   }
   if(ACCT.state==='ready'){
     acctStartFlusher();
-    acctMigrateThenPull();
+    // onAuthStateChange (wired in acctBoot) fires acctRefreshState -> here on
+    // EVERY auth event Supabase emits post-boot — token refreshes, tab-focus
+    // session re-checks, etc. — not just the initial sign-in. Without this
+    // guard, each one re-ran the full migrate+flush+pull cycle and re-fired
+    // acctPull()'s "newer cloud version" toast, which is why it could repeat
+    // every few seconds with nothing actually new on the cloud side. Explicit
+    // user-initiated pulls (Sync Now / reconnect) call acctPull() directly,
+    // bypassing this guard, so they're unaffected.
+    if(!ACCT._pulledOnce){
+      ACCT._pulledOnce=true;
+      acctMigrateThenPull();
+    }
   }
 }
 
@@ -193,7 +205,7 @@ async function acctSignOut(){
   if(ACCT._unsub){ try{ ACCT._unsub(); }catch(_e){} ACCT._unsub=null; }
   acctStopFlusher();
   ACCT.state='signed_out'; ACCT.user=null; ACCT.profile=null;
-  ACCT.dirty.clear(); ACCT.pushCache={};
+  ACCT.dirty.clear(); ACCT.pushCache={}; ACCT._pulledOnce=false;
   acctRenderBadges();
   acctRender();
   toast(typeof t==='function'?t('account.toast.signed-out'):'Signed out. Your projects stay on this device.');
