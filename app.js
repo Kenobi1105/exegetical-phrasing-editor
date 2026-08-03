@@ -605,7 +605,7 @@ function makeRowEl(rid,verse,origHTML,transHTML,cmtId){
     <div class="xcell mid" style="${vStyle}">
       <input class="vin" type="text" maxlength="8" placeholder="v" spellcheck="false"
         value="${escH(verse||'')}"
-        oninput="recomputeIds();autoSave()"
+        oninput="_onVerseInput()"
         onkeydown="onVerseKey(event,${rid})"/>
     </div>
     <div class="xcell mid" style="width:52px;min-width:52px">
@@ -2970,6 +2970,22 @@ function _applyRowShading(){
   if(typeof renderSectionStrips==='function') renderSectionStrips();
 }
 
+// recomputeIds() does two full document.querySelectorAll('.xrow') passes over
+// EVERY row in the project (its own pass + _applyRowShading()'s pass above) —
+// fine for the other 13 call sites (discrete one-shot events: row add/split/
+// merge/delete, undo/redo, load), but the verse-number <input>'s oninput fires
+// it on every keystroke, which re-scans the whole document per character on
+// large projects. Debounce ONLY this call site, not recomputeIds() itself, so
+// every other caller keeps its immediate-consistency guarantee unchanged.
+// 120ms is short enough that normal typing still feels live (letters settle
+// right after each pause) while coalescing genuine rapid-fire bursts (held
+// Backspace, paste) into one re-scan instead of one per character.
+let _verseInputRecomputeT=null;
+function _onVerseInput(){
+  clearTimeout(_verseInputRecomputeT);
+  _verseInputRecomputeT=setTimeout(recomputeIds,120);
+  autoSave(); // unchanged — autoSave already has its own independent 700ms debounce
+}
 function recomputeIds(){
   const counts={};
   let lastVerse='';
@@ -6634,7 +6650,6 @@ function _brkAssignLane(startRid, endRid){
 
 /* ── Pips are now part of each .drow — no rail, no position sync needed ── */
 function _brkSyncPips(){ /* no-op: pips render in makeDiagramRowEl */ }
-function _brkSyncPipPositions(){ /* no-op: pips are in flex flow */ }
 
 /* ── Handle Shift+click on a block ── */
 function _brkHandleClick(rid, pipEl){
@@ -12227,22 +12242,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     setTimeout(()=>toast(t('sw.updated-toast')), 800);
   }
 });
-
-/* ── Modules hamburger menu ── */
-function toggleModulesMenu(e){
-  e.stopPropagation();
-  const menu=document.getElementById('modules-menu');
-  if(!menu)return;
-  const isOpen=menu.style.display!=='none';
-  menu.style.display=isOpen?'none':'block';
-  if(!isOpen){
-    setTimeout(()=>document.addEventListener('click',closeModulesMenu,{once:true}),10);
-  }
-}
-function closeModulesMenu(){
-  const menu=document.getElementById('modules-menu');
-  if(menu)menu.style.display='none';
-}
 
 /* ── Ctrl+Space — toggle UI language ── */
 document.addEventListener('keydown',function(ev){

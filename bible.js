@@ -191,8 +191,6 @@ async function bGetNetChapter(corpus,bookIdx,chapter){
   if(!r.ok)throw new Error('NET API error');
   const j=await r.json();
   if(!Array.isArray(j))return null;
-  // DEBUG: log the first verse object so we can see the actual API response structure
-  if(j.length>0) console.log('[NET API] First verse object:', JSON.stringify(j[0], null, 2));
   return j.map(v=>bBuildNetVerse(v));
 }
 

@@ -1474,29 +1474,6 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 .bpane{padding-top:4px !important;}
 .bchapter-block:first-child .bchapter-hdr{padding-top:2px;}
 
-/* ── Hamburger modules menu ── */
-.modules-menu{
-  position:absolute;top:calc(100% + 4px);right:0;
-  background:var(--surface);
-  border:1px solid rgba(0,0,0,.1);
-  border-radius:var(--r);
-  box-shadow:0 8px 24px rgba(0,0,0,.12);
-  min-width:200px;padding:4px;z-index:9999;
-}
-.mmenu-item{
-  display:flex;align-items:center;gap:10px;
-  width:100%;padding:9px 12px;
-  border:none;background:transparent;
-  font-family:var(--ui);font-size:12px;font-weight:600;
-  color:var(--ink);cursor:pointer;border-radius:var(--rs);
-  text-align:left;transition:background .12s;
-}
-.mmenu-item:hover{background:rgba(73,53,72,.08);color:var(--sig)}
-.mmenu-key{
-  margin-left:auto;font-size:10px;font-weight:400;
-  color:var(--muted);white-space:nowrap;
-}
-
 /* ── Help modal: rounded rectangle ── */
 #help-modal .mcard{
   border-radius:16px !important;
