@@ -8277,7 +8277,9 @@ document.addEventListener('click', ev=>{
 
 let SL_DECK       = { slides: [] };   // the deck
 let SL_ACTIVE_IDX = 0;                // currently selected slide index
-let SL_SEL_EL_ID  = null;             // selected element id on active slide
+let SL_SEL_EL_ID  = null;             // selected element id on active slide — derived alias, see SL_SEL_EL_IDS/_slSyncSelAlias below
+let SL_SEL_EL_IDS = [];               // multi-select: 0-N selected element ids ('__passage__' is never in here)
+let SL_CLIPBOARD  = null;             // {sourceSlideId, elements:[deep-cloned element objects]} | null — session-only, matches Slides state having no separate persistence layer
 let SL_CTX_EL_ID  = null;             // element id for context menu
 let SL_EL_CTR     = 0;                // element id seed
 let SL_SLIDE_CTR  = 0;                // slide id seed
@@ -8303,7 +8305,7 @@ function slCollectDeck(){ return { slides: SL_DECK.slides.map(s=>({...s, element
 function slLoadDeck(data){
   SL_DECK = { slides: Array.isArray(data?.slides) ? data.slides.map(s=>({...s, elements:(s.elements||[]).map(e=>({...e}))})) : [] };
   SL_DECK.slides.forEach(s=>{ s.id=s.id||'sl-'+(++SL_SLIDE_CTR); (s.elements||[]).forEach(e=>{ e.id=e.id||'el-'+(++SL_EL_CTR); }); });
-  SL_ACTIVE_IDX = 0; SL_SEL_EL_ID = null;
+  SL_ACTIVE_IDX = 0; SL_SEL_EL_ID = null; SL_SEL_EL_IDS = [];
   // Do NOT call slRenderAll here — setEditorView and explicit refresh calls handle rendering.
   // Calling slRenderAll from slLoadDeck causes triple-render when combined with
   // the setEditorView setTimeout and the autoSave cycle.
@@ -8311,6 +8313,38 @@ function slLoadDeck(data){
 
 /* ── Undo/redo for deck ops ── */
 function _slPush(op){ rowPush(op); }
+// Shared per-element mutation logic, factored out of the sl-add-el/
+// sl-remove-el/sl-el-prop branches below so both the single-element ops
+// AND the sl-el-batch envelope (used by group drag, align/distribute,
+// paste, multi-delete) apply the exact same mutation — no risk of the two
+// code paths drifting apart. `entry` has the same shape as the op it's
+// named after, minus the 'type' wrapper: {kind:'add',el} / {kind:'remove',elIdx,el} / {kind:'prop',elId,prop,oldVal,newVal}.
+function _slApplyElOpUndo(sl, entry){
+  if(entry.kind==='add'){
+    sl.elements=sl.elements.filter(e=>e.id!==entry.el.id);
+    if(SL_SEL_EL_IDS.includes(entry.el.id)){ SL_SEL_EL_IDS=SL_SEL_EL_IDS.filter(id=>id!==entry.el.id); _slSyncSelAlias(); _slUpdateShapePropsVisibility(SL_SEL_EL_ID); }
+  } else if(entry.kind==='remove'){
+    sl.elements.splice(entry.elIdx,0,entry.el);
+  } else if(entry.kind==='prop'){
+    const el=sl.elements.find(e=>e.id===entry.elId); if(!el) return;
+    if(entry.prop==='pos'){el.x=entry.oldVal.x;el.y=entry.oldVal.y;el.w=entry.oldVal.w;el.h=entry.oldVal.h;}
+    else el[entry.prop]=entry.oldVal;
+  }
+}
+function _slApplyElOpRedo(sl, entry){
+  if(entry.kind==='add'){
+    if(!sl.elements.some(e=>e.id===entry.el.id)) sl.elements.push({...entry.el});
+    SL_SEL_EL_IDS=[entry.el.id]; _slSyncSelAlias();
+  } else if(entry.kind==='remove'){
+    sl.elements=sl.elements.filter(e=>e.id!==entry.el.id);
+    if(SL_SEL_EL_IDS.includes(entry.el.id)){ SL_SEL_EL_IDS=SL_SEL_EL_IDS.filter(id=>id!==entry.el.id); _slSyncSelAlias(); _slUpdateShapePropsVisibility(SL_SEL_EL_ID); }
+  } else if(entry.kind==='prop'){
+    const el=sl.elements.find(e=>e.id===entry.elId); if(!el) return;
+    if(entry.prop==='pos'){el.x=entry.newVal.x;el.y=entry.newVal.y;el.w=entry.newVal.w;el.h=entry.newVal.h;}
+    else el[entry.prop]=entry.newVal;
+  }
+}
+
 function _slApplyUndo(op){
   if(!op.type?.startsWith('sl-')) return false;
   if(op.type==='sl-add-slide'){
@@ -8339,24 +8373,35 @@ function _slApplyUndo(op){
   }
   if(op.type==='sl-add-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    sl.elements=sl.elements.filter(e=>e.id!==op.el.id);
-    if(SL_SEL_EL_ID===op.el.id){ SL_SEL_EL_ID=null; _slUpdateShapePropsVisibility(null); }
+    _slApplyElOpUndo(sl,{kind:'add',el:op.el});
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-remove-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    sl.elements.splice(op.elIdx,0,op.el);
+    _slApplyElOpUndo(sl,{kind:'remove',elIdx:op.elIdx,el:op.el});
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-el-prop'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    const el=sl.elements.find(e=>e.id===op.elId); if(!el) return true;
-    if(op.prop==='pos'){el.x=op.oldVal.x;el.y=op.oldVal.y;el.w=op.oldVal.w;el.h=op.oldVal.h;}
-    else el[op.prop]=op.oldVal;
+    _slApplyElOpUndo(sl,{kind:'prop',elId:op.elId,prop:op.prop,oldVal:op.oldVal,newVal:op.newVal});
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-zorder'){
     SL_DECK.slides[op.slideIdx].elements=op.oldOrder.map(id=>SL_DECK.slides[op.slideIdx].elements.find(e=>e.id===id)).filter(Boolean);
+    slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
+  if(op.type==='sl-el-batch'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    // Reverse order so remove/insert index-based entries stay consistent —
+    // re-inserting from the highest original elIdx down keeps every
+    // subsequent re-insertion index valid.
+    [...op.ops].reverse().forEach(entry=>_slApplyElOpUndo(sl,entry));
+    // Reselect whatever this undo restored/reverted-to — 'add' entries are
+    // now gone (excluded), 'remove'/'prop' entries' elements still exist.
+    SL_SEL_EL_IDS=op.ops.filter(e=>e.kind!=='add').map(e=>e.elId||e.el.id)
+      .filter(id=>sl.elements.some(e=>e.id===id));
+    SL_SEL_EL_IDS=[...new Set(SL_SEL_EL_IDS)];
+    _slSyncSelAlias(); _slUpdateShapePropsVisibility(SL_SEL_EL_ID);
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   return false;
@@ -8389,25 +8434,32 @@ function _slApplyRedo(op){
   }
   if(op.type==='sl-add-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    if(!sl.elements.some(e=>e.id===op.el.id)) sl.elements.push({...op.el});
-    SL_SEL_EL_ID=op.el.id;
+    _slApplyElOpRedo(sl,{kind:'add',el:op.el});
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-remove-el'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    sl.elements=sl.elements.filter(e=>e.id!==op.el.id);
-    if(SL_SEL_EL_ID===op.el.id){ SL_SEL_EL_ID=null; _slUpdateShapePropsVisibility(null); }
+    _slApplyElOpRedo(sl,{kind:'remove',elIdx:op.elIdx,el:op.el});
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-el-prop'){
     const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
-    const el=sl.elements.find(e=>e.id===op.elId); if(!el) return true;
-    if(op.prop==='pos'){el.x=op.newVal.x;el.y=op.newVal.y;el.w=op.newVal.w;el.h=op.newVal.h;}
-    else el[op.prop]=op.newVal;
+    _slApplyElOpRedo(sl,{kind:'prop',elId:op.elId,prop:op.prop,oldVal:op.oldVal,newVal:op.newVal});
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-zorder'){
     SL_DECK.slides[op.slideIdx].elements=op.newOrder.map(id=>SL_DECK.slides[op.slideIdx].elements.find(e=>e.id===id)).filter(Boolean);
+    slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
+  if(op.type==='sl-el-batch'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    op.ops.forEach(entry=>_slApplyElOpRedo(sl,entry));
+    // Reselect whatever this redo (re-)applied — 'remove' entries are now
+    // gone (excluded), 'add'/'prop' entries' elements exist at their new state.
+    SL_SEL_EL_IDS=op.ops.filter(e=>e.kind!=='remove').map(e=>e.elId||e.el.id)
+      .filter(id=>sl.elements.some(e=>e.id===id));
+    SL_SEL_EL_IDS=[...new Set(SL_SEL_EL_IDS)];
+    _slSyncSelAlias(); _slUpdateShapePropsVisibility(SL_SEL_EL_ID);
     slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   return false;
@@ -8471,12 +8523,13 @@ function slDuplicateSlide(idx){
 
 /* ── Select slide — deselects any selected element, re-renders canvas ── */
 function slSelectSlide(idx){
-  SL_SEL_EL_ID=null; // always deselect elements when switching slides
+  SL_SEL_EL_ID=null; SL_SEL_EL_IDS=[]; // always deselect elements when switching slides
   SL_ACTIVE_IDX=idx;
   document.getElementById('sl-shapeprops-section').style.display='none';
   document.getElementById('sl-textfmt-section').style.display='none';
   document.getElementById('sl-float-toolbar').style.display='none';
   SL_FMT_ACTIVE_INNER=null;
+  _slUpdateAlignToolbarState();
   slUpdatePropsPanel();
   slRefreshSlide();
   document.querySelectorAll('.sl-thumb').forEach((t,i)=>t.classList.toggle('active',i===idx));
@@ -8772,6 +8825,137 @@ function slFmtAlign(align){
   if(SL_FMT_ACTIVE_INNER) SL_FMT_ACTIVE_INNER.style.textAlign=align;
   slUpdateFmtToolbarState();
   autoSave(); slRenderThumb(SL_ACTIVE_IDX);
+}
+
+/* ── Align / distribute (multi-select toolbar commands) ── */
+function _slUpdateAlignToolbarState(){
+  const n=SL_SEL_EL_IDS.length;
+  ['sl-align-left','sl-align-hcenter','sl-align-right','sl-align-top','sl-align-vmiddle','sl-align-bottom'].forEach(id=>{
+    const btn=document.getElementById(id); if(btn) btn.disabled=n<2;
+  });
+  ['sl-dist-h','sl-dist-v'].forEach(id=>{
+    const btn=document.getElementById(id); if(btn) btn.disabled=n<3;
+  });
+}
+
+function slAlign(mode){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const els=SL_SEL_EL_IDS.map(id=>sl.elements.find(e=>e.id===id)).filter(Boolean);
+  if(els.length<2) return;
+  const minX=Math.min(...els.map(e=>e.x)), maxX=Math.max(...els.map(e=>e.x+e.w));
+  const minY=Math.min(...els.map(e=>e.y)), maxY=Math.max(...els.map(e=>e.y+e.h));
+  // Push one entry per selected element regardless of whether IT
+  // individually moved (an element already sitting on the target edge is
+  // still part of the action) — the batch undo/redo's selection-restore
+  // logic (§0/§5) derives "what to reselect" from these entries, so
+  // omitting a no-op element would silently drop it from the reselected
+  // group after an undo/redo.
+  const ops=els.map(e=>{
+    const oldVal={x:e.x,y:e.y,w:e.w,h:e.h};
+    let nx=e.x, ny=e.y;
+    if(mode==='left')         nx=minX;
+    else if(mode==='right')   nx=maxX-e.w;
+    else if(mode==='hcenter') nx=minX+(maxX-minX)/2-e.w/2;
+    else if(mode==='top')     ny=minY;
+    else if(mode==='bottom')  ny=maxY-e.h;
+    else if(mode==='vmiddle') ny=minY+(maxY-minY)/2-e.h/2;
+    e.x=nx; e.y=ny;
+    return {kind:'prop',elId:e.id,prop:'pos',oldVal,newVal:{x:e.x,y:e.y,w:e.w,h:e.h}};
+  });
+  if(!ops.some(o=>o.oldVal.x!==o.newVal.x||o.oldVal.y!==o.newVal.y)) return;
+  _slPush({type:'sl-el-batch',slideIdx:SL_ACTIVE_IDX,ops});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+
+// Equal center-to-center spacing among interior elements between the two
+// extreme elements — the more common "Distribute Horizontally/Vertically"
+// default (PowerPoint/Google Slides), simpler than edge-gap distribution.
+function slDistribute(axis){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const els=SL_SEL_EL_IDS.map(id=>sl.elements.find(e=>e.id===id)).filter(Boolean);
+  if(els.length<3) return;
+  const key=axis==='h'?'x':'y', size=axis==='h'?'w':'h';
+  const sorted=[...els].sort((a,b)=>a[key]-b[key]);
+  const first=sorted[0], last=sorted[sorted.length-1];
+  const firstCenter=first[key]+first[size]/2, lastCenter=last[key]+last[size]/2;
+  const step=(lastCenter-firstCenter)/(sorted.length-1);
+  // Push one entry per element, including the two anchors that never move —
+  // same reasoning as slAlign above, so the batch's selection-restore logic
+  // reselects the whole original group, not just the elements that shifted.
+  const ops=sorted.map((e,i)=>{
+    const oldVal={x:e.x,y:e.y,w:e.w,h:e.h};
+    if(i>0 && i<sorted.length-1){
+      e[key]=firstCenter+step*i-e[size]/2;
+    }
+    return {kind:'prop',elId:e.id,prop:'pos',oldVal,newVal:{x:e.x,y:e.y,w:e.w,h:e.h}};
+  });
+  if(!ops.some(o=>o.oldVal.x!==o.newVal.x||o.oldVal.y!==o.newVal.y)) return;
+  _slPush({type:'sl-el-batch',slideIdx:SL_ACTIVE_IDX,ops});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+
+/* ── Copy / paste / multi-delete ──
+   Clipboard is a plain module-level variable, not localStorage — matches
+   the rest of Slides state, which lives entirely in SL_DECK with no
+   separate persistence layer. Session-only is sufficient. */
+function slCopySelection(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const els=SL_SEL_EL_IDS.map(id=>sl.elements.find(e=>e.id===id)).filter(Boolean);
+  if(!els.length) return;
+  const clones=els.map(el=>{
+    const clone=JSON.parse(JSON.stringify(el));
+    if(clone.type==='floatlabel'||clone.type==='commentbox'){
+      // Derived elements are re-synced from live project data every
+      // refresh (slSyncDerivedElements) via sourceId/sourceCid — copying
+      // those verbatim would collide with the original on the next sync,
+      // or point at nonexistent source data. Convert to a plain,
+      // independent textbox snapshot of the current text instead.
+      return {id:clone.id,type:'textbox',x:clone.x,y:clone.y,w:clone.w,h:clone.h,html:clone.html||'',fontSize:18,color:'#1F1E1E',align:'left'};
+    }
+    return clone;
+  });
+  SL_CLIPBOARD={sourceSlideId:sl.id, elements:clones};
+}
+
+function slPasteClipboard(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  if(!SL_CLIPBOARD || !SL_CLIPBOARD.elements.length) return;
+  const newIds=[];
+  const ops=SL_CLIPBOARD.elements.map(srcEl=>{
+    // Regenerate id (slDuplicateSlide's pattern) and nudge position by a
+    // small offset so repeated pastes visibly stagger instead of
+    // perfectly stacking — same offset whether pasting onto the same
+    // slide or a different one (clipboard is independent of SL_ACTIVE_IDX,
+    // so cross-slide paste needs no special-casing at all).
+    const copy={...JSON.parse(JSON.stringify(srcEl)), id:'el-'+(++SL_EL_CTR)};
+    copy.x=Math.min(100-copy.w, srcEl.x+3);
+    copy.y=Math.min(100-copy.h, srcEl.y+3);
+    sl.elements.push(copy);
+    newIds.push(copy.id);
+    return {kind:'add', el:{...copy}};
+  });
+  _slPush({type:'sl-el-batch',slideIdx:SL_ACTIVE_IDX,ops});
+  slSetSelection(newIds);
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+
+function slDeleteSelection(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const ids=[...SL_SEL_EL_IDS];
+  if(!ids.length) return;
+  // Capture {elIdx,el} for every selected element BEFORE any splicing,
+  // then splice in descending-index order so earlier captured indices
+  // stay valid (standard "delete from the end" pattern).
+  const captured=ids.map(id=>{
+    const elIdx=sl.elements.findIndex(e=>e.id===id);
+    return elIdx<0?null:{elIdx, el:{...sl.elements[elIdx]}};
+  }).filter(Boolean).sort((a,b)=>b.elIdx-a.elIdx);
+  captured.forEach(c=>sl.elements.splice(c.elIdx,1));
+  const ops=captured.map(c=>({kind:'remove', elIdx:c.elIdx, el:c.el}));
+  if(!ops.length) return;
+  _slPush({type:'sl-el-batch',slideIdx:SL_ACTIVE_IDX,ops});
+  slClearSelection();
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 
 function slAddTextBox(){
@@ -9446,8 +9630,10 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       passageEl.addEventListener('pointerdown',ev=>{
         if(ev.target.closest('.sl-resize-handle')) return;
         ev.stopPropagation();
-        // Select without re-rendering — slSelectEl handles visual state
-        if(SL_SEL_EL_ID!=='__passage__') slSelectEl('__passage__');
+        // Select without re-rendering — slSelectEl handles visual state.
+        // Passage selection is mutually exclusive with the element
+        // multi-selection array (never appears together with it).
+        if(SL_SEL_EL_ID!=='__passage__'){ SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl('__passage__'); }
         const ca=slide.contentArea;
         const startX=ev.clientX,startY=ev.clientY;
         const startCax=ca.x,startCay=ca.y;
@@ -9481,7 +9667,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         document.addEventListener('pointermove',onMove);
         document.addEventListener('pointerup',onUp);
       });
-      passageEl.addEventListener('click',ev=>{ev.stopPropagation(); slSelectEl('__passage__');});
+      passageEl.addEventListener('click',ev=>{ev.stopPropagation(); SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl('__passage__');});
       // Apply selection state without re-render
       if(SL_SEL_EL_ID==='__passage__') passageEl.classList.add('selected');
     }
@@ -9555,7 +9741,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       if(EDITOR_VIEW==="slides"){
         div.style.touchAction="none";
         const enterEditMode=(clientX,clientY)=>{
-          slSelectEl(el.id);
+          slSetSelection([el.id]); // collapses any multi-selection to just this textbox
           inner.contentEditable="true"; inner.style.cursor="text"; inner.focus();
           const range=document.caretRangeFromPoint?.(clientX,clientY);
           if(range){const sel=window.getSelection();sel.removeAllRanges();sel.addRange(range);}
@@ -9581,14 +9767,14 @@ function slRenderSlideInto(slide, container, w, h, isExport){
             enterEditMode(ev.clientX, ev.clientY);
             return;
           }
-          slSelectEl(el.id); slStartElDrag(ev,el,div,w,h);
+          _slHandleElPointerdown(ev,el,div,w,h);
         });
         div.addEventListener("dblclick",ev=>{
           ev.stopPropagation();
           enterEditMode(ev.clientX, ev.clientY);
         });
-        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     } else if(isShape){
       const sw=el.strokeWidth??2;
@@ -9599,9 +9785,9 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       if(EDITOR_VIEW==="slides"){
         div.style.cursor="move";
         div.style.touchAction="none";
-        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
-        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
+        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); _slHandleElPointerdown(ev,el,div,w,h); });
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     } else if(isImage){
       const img=document.createElement("img");
@@ -9625,9 +9811,9 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       if(EDITOR_VIEW==="slides"){
         div.style.cursor="move";
         div.style.touchAction="none";
-        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
-        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
+        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); _slHandleElPointerdown(ev,el,div,w,h); });
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     } else {
       div.style.background = isCmtBox ? "rgba(247,243,233,.95)" : "rgba(73,53,72,.06)";
@@ -9647,20 +9833,72 @@ function slRenderSlideInto(slide, container, w, h, isExport){
       if(EDITOR_VIEW==="slides"){
         div.style.cursor="move";
         div.style.touchAction="none";
-        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); slSelectEl(el.id); slStartElDrag(ev,el,div,w,h); });
-        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();SL_CTX_EL_ID=el.id;slShowCtxMenu(ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_ID===el.id) div.classList.add("selected");
+        div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); _slHandleElPointerdown(ev,el,div,w,h); });
+        div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
+        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     }
     container.appendChild(div);
   });
 
-  // Deselect on canvas click
+  // Marquee (rubber-band) select on canvas drag; plain click on empty
+  // canvas (no drag) still deselects everything, same as before.
   if(EDITOR_VIEW==='slides'){
     container.addEventListener('pointerdown',ev=>{
-      if(ev.target===container){ slSelectEl(null); }
+      if(ev.target===container){ _slStartMarquee(ev, container, w, h); }
     });
   }
+}
+
+// Rubber-band select: drag on empty canvas to select every element whose
+// bounding box intersects the marquee rectangle. Live selection feedback
+// on every pointermove (not just release) — cheap, since it only toggles
+// .selected classes via slSetSelection, no re-render. Shift-held at
+// drag-start unions with whatever was already selected; otherwise it
+// replaces the selection. A plain click (no drag past the threshold, no
+// shift) falls through to a plain deselect, matching prior behavior.
+function _slStartMarquee(ev, container, cw, ch){
+  const startClientX=ev.clientX, startClientY=ev.clientY;
+  const shiftHeld=ev.shiftKey;
+  const baseSelection=[...SL_SEL_EL_IDS];
+  const THRESH=4;
+  let marqueeEl=null, dragging=false;
+
+  const onMove=mv=>{
+    const dx=mv.clientX-startClientX, dy=mv.clientY-startClientY;
+    if(!dragging){
+      if(Math.abs(dx)<THRESH && Math.abs(dy)<THRESH) return;
+      dragging=true;
+      marqueeEl=document.createElement('div');
+      marqueeEl.className='sl-marquee';
+      container.appendChild(marqueeEl);
+    }
+    const rect=container.getBoundingClientRect();
+    const x1=Math.min(startClientX,mv.clientX)-rect.left;
+    const y1=Math.min(startClientY,mv.clientY)-rect.top;
+    const x2=Math.max(startClientX,mv.clientX)-rect.left;
+    const y2=Math.max(startClientY,mv.clientY)-rect.top;
+    marqueeEl.style.left=x1+'px'; marqueeEl.style.top=y1+'px';
+    marqueeEl.style.width=(x2-x1)+'px'; marqueeEl.style.height=(y2-y1)+'px';
+
+    // Convert the marquee's canvas-relative px rect to the same 0-100%
+    // coordinate space every element's x/y/w/h already uses, then AABB-
+    // intersect (not full containment — matches PowerPoint/Google Slides).
+    const mLeft=x1/cw*100, mRight=x2/cw*100, mTop=y1/ch*100, mBottom=y2/ch*100;
+    const slide=SL_DECK.slides[SL_ACTIVE_IDX];
+    const hitIds=(slide?slide.elements:[]).filter(el=>
+      el.x<mRight && el.x+el.w>mLeft && el.y<mBottom && el.y+el.h>mTop
+    ).map(el=>el.id);
+    slSetSelection(shiftHeld ? [...new Set([...baseSelection, ...hitIds])] : hitIds);
+  };
+  const onUp=()=>{
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    if(marqueeEl) marqueeEl.remove();
+    if(!dragging && !shiftHeld) slClearSelection();
+  };
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
 }
 
 /* ── Element selection — no re-render, just toggle visual state ── */
@@ -9778,6 +10016,78 @@ function _slPositionFloatToolbar(id){
   left = Math.max(4, Math.min(left, wRect.width - tbW - 4));
   toolbar.style.top = top+'px';
   toolbar.style.left = left+'px';
+}
+
+/* ── Multi-select ──
+   SL_SEL_EL_IDS is the source of truth for 0-or-N selected elements.
+   SL_SEL_EL_ID is kept as a derived alias for every pre-existing
+   single-element code path (shape/text property panels, floating
+   toolbar, align/fmt setters, resize-handle attachment) — those all
+   already null-guard on it, so they go inert automatically whenever 0 or
+   2+ elements are selected, with no changes to their own code.
+   '__passage__' selection stays entirely separate — it's never part of
+   SL_SEL_EL_IDS, and selecting it always goes through slSelectEl directly. */
+function _slSyncSelAlias(){
+  SL_SEL_EL_ID = SL_SEL_EL_IDS.length===1 ? SL_SEL_EL_IDS[0] : null;
+}
+
+function slSetSelection(ids){
+  const slide=SL_DECK.slides[SL_ACTIVE_IDX];
+  const valid = slide ? ids.filter(id=>id!=='__passage__' && slide.elements.some(e=>e.id===id)) : [];
+  const unique = [...new Set(valid)];
+
+  if(unique.length<=1){
+    // 0 or 1 element — the existing single-element machinery (resize
+    // handles, shape/text panels, toolbar positioning) already does
+    // exactly the right thing, so just delegate to it.
+    SL_SEL_EL_IDS=unique;
+    slSelectEl(unique[0]||null);
+    if(typeof _slUpdateAlignToolbarState==='function') _slUpdateAlignToolbarState();
+    return;
+  }
+
+  SL_SEL_EL_IDS=unique;
+  _slSyncSelAlias(); // -> null, per the alias rule above
+  _slUpdateShapePropsVisibility(null);
+  const textSection=document.getElementById('sl-textfmt-section');
+  if(textSection) textSection.style.display='none';
+  _slPositionFloatToolbar(null);
+  const cv=document.getElementById('sl-canvas');
+  if(cv){
+    cv.querySelectorAll('.sl-el.selected').forEach(el=>{
+      el.classList.remove('selected');
+      el.querySelectorAll('.sl-resize-handle').forEach(rh=>rh.remove());
+    });
+    unique.forEach(id=>{
+      const target=cv.querySelector(`.sl-el[data-el-id="${id}"]`);
+      if(target) target.classList.add('selected'); // no resize handles for N>1 — see plan §2
+    });
+  }
+  if(typeof _slUpdateAlignToolbarState==='function') _slUpdateAlignToolbarState();
+}
+
+function slToggleSelection(id){
+  const idx=SL_SEL_EL_IDS.indexOf(id);
+  const next = idx===-1 ? [...SL_SEL_EL_IDS, id] : SL_SEL_EL_IDS.filter(x=>x!==id);
+  slSetSelection(next);
+}
+
+function slClearSelection(){ slSetSelection([]); }
+
+// Shared pointerdown handling for shape/image/derived elements (textbox
+// has its own variant above, for its touch-double-tap-to-edit branch).
+// Shift-click toggles membership without starting a drag if that removed
+// the element from the selection; a plain click on an element already
+// inside a multi-selection keeps the group selected (drags the whole
+// group, see slStartElDrag) instead of collapsing to single-select.
+function _slHandleElPointerdown(ev, el, div, w, h){
+  if(ev.shiftKey){
+    slToggleSelection(el.id);
+    if(SL_SEL_EL_IDS.includes(el.id)) slStartElDrag(ev, el, div, w, h);
+    return;
+  }
+  if(!SL_SEL_EL_IDS.includes(el.id)) slSetSelection([el.id]);
+  slStartElDrag(ev, el, div, w, h);
 }
 
 function slSelectEl(id){
@@ -9939,34 +10249,60 @@ function _slHideSnapGuides(){
 function slStartElDrag(ev, el, div, cw, ch){
   const startX=ev.clientX, startY=ev.clientY;
   const startElX=el.x, startElY=el.y;
-  const oldPos={x:el.x,y:el.y,w:el.w,h:el.h};
-  // Snapshot the rest of the slide's elements once — their geometry
-  // doesn't change while this element is being dragged.
   const slideNow=SL_DECK.slides[SL_ACTIVE_IDX];
-  const others=(slideNow?.elements||[]).filter(o=>o!==el);
+
+  // Group drag: if the grabbed element is part of a multi-selection, the
+  // whole selection moves as a rigid body (standard editor behavior).
+  // Only the grabbed/lead element snaps to guides (via the unmodified
+  // _slCheckSnap below) — the resulting delta is applied identically to
+  // every other member so relative spacing is preserved exactly.
+  const isGroup=SL_SEL_EL_IDS.length>1 && SL_SEL_EL_IDS.includes(el.id);
+  const groupEls=isGroup
+    ? SL_SEL_EL_IDS.map(id=>slideNow.elements.find(e=>e.id===id)).filter(Boolean)
+    : [el];
+  const groupDivs=groupEls.map(e=>e===el?div:document.querySelector(`.sl-el[data-el-id="${e.id}"]`));
+  const startPositions=groupEls.map(e=>({x:e.x,y:e.y,w:e.w,h:e.h}));
+  const oldPositions=startPositions.map(p=>({...p}));
+
+  // Snapshot every element NOT in the dragged group once — their geometry
+  // doesn't change while this drag is happening.
+  const others=(slideNow?.elements||[]).filter(o=>!groupEls.includes(o));
   if(slideNow?.contentArea) others.push(slideNow.contentArea);
+
   const onMove=mv=>{
-    const dx=(mv.clientX-startX)/cw*100;
-    const dy=(mv.clientY-startY)/ch*100;
-    let x=Math.max(0,Math.min(100-el.w, startElX+dx));
-    let y=Math.max(0,Math.min(100-el.h, startElY+dy));
+    const dxPct=(mv.clientX-startX)/cw*100;
+    const dyPct=(mv.clientY-startY)/ch*100;
+    let x=Math.max(0,Math.min(100-el.w, startElX+dxPct));
+    let y=Math.max(0,Math.min(100-el.h, startElY+dyPct));
     const snap=_slCheckSnap(x,y,el.w,el.h,cw,ch,others);
     x=snap.x; y=snap.y;
     _slUpdateSnapGuides(
       snap.snappedH ? (snap.guideXPct/100*cw) : null,
       snap.snappedV ? (snap.guideYPct/100*ch) : null
     );
-    el.x=x; el.y=y;
-    div.style.left=(el.x/100*cw)+'px';
-    div.style.top =(el.y/100*ch)+'px';
+    const dx=x-startElX, dy=y-startElY;
+    groupEls.forEach((e,i)=>{
+      const sp=startPositions[i];
+      e.x=Math.max(0,Math.min(100-e.w, sp.x+dx));
+      e.y=Math.max(0,Math.min(100-e.h, sp.y+dy));
+      const gd=groupDivs[i];
+      if(gd){ gd.style.left=(e.x/100*cw)+'px'; gd.style.top=(e.y/100*ch)+'px'; }
+    });
     if(SL_SEL_EL_ID===el.id) _slPositionFloatToolbar(el.id);
   };
   const onUp=()=>{
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
     _slHideSnapGuides();
-    if(el.x!==oldPos.x||el.y!==oldPos.y){
-      _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'pos',oldVal:oldPos,newVal:{x:el.x,y:el.y,w:el.w,h:el.h}});
+    // One entry per group member, even ones that individually ended up
+    // back at their start position — omitting them would drop them from
+    // the batch's derived reselection on a later undo/redo (see slAlign).
+    const ops=groupEls.map((e,i)=>{
+      const op=oldPositions[i];
+      return {kind:'prop',elId:e.id,prop:'pos',oldVal:op,newVal:{x:e.x,y:e.y,w:e.w,h:e.h}};
+    });
+    if(ops.some(o=>o.oldVal.x!==o.newVal.x||o.oldVal.y!==o.newVal.y)){
+      _slPush({type:'sl-el-batch',slideIdx:SL_ACTIVE_IDX,ops});
       autoSave();
     }
     slRenderThumb(SL_ACTIVE_IDX);
@@ -10053,46 +10389,89 @@ function slShowCtxMenu(cx,cy){
   applyLang();
 }
 function slHideCtxMenu(){ document.getElementById('sl-ctx-menu').style.display='none'; }
+
+// Element-context-menu entry point — rebuilds #sl-ctx-menu's content
+// explicitly on every open (fixes a pre-existing bug: this DOM node is
+// SHARED with the per-slide-thumbnail "..." menu, which overwrites
+// menu.innerHTML at its own onclick handler and never restores it, so
+// right-clicking an element after opening the thumbnail menu once used
+// to show stale thumbnail-menu content). If the right-clicked element
+// isn't already part of the current selection, right-click first
+// replaces the selection with just that element — matches the plain-
+// click convention (§1); otherwise front/back/copy/delete apply to the
+// whole current multi-selection.
+function _slShowElCtxMenu(elId, clientX, clientY){
+  if(!SL_SEL_EL_IDS.includes(elId)) slSetSelection([elId]);
+  SL_CTX_EL_ID=elId;
+  const menu=document.getElementById('sl-ctx-menu'); if(!menu) return;
+  const hasClipboard=!!(SL_CLIPBOARD && SL_CLIPBOARD.elements.length);
+  menu.innerHTML=`
+    <button class="sl-ctx-item" onclick="slCtxAction('front')">${t('slides.bring-front')}</button>
+    <button class="sl-ctx-item" onclick="slCtxAction('back')">${t('slides.send-back')}</button>
+    <div class="sl-ctx-sep"></div>
+    <button class="sl-ctx-item" onclick="slCtxAction('copy')">${t('slides.copy')}</button>
+    <button class="sl-ctx-item"${hasClipboard?'':' disabled'} onclick="slCtxAction('paste')">${t('slides.paste')}</button>
+    <div class="sl-ctx-sep"></div>
+    <button class="sl-ctx-item sl-ctx-del" onclick="slCtxAction('delete')">${t('slides.delete-el')}</button>`;
+  slShowCtxMenu(clientX,clientY);
+}
+
 function slCtxAction(action){
   slHideCtxMenu();
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  const id=SL_CTX_EL_ID||SL_SEL_EL_ID; if(!id) return;
+  if(action==='copy'){ slCopySelection(); return; }
+  if(action==='paste'){ slPasteClipboard(); return; }
+  // Working id set: the current multi-selection, or the single legacy
+  // SL_SEL_EL_ID/SL_CTX_EL_ID fallback (e.g. invoked from the keyboard
+  // Delete path for a lone selected element).
+  const ids=SL_SEL_EL_IDS.length ? SL_SEL_EL_IDS : [SL_CTX_EL_ID||SL_SEL_EL_ID].filter(Boolean);
+  if(!ids.length) return;
   if(action==='front'||action==='back'){
     const oldOrder=sl.elements.map(e=>e.id);
-    const idx=sl.elements.findIndex(e=>e.id===id);
-    if(idx<0) return;
-    const [el]=sl.elements.splice(idx,1);
-    if(action==='front') sl.elements.push(el); else sl.elements.unshift(el);
+    const idSet=new Set(ids);
+    // Extract the selected elements preserving their relative order,
+    // move them as a contiguous block to the front/back of the array —
+    // one sl-zorder op (already whole-array-based) covers N elements
+    // with no batch-envelope needed.
+    const moving=sl.elements.filter(e=>idSet.has(e.id));
+    const staying=sl.elements.filter(e=>!idSet.has(e.id));
+    sl.elements = action==='front' ? [...staying,...moving] : [...moving,...staying];
     const newOrder=sl.elements.map(e=>e.id);
     _slPush({type:'sl-zorder',slideIdx:SL_ACTIVE_IDX,oldOrder,newOrder});
     slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
   }
   if(action==='delete'){
-    const elIdx=sl.elements.findIndex(e=>e.id===id); if(elIdx<0) return;
-    const el={...sl.elements[elIdx]};
-    sl.elements.splice(elIdx,1);
-    _slPush({type:'sl-remove-el',slideIdx:SL_ACTIVE_IDX,elIdx,el});
-    if(SL_SEL_EL_ID===id){ SL_SEL_EL_ID=null; _slUpdateShapePropsVisibility(null); }
-    slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+    slDeleteSelection();
   }
 }
 document.addEventListener('pointerdown',ev=>{ if(!ev.target.closest('#sl-ctx-menu')) slHideCtxMenu(); });
 document.addEventListener('keydown',ev=>{
+  if(EDITOR_VIEW!=='slides') return;
+  const tag=ev.target.tagName?.toLowerCase();
+  const ce=ev.target.contentEditable==='true';
+  // If typing in an input, textarea, or contenteditable — don't intercept
+  // (native browser copy/paste/delete/escape behavior takes over instead).
+  if(ce||tag==='input'||tag==='textarea') return;
+
   if(ev.key==='Delete'||ev.key==='Backspace'){
-    if(EDITOR_VIEW==='slides'){
-      const tag=ev.target.tagName?.toLowerCase();
-      const ce=ev.target.contentEditable==='true';
-      // If typing in an input, textarea, or contenteditable — don't intercept
-      if(ce||tag==='input'||tag==='textarea') return;
-      if(SL_SEL_EL_ID){
-        // Delete selected element on the slide canvas
-        slCtxAction('delete'); ev.preventDefault();
-      } else {
-        // No element selected — delete the active slide itself
-        ev.preventDefault();
-        slDeleteSlide(SL_ACTIVE_IDX);
-      }
+    if(SL_SEL_EL_IDS.length){
+      slDeleteSelection(); ev.preventDefault();
+    } else if(SL_SEL_EL_ID){
+      slCtxAction('delete'); ev.preventDefault();
+    } else {
+      // No element selected — delete the active slide itself
+      ev.preventDefault();
+      slDeleteSlide(SL_ACTIVE_IDX);
     }
+    return;
+  }
+  if(ev.key==='Escape'){
+    if(SL_SEL_EL_IDS.length || SL_SEL_EL_ID){ slClearSelection(); ev.preventDefault(); }
+    return;
+  }
+  if((ev.ctrlKey||ev.metaKey) && !ev.altKey){
+    if(ev.key==='c'||ev.key==='C'){ slCopySelection(); ev.preventDefault(); }
+    else if(ev.key==='v'||ev.key==='V'){ slPasteClipboard(); ev.preventDefault(); }
   }
 });
 

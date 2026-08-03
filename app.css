@@ -3489,6 +3489,7 @@ body.brk-locked .dbrk-pip:hover {
 }
 .sl-tbtn svg { width: 13px; height: 13px; }
 .sl-tbtn:hover { background: rgba(247,243,233,.15); }
+.sl-tbtn:disabled { opacity: .35; cursor: not-allowed; pointer-events: none; }
 #sl-present-btn { background: var(--active); color: #fff; }
 #sl-present-btn:hover { background: #b8940d; }
 .sl-tsep { width: 1px; background: rgba(247,243,233,.2); height: 20px; margin: 0 6px; }
@@ -3518,6 +3519,13 @@ body.brk-locked .dbrk-pip:hover {
   user-select: none;
 }
 .sl-el.selected { outline: 2px solid var(--active); outline-offset: 1px; }
+.sl-marquee {
+  position: absolute;
+  border: 1.5px dashed var(--active);
+  background: rgba(200,168,75,.12);
+  pointer-events: none;
+  z-index: 50;
+}
 .sl-el-passage {
   overflow: hidden;
   background: transparent;
@@ -3824,6 +3832,7 @@ body.brk-locked .dbrk-pip:hover {
   transition: background .1s;
 }
 .sl-ctx-item:hover { background: rgba(247,243,233,.12); }
+.sl-ctx-item:disabled { opacity: .35; cursor: not-allowed; pointer-events: none; }
 .sl-ctx-del { color: #f09090 !important; }
 .sl-ctx-del:hover { background: rgba(220,60,60,.15) !important; }
 .sl-ctx-sep { height: 1px; background: rgba(247,243,233,.15); margin: 4px 0; }

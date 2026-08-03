@@ -540,6 +540,32 @@
             </button>
             <input type="file" id="sl-image-file" accept="image/*" style="display:none" onchange="slImageFileSelected(event)"/>
             <div class="sl-tsep"></div>
+            <button class="sl-tbtn" id="sl-align-left" onclick="slAlign('left')" disabled data-i18n-title="slides.align.left" title="Align left">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="2" x2="4" y2="22"/><rect x="4" y="5" width="14" height="4" rx="1"/><rect x="4" y="10" width="9" height="4" rx="1"/><rect x="4" y="15" width="16" height="4" rx="1"/></svg>
+            </button>
+            <button class="sl-tbtn" id="sl-align-hcenter" onclick="slAlign('hcenter')" disabled data-i18n-title="slides.align.hcenter" title="Align center">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="22"/><rect x="5" y="5" width="14" height="4" rx="1"/><rect x="7.5" y="10" width="9" height="4" rx="1"/><rect x="4" y="15" width="16" height="4" rx="1"/></svg>
+            </button>
+            <button class="sl-tbtn" id="sl-align-right" onclick="slAlign('right')" disabled data-i18n-title="slides.align.right" title="Align right">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="20" y1="2" x2="20" y2="22"/><rect x="6" y="5" width="14" height="4" rx="1"/><rect x="11" y="10" width="9" height="4" rx="1"/><rect x="4" y="15" width="16" height="4" rx="1"/></svg>
+            </button>
+            <button class="sl-tbtn" id="sl-align-top" onclick="slAlign('top')" disabled data-i18n-title="slides.align.top" title="Align top">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="4" x2="22" y2="4"/><rect x="5" y="4" width="4" height="14" rx="1"/><rect x="10" y="4" width="4" height="9" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/></svg>
+            </button>
+            <button class="sl-tbtn" id="sl-align-vmiddle" onclick="slAlign('vmiddle')" disabled data-i18n-title="slides.align.vmiddle" title="Align middle">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="12" x2="22" y2="12"/><rect x="5" y="5" width="4" height="14" rx="1"/><rect x="10" y="7.5" width="4" height="9" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/></svg>
+            </button>
+            <button class="sl-tbtn" id="sl-align-bottom" onclick="slAlign('bottom')" disabled data-i18n-title="slides.align.bottom" title="Align bottom">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="20" x2="22" y2="20"/><rect x="5" y="6" width="4" height="14" rx="1"/><rect x="10" y="11" width="4" height="9" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/></svg>
+            </button>
+            <div class="sl-tsep"></div>
+            <button class="sl-tbtn" id="sl-dist-h" onclick="slDistribute('h')" disabled data-i18n-title="slides.dist.h" title="Distribute horizontally">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="8" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="8" rx="1"/><rect x="18" y="8" width="4" height="8" rx="1"/></svg>
+            </button>
+            <button class="sl-tbtn" id="sl-dist-v" onclick="slDistribute('v')" disabled data-i18n-title="slides.dist.v" title="Distribute vertically">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8" y="2" width="8" height="4" rx="1"/><rect x="8" y="10" width="8" height="4" rx="1"/><rect x="8" y="18" width="8" height="4" rx="1"/></svg>
+            </button>
+            <div class="sl-tsep"></div>
             <button class="sl-tbtn" id="sl-present-btn" onclick="slStartPresent()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
               <span data-i18n="slides.present">Present</span>
@@ -673,10 +699,16 @@
         </div>
       </div>
 
-      <!-- Slide element right-click context menu -->
+      <!-- Slide element right-click context menu — this default markup is
+           purely a fallback; both real code paths (element right-click via
+           _slShowElCtxMenu, slide-thumbnail "..." menu) rebuild innerHTML
+           explicitly on every open, so this content is never actually shown as-is. -->
       <div id="sl-ctx-menu" style="display:none;position:fixed;z-index:200;background:var(--sig);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.3);padding:4px;min-width:160px">
         <button class="sl-ctx-item" onclick="slCtxAction('front')" data-i18n="slides.bring-front">Bring to Front</button>
         <button class="sl-ctx-item" onclick="slCtxAction('back')"  data-i18n="slides.send-back">Send to Back</button>
+        <div class="sl-ctx-sep"></div>
+        <button class="sl-ctx-item" onclick="slCtxAction('copy')"  data-i18n="slides.copy">Copy</button>
+        <button class="sl-ctx-item" onclick="slCtxAction('paste')" data-i18n="slides.paste">Paste</button>
         <div class="sl-ctx-sep"></div>
         <button class="sl-ctx-item sl-ctx-del" onclick="slCtxAction('delete')" data-i18n="slides.delete-el">Delete</button>
       </div>
