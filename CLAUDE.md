@@ -434,11 +434,10 @@ about editing, autosave, or the Projects panel requires signing in.
 
 **Google sign-in only.** There is no email/password sign-up, sign-in, or password
 reset UI, and no SMTP/custom email provider is required — this keeps the whole
-feature free to run. The copied sync module (`sync/phrasing-supabase-sync.js`) still
-requires a `public.user_profiles` row with a username before any cloud sync call
-succeeds; `account.js`'s `acctAutoCompleteProfile()` satisfies this silently right
-after a Google sign-in by generating a random internal username (`_acctGenUsername()`,
-retried up to 5x on collision) — the user never sees or sets a username.
+feature free to run. There is no `public.user_profiles`/username layer — that
+requirement was removed from the shared sync module (canonical copy lives in
+the sibling Personal Dashboard repo); a signed-in Google user goes straight to
+`ready` in `account.js`'s `ACCT.state`, no profile-completion step.
 
 **Never synced under any circumstances:** the Bible Module's IndexedDB cache
 (`exeg-bible-v3`) — only the phrasing project session JSON that `collectData()`/

@@ -8,13 +8,11 @@
    PROJ_DATA_KEY / projIndex() / CURRENT_PROJECT_ID, all defined in app.js).
 
    Google sign-in only — no email/password, no confirmation emails, no
-   password reset, and so no SMTP to configure. The sync module's cloud
-   functions all internally require a public.user_profiles row to exist
-   (see ensureCloudAccount() in the module) before they'll do anything —
-   that requirement isn't something this integration can skip without
-   editing the shared module, so instead a meaningless random username is
-   generated and saved silently right after Google sign-in (see
-   acctAutoCompleteProfile). The user never sees or picks it.
+   password reset, and so no SMTP to configure. The sync module no longer
+   has any public.user_profiles/username requirement (that whole layer was
+   removed from the shared module — see the sibling Personal Dashboard repo,
+   which owns this file's canonical copy), so a signed-in Google user goes
+   straight to 'ready' with no separate profile-completion step.
 
    Hard rule throughout this file: cloud sync is strictly additive. Every
    function here degrades to a silent no-op (never an uncaught rejection,
@@ -32,13 +30,10 @@ const ACCT_DELETE_QUEUE_KEY  = 'exeg-cloud-delete-queue';
 const ACCT_LAST_SYNCED_KEY   = 'exeg-acct-last-synced';
 const ACCT_FLUSH_INTERVAL_MS = 30000;
 
-/* states: unknown | unavailable | offline | signed_out | profile_incomplete | ready
-   profile_incomplete is transient — acctAfterState resolves it automatically
-   via acctAutoCompleteProfile, it's never shown to the user. */
+/* states: unknown | unavailable | offline | signed_out | ready */
 const ACCT = {
   state: 'unknown',
   user: null,
-  profile: null,
   busy: false,
   dirty: new Set(),
   pushCache: {},
@@ -105,14 +100,11 @@ async function acctRefreshState(){
   const S=_sync(); if(!S) return;
   let user=null;
   try{ user=await S.getCurrentUser(); }catch(_e){}
-  if(!user){ ACCT.state='signed_out'; ACCT.user=null; ACCT.profile=null; return acctAfterState(); }
-  ACCT.user=user;
+  if(!user){ ACCT.state='signed_out'; ACCT.user=null; return acctAfterState(); }
   // Google accounts are verified the moment OAuth completes — there's no
-  // separate email-confirmation step to gate on with Google-only sign-in.
-  let profile=null;
-  try{ profile=await S.getCurrentProfile(); }catch(_e){}
-  ACCT.profile=profile;
-  ACCT.state=profile?'ready':'profile_incomplete';
+  // separate email-confirmation or profile-completion step to gate on.
+  ACCT.user=user;
+  ACCT.state='ready';
   return acctAfterState();
 }
 
@@ -121,10 +113,6 @@ function acctAfterState(){
   const modal=document.getElementById('acct-modal');
   if(modal && !modal.classList.contains('hidden')) acctRender();
 
-  if(ACCT.state==='profile_incomplete'){
-    acctAutoCompleteProfile(); // silent — no UI, no user action needed
-    return;
-  }
   if(ACCT.state==='ready'){
     acctStartFlusher();
     // onAuthStateChange (wired in acctBoot) fires acctRefreshState -> here on
@@ -140,30 +128,6 @@ function acctAfterState(){
       acctMigrateThenPull();
     }
   }
-}
-
-/* Generates a random, meaningless username and saves it — purely to
-   satisfy the sync module's public.user_profiles requirement. Always
-   matches USERNAME_PATTERN (^[a-z0-9][a-z0-9_]{1,22}[a-z0-9]$) by
-   construction, so there's nothing to validate or retry for format
-   reasons; the only real failure mode is an (astronomically unlikely)
-   collision, handled by just generating a fresh one and trying again. */
-function _acctGenUsername(){
-  const chars='abcdefghijklmnopqrstuvwxyz0123456789';
-  let s='u';
-  for(let i=0;i<15;i++) s+=chars[Math.floor(Math.random()*chars.length)];
-  return s;
-}
-async function acctAutoCompleteProfile(){
-  const S=_sync(); if(!S || ACCT.state!=='profile_incomplete') return;
-  for(let i=0;i<5;i++){
-    let res;
-    try{ res=await S.setUsername(_acctGenUsername()); }catch(_e){ res={ok:false}; }
-    if(res.ok){ await acctRefreshState(); return; }
-    if(res.reason!=='username_unavailable') return; // some other failure — don't loop pointlessly, next boot/refresh retries
-  }
-  // Exhausted retries (essentially impossible) — sync just stays inert
-  // until a later refresh tries again; editing is completely unaffected.
 }
 
 /* ── Adapter: collectData()'s shape -> what saveProjectToCloud expects ── */
@@ -204,7 +168,7 @@ async function acctSignOut(){
   if(S){ try{ await S.signOut(); }catch(_e){} }
   if(ACCT._unsub){ try{ ACCT._unsub(); }catch(_e){} ACCT._unsub=null; }
   acctStopFlusher();
-  ACCT.state='signed_out'; ACCT.user=null; ACCT.profile=null;
+  ACCT.state='signed_out'; ACCT.user=null;
   ACCT.dirty.clear(); ACCT.pushCache={}; ACCT._pulledOnce=false;
   acctRenderBadges();
   acctRender();
@@ -502,9 +466,7 @@ function acctSetBusy(busy){
 }
 
 /* ── UI: badges outside the modal (toolbar dot, S1 button, panel dot) ──
-   profile_incomplete is transient/silent now (see acctAutoCompleteProfile),
-   so it no longer needs its own "action needed" badge state — only
-   signed-in shows anything. */
+   Only signed-in shows anything. */
 function acctRenderBadges(){
   const signedIn = ACCT.state==='ready';
   [document.getElementById('acct-panel-dot'), document.getElementById('btn-account-dot'), document.getElementById('s1-account-dot')]
@@ -523,7 +485,6 @@ function acctRender(){
   const view = ACCT.state==='unavailable' ? 'unavailable'
              : ACCT.state==='offline' ? 'offline'
              : ACCT.state==='ready' ? 'signedin'
-             : ACCT.state==='profile_incomplete' ? 'loading' // finishing up silently, see acctAutoCompleteProfile
              : 'signedout';
   views.forEach(v=>{
     const el=document.getElementById('acct-view-'+v);
