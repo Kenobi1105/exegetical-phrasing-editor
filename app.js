@@ -8293,7 +8293,7 @@ const SL_RATIO    = 16/9;
 
 /* ── Default visibility ── */
 const SL_VIS_DEFAULT = {
-  indentation:false, translation:false,
+  indentation:false, translation:false, verseNums:true,
   comments:false, connectors:false, brackets:false, labels:false,
   dividers:true, annotations:true
 };
@@ -8752,6 +8752,26 @@ function slUpdateFmtToolbarState(){
     i?.classList.toggle('active', document.queryCommandState('italic'));
     u?.classList.toggle('active', document.queryCommandState('underline'));
   }catch(_){}
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX];
+  const el=sl && SL_SEL_EL_ID ? sl.elements.find(e=>e.id===SL_SEL_EL_ID) : null;
+  const align=(el && el.align)||'left';
+  ['left','center','right'].forEach(a=>{
+    document.getElementById('sl-fmt-align-'+a)?.classList.toggle('active', align===a);
+  });
+}
+
+// Alignment is a whole-textbox property (like fontSize's base value), not a
+// per-selection run — same pattern as slShapeSetStrokeWidth/StrokeStyle
+// below, just on a textbox element instead of a shape.
+function slFmtAlign(align){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const el=sl.elements.find(e=>e.id===SL_SEL_EL_ID); if(!el || el.type!=='textbox') return;
+  const old=el.align; if(old===align) return;
+  el.align=align;
+  _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'align',oldVal:old,newVal:align});
+  if(SL_FMT_ACTIVE_INNER) SL_FMT_ACTIVE_INNER.style.textAlign=align;
+  slUpdateFmtToolbarState();
+  autoSave(); slRenderThumb(SL_ACTIVE_IDX);
 }
 
 function slAddTextBox(){
@@ -8807,10 +8827,10 @@ function slImageFileSelected(ev){
 // (sl.view — the Phrasing/Diagram toggle inside the Slides properties
 // panel, not the app's main top-level tabs). Based on what
 // slBuildPassageDOM/slSyncDerivedElements actually check, not the
-// checkbox names — translation and comments are referenced in BOTH
-// rendering branches (or have no view-gating at all, for comments), so
-// they stay visible regardless of which view is selected; only
-// indentation (phrasing-only) and connectors/brackets/labels
+// checkbox names — translation, verse numbers, and comments are referenced
+// in BOTH rendering branches (or have no view-gating at all, for
+// comments), so they stay visible regardless of which view is selected;
+// only indentation (phrasing-only) and connectors/brackets/labels
 // (diagram-only) are actually exclusive to one branch.
 function _slUpdateVisRowsForView(view){
   const phrasingOnly=['sl-vis-indent'];
@@ -8823,7 +8843,8 @@ function _slUpdateVisRowsForView(view){
     const row=document.getElementById(id)?.closest('.sl-vis-row');
     if(row) row.style.display = view==='diagram' ? '' : 'none';
   });
-  // sl-vis-trans and sl-vis-comments are intentionally left alone — always visible.
+  // sl-vis-trans, sl-vis-verse, and sl-vis-comments are intentionally left
+  // alone — always visible.
 }
 
 function slSetView(view){
@@ -8872,6 +8893,7 @@ function slUpdatePropsPanel(){
   _slUpdateVisRowsForView(sl.view);
   document.getElementById('sl-vis-indent')   .checked=!!sl.visibility.indentation;
   document.getElementById('sl-vis-trans')    .checked=!!sl.visibility.translation;
+  document.getElementById('sl-vis-verse')    .checked=!!sl.visibility.verseNums;
   document.getElementById('sl-vis-comments') .checked=!!sl.visibility.comments;
   document.getElementById('sl-vis-connectors').checked=!!sl.visibility.connectors;
   document.getElementById('sl-vis-brackets') .checked=!!sl.visibility.brackets;
@@ -9206,6 +9228,9 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         const v=slide.visibility;
         if(!v.indentation) rb.querySelectorAll('.cedit').forEach(c=>{c.style.paddingLeft='0';c.style.paddingRight='0';});
         if(!v.translation)  rb.querySelectorAll('.xcell.grow + .vdiv, .xcell.grow ~ .xcell.grow').forEach(e=>e.style.display='none');
+        // Reuses the .sl-hide-verse CSS rule (targets .xcell:first-child) —
+        // same class the PDF/projector render path applies for this toggle.
+        if(!v.verseNums) rb.classList.add('sl-hide-verse');
         // Comments as footnotes — read from in-memory cache (DOM may be hidden)
         if(v.comments){
           const fns=[];
@@ -9252,6 +9277,9 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         // which makes all block offsets 0 and breaks connector path calculations.
         diagWrap.style.cssText='position:relative;background:transparent;width:900px;';
         const v=slide.visibility;
+        // Reuses the .sl-hide-verse CSS rule (targets .dcell.dv) — same
+        // class the PDF/projector render path applies for this toggle.
+        if(!v.verseNums) diagWrap.classList.add('sl-hide-verse');
 
         slide.rowIds.forEach(rid=>{
           const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
@@ -10487,9 +10515,12 @@ async function slExportPDF(){
   const RW=960, RH=540;
   const SCALE=2; // html2canvas device pixel ratio → 1920×1080 pixel canvas
 
-  /* PDF page: A4 landscape (matches 16:9 aspect closely) */
-  const doc=new jsPDF({orientation:'landscape',unit:'pt',format:'a4'});
-  const pW=841.89, pH=595.28; // A4 landscape in pt
+  /* PDF page: sized to exactly match the 16:9 slide canvas (960×540pt is
+     the same physical page size — 13.33in × 7.5in at 72pt/in — PowerPoint's
+     own default widescreen template uses) instead of A4 (~1.41:1), which
+     left visible white pillarbox bars on every page. */
+  const doc=new jsPDF({orientation:'landscape',unit:'pt',format:[960,540]});
+  const pW=960, pH=540;
 
   /* Off-screen host div — sized at the render dimensions so html2canvas
      measures the content at exactly the right scale */
@@ -10541,10 +10572,10 @@ async function slExportPDF(){
 
     if(cap){
       if(i>0) doc.addPage();
-      // Fit the 16:9 slide canvas into the PDF page without distortion.
-      // A4 landscape is ~1.41:1, not 16:9 — forcing the image to fill the whole
-      // page would stretch everything horizontally. Instead, scale to fit inside
-      // the page and centre with white margins (letterbox/pillarbox).
+      // The page now matches the slide canvas's own aspect ratio exactly
+      // (pW/pH === RW/RH), so this always resolves to a full-bleed image
+      // with zero offset — kept as a general fit rather than a fixed
+      // addImage(...,0,0,RW,RH) so it stays correct if either size changes.
       const ratio=Math.min(pW/RW, pH/RH);
       const imgW=RW*ratio, imgH=RH*ratio;
       const xOff=(pW-imgW)/2, yOff=(pH-imgH)/2;

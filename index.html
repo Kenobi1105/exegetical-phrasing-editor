@@ -544,9 +544,9 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
               <span data-i18n="slides.present">Present</span>
             </button>
-            <button class="sl-tbtn" onclick="slRefreshSlide()" title="Refresh slide from current project data">
+            <button class="sl-tbtn" onclick="slRefreshSlide()" data-i18n-title="slides.refresh.title" title="Refresh slide from current project data">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              <span>Refresh</span>
+              <span data-i18n="slides.refresh">Refresh</span>
             </button>
             <button class="sl-tbtn" onclick="slExportPDF()">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -586,6 +586,10 @@
                 <button class="sl-fmt-btn" id="sl-fmt-b" onpointerdown="event.preventDefault()" onclick="slFmtCmd('bold')" title="Bold"><b>B</b></button>
                 <button class="sl-fmt-btn" id="sl-fmt-i" onpointerdown="event.preventDefault()" onclick="slFmtCmd('italic')" title="Italic"><i>I</i></button>
                 <button class="sl-fmt-btn" id="sl-fmt-u" onpointerdown="event.preventDefault()" onclick="slFmtCmd('underline')" title="Underline"><u>U</u></button>
+                <div class="sl-float-sep"></div>
+                <button class="sl-fmt-btn" id="sl-fmt-align-left" onpointerdown="event.preventDefault()" onclick="slFmtAlign('left')" data-i18n-title="slides.fmt.align-left" title="Align left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg></button>
+                <button class="sl-fmt-btn" id="sl-fmt-align-center" onpointerdown="event.preventDefault()" onclick="slFmtAlign('center')" data-i18n-title="slides.fmt.align-center" title="Align center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
+                <button class="sl-fmt-btn" id="sl-fmt-align-right" onpointerdown="event.preventDefault()" onclick="slFmtAlign('right')" data-i18n-title="slides.fmt.align-right" title="Align right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg></button>
                 <div class="sl-float-sep"></div>
                 <select class="sl-fmt-select sl-fmt-select-sm" id="sl-fmt-font" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtFontFamily(this.value)">
                   <option value="" data-i18n="slides.fmt.font-default">Default</option>
@@ -633,6 +637,7 @@
             <div class="sl-prop-label" data-i18n="slides.vis.section">Visibility</div>
             <label class="sl-vis-row"><input type="checkbox" id="sl-vis-indent"    onchange="slVisChange('indentation',   this.checked)"><span data-i18n="slides.vis.indent">Indentation</span></label>
             <label class="sl-vis-row"><input type="checkbox" id="sl-vis-trans"     onchange="slVisChange('translation',   this.checked)"><span data-i18n="slides.vis.trans">Translation lines</span></label>
+            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-verse"     onchange="slVisChange('verseNums',     this.checked)"><span data-i18n="slides.vis.verse">Verse numbers</span></label>
             <label class="sl-vis-row"><input type="checkbox" id="sl-vis-comments"  onchange="slVisChange('comments',      this.checked)"><span data-i18n="slides.vis.comments">Comments</span></label>
             <label class="sl-vis-row"><input type="checkbox" id="sl-vis-connectors"onchange="slVisChange('connectors',    this.checked)"><span data-i18n="slides.vis.connectors">Connectors</span></label>
             <label class="sl-vis-row"><input type="checkbox" id="sl-vis-brackets"  onchange="slVisChange('brackets',      this.checked)"><span data-i18n="slides.vis.brackets">Brackets</span></label>
