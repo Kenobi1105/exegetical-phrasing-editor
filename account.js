@@ -261,8 +261,17 @@ async function acctPull(){
   for(const row of rows){
     const id=String(row.id);
     if(deleteQueue.includes(id)) continue; // pending delete — don't resurrect
-    if(typeof CURRENT_PROJECT_ID!=='undefined' && id===CURRENT_PROJECT_ID){ skippedOpen=true; continue; }
     const entry=idx.find(e=>e.id===id);
+    if(typeof CURRENT_PROJECT_ID!=='undefined' && id===CURRENT_PROJECT_ID){
+      // Only warn if the cloud row is actually AHEAD of what we last saved —
+      // matches the same-or-newer check below. Without this, any project
+      // that has ever synced once trips this toast on every subsequent pull
+      // (app load, Sync now, reconnect) forever, even with nothing new on
+      // the cloud side — a false "conflict" with no other device involved.
+      const openCloudTime=row.updated_at?Date.parse(row.updated_at):0;
+      if(!entry || openCloudTime>(entry.savedAt||0)) skippedOpen=true;
+      continue;
+    }
     if(ACCT.dirty.has(id)){
       // Unpushed local edits exist for this project — never let an
       // incoming cloud row silently clobber them, regardless of timestamp
