@@ -3672,7 +3672,7 @@ body.brk-locked .dbrk-pip:hover {
 #sl-notes {
   flex: 1;
   min-height: 100px;
-  resize: none;
+  overflow-y: auto;
   border: 1.5px solid rgba(73,53,72,.15);
   border-radius: 6px;
   background: rgba(73,53,72,.04);
@@ -3682,8 +3682,12 @@ body.brk-locked .dbrk-pip:hover {
   padding: 8px;
   outline: none;
   line-height: 1.5;
+  word-break: break-word;
 }
 #sl-notes:focus { border-color: var(--sig); }
+#sl-notes:empty::before { content: attr(data-ph); color: var(--muted); font-style: italic; pointer-events: none; }
+#sl-notes :is(b,strong) { font-weight: 700; }
+#sl-notes :is(i,em) { font-style: italic; }
 
 /* ── Passage content rendered inside slide ── */
 .sl-passage-frame {

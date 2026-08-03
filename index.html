@@ -650,6 +650,11 @@
             </div>
           </div>
           <div class="sl-prop-section">
+            <div class="sl-prop-label" data-i18n="slides.bg.section">Background</div>
+            <button type="button" class="sl-swatch-btn" id="sl-bg-btn" title="Background"
+                    onclick="openColorPalette('slSlideBackground', this, SL_DECK.slides[SL_ACTIVE_IDX]?.background||'#ffffff')"></button>
+          </div>
+          <div class="sl-prop-section">
             <div class="sl-prop-label">
               <span data-i18n="col.verse">Rows</span>
               <span class="sl-row-btns">
@@ -670,8 +675,13 @@
             <label class="sl-vis-row"><input type="checkbox" id="sl-vis-labels"    onchange="slVisChange('labels',        this.checked)"><span data-i18n="slides.vis.labels">Labels</span></label>
           </div>
           <div class="sl-prop-section sl-notes-section">
-            <div class="sl-prop-label" data-i18n="slides.notes.ph">Speaker Notes</div>
-            <textarea id="sl-notes" data-i18n-ph="slides.notes.ph" placeholder="Speaker notes…" oninput="slNotesChange(this.value)"></textarea>
+            <div class="sl-prop-label" data-i18n="slides.notes.section">Speaker Notes</div>
+            <div class="sl-fmt-row sl-notes-fmt-row">
+              <button class="sl-fmt-btn" onpointerdown="event.preventDefault()" onclick="slNotesFmtCmd('bold')" title="Bold"><b>B</b></button>
+              <button class="sl-fmt-btn" onpointerdown="event.preventDefault()" onclick="slNotesFmtCmd('italic')" title="Italic"><i>I</i></button>
+              <button class="sl-fmt-btn" onpointerdown="event.preventDefault()" onclick="slNotesFmtCmd('underline')" title="Underline"><u>U</u></button>
+            </div>
+            <div id="sl-notes" contenteditable="true" data-i18n-ph="slides.notes.ph" data-ph="Speaker notes…" oninput="slNotesChange()" onblur="slNotesCommit()"></div>
           </div>
         </div>
       </div>

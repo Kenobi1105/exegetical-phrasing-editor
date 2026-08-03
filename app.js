@@ -2854,6 +2854,9 @@ function applyPaletteColor(color){
   } else if(PALETTE_ACTIVE_TOOL==='slShapeStroke'){
     slShapeSetStroke(color);
     const btn=document.getElementById('sl-shape-stroke-btn'); if(btn){ btn.style.background=color; btn.classList.remove('sl-swatch-none'); }
+  } else if(PALETTE_ACTIVE_TOOL==='slSlideBackground'){
+    slSetBackground(color);
+    const btn=document.getElementById('sl-bg-btn'); if(btn) btn.style.background=color;
   }
   if(PALETTE_ACTIVE_TOOL){
     pushRecentColor(PALETTE_ACTIVE_TOOL, color);
@@ -8474,6 +8477,7 @@ function slMakeBlank(){
   return {id:'sl-'+(++SL_SLIDE_CTR),type:'blank',view:'phrasing',rowIds:[],
     visibility:{...SL_VIS_DEFAULT},
     contentArea:{x:3,y:3,w:94,h:55},
+    background:'#ffffff',
     elements:[],notes:''};
 }
 function slMakeContent(){
@@ -8481,6 +8485,7 @@ function slMakeContent(){
   return {id:'sl-'+(++SL_SLIDE_CTR),type:'content',view:'phrasing',rowIds:allRids,
     visibility:{...SL_VIS_DEFAULT},
     contentArea:{x:3,y:3,w:94,h:55},
+    background:'#ffffff',
     elements:[],notes:''};
 }
 
@@ -9050,9 +9055,57 @@ function slVisChange(key,val){
   autoSave();
   // No live re-render — user clicks Refresh to see result
 }
-function slNotesChange(val){
+// Unlike slSetView/slVisChange above, background needs an immediate live
+// preview (it's a swatch-picker interaction, often dragged across
+// presets) — reuses the generic sl-slide-prop undo op with zero new
+// undo-op code (see _slApplyUndo/_slApplyRedo's fallthrough branch).
+function slSetBackground(color){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  sl.notes=val; autoSave();
+  const old=sl.background; if(old===color) return;
+  sl.background=color;
+  _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'background',oldVal:old,newVal:color});
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+// Speaker notes used to be a plain <textarea> (real string, no markup) —
+// decks saved before this feature have sl.notes as plain text, possibly
+// containing literal <, >, & characters and real \n line breaks. Naively
+// assigning that raw string to .innerHTML would parse stray <>& as markup
+// and collapse \n to nothing. This is a lazy, NON-MUTATING read-time
+// migration — it never rewrites sl.notes in the deck; only an actual edit
+// (via slNotesCommit) ever persists real HTML from then on, so a deck
+// that's only ever presented (never edited) stays byte-identical.
+function _slNotesToHTML(raw){
+  if(!raw) return '';
+  // Check specifically for tags THIS feature could ever produce (execCommand
+  // bold/italic/underline, <br> from the \n conversion below, <div> some
+  // browsers use for contentEditable line breaks) rather than "any <word>"
+  // — a plain-text legacy note containing an ordinary bracketed phrase like
+  // "<insert reference>" would otherwise false-positive as "already HTML"
+  // and get displayed with the brackets and their contents silently eaten
+  // by the browser's tag parser instead of being escaped and shown as text.
+  const looksLikeHTML=/<\/?(b|i|u|br|div|span)(\s[^>]*)?>/i.test(raw);
+  return looksLikeHTML ? raw : escH(raw).replace(/\n/g,'<br>');
+}
+// Split live-typing sync from sanitize-and-commit (mirrors the comment
+// card's focus/blur pattern) — sanitizing mid-keystroke by reassigning
+// innerHTML would reset the caret position while the user is still typing.
+function slNotesChange(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  sl.notes=document.getElementById('sl-notes').innerHTML; // raw, unsanitized — safety-net save only
+  autoSave();
+}
+function slNotesCommit(){
+  const el=document.getElementById('sl-notes');
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const clean=_stripBgFromHTML(el.innerHTML);
+  if(clean!==el.innerHTML) el.innerHTML=clean; // safe to reassign now — focus is leaving anyway
+  const old=sl.notes; sl.notes=clean;
+  if(old!==clean) _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'notes',oldVal:old,newVal:clean});
+  autoSave();
+}
+function slNotesFmtCmd(cmd){
+  document.getElementById('sl-notes').focus();
+  document.execCommand(cmd,false,null);
 }
 function slSelectAllRows(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
@@ -9074,6 +9127,7 @@ function slUpdatePropsPanel(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   document.getElementById('sl-view-phrasing')?.classList.toggle('active',sl.view==='phrasing');
   document.getElementById('sl-view-diagram')?.classList.toggle('active',sl.view==='diagram');
+  const bgBtn=document.getElementById('sl-bg-btn'); if(bgBtn) bgBtn.style.background=sl.background||'#ffffff';
   _slUpdateVisRowsForView(sl.view);
   document.getElementById('sl-vis-indent')   .checked=!!sl.visibility.indentation;
   document.getElementById('sl-vis-trans')    .checked=!!sl.visibility.translation;
@@ -9082,7 +9136,8 @@ function slUpdatePropsPanel(){
   document.getElementById('sl-vis-connectors').checked=!!sl.visibility.connectors;
   document.getElementById('sl-vis-brackets') .checked=!!sl.visibility.brackets;
   document.getElementById('sl-vis-labels')   .checked=!!sl.visibility.labels;
-  document.getElementById('sl-notes').value=sl.notes||'';
+  const notesEl=document.getElementById('sl-notes');
+  if(notesEl && document.activeElement!==notesEl) notesEl.innerHTML=_slNotesToHTML(sl.notes);
   slUpdateRowList();
 }
 function slUpdateRowList(){
@@ -9382,7 +9437,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
   container.style.width=w+'px';
   container.style.height=h+'px';
   container.style.position='relative';
-  container.style.background='#fff';
+  container.style.background=slide.background||'#fff';
   container.style.overflow='hidden';
 
   // Passage content area — treated as a draggable/resizable element
@@ -10714,6 +10769,7 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
     if(!ev.data) return;
     if(ev.data.type==='sl-slide'){
       document.getElementById('sl-proj').innerHTML=ev.data.html;
+      document.getElementById('sl-proj-wrap').style.background=ev.data.bg||'#fff';
       _lastPw=ev.data.pw||960; _lastPh=ev.data.ph||540;
       _applyScale(_lastPw, _lastPh);
     }
@@ -10786,7 +10842,7 @@ function slPresUpdate(){
   const counter=document.getElementById('sl-pres-counter');
   if(counter) counter.innerHTML=`${SL_PRES_IDX+1} <span>${t('slides.slide-of')}</span> ${SL_DECK.slides.length}`;
   const notes=document.getElementById('sl-pres-notes');
-  if(notes) notes.textContent=slide.notes||'';
+  if(notes) notes.innerHTML=_slNotesToHTML(slide.notes);
 
   _slRenderToHTML(slide, (html, rW, rH)=>{
     // Measure presenter preview dimensions inside the callback (layout is done by now)
@@ -10808,10 +10864,10 @@ function slPresUpdate(){
 
       preview.style.width =previewW+'px';
       preview.style.height=previewH+'px';
-      _slInjectScaled(preview, html, previewW, previewH, rW, rH);
+      _slInjectScaled(preview, html, previewW, previewH, rW, rH, slide.background);
     }
     if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
-      SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:rW,ph:rH},'*');
+      SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:rW,ph:rH,bg:slide.background||'#ffffff'},'*');
     }
   });
 }
@@ -10847,13 +10903,13 @@ function _slRenderToHTML(slide, cb){
 let _slLastRenderW=960, _slLastRenderH=540;
 
 /* ── Inject rendered HTML into a display container with CSS scale-to-fit ── */
-function _slInjectScaled(container, html, containerW, containerH, rW, rH){
+function _slInjectScaled(container, html, containerW, containerH, rW, rH, bg){
   const renderW=rW||960, renderH=rH||540;
   container.innerHTML='';
   container.style.position='relative';
   container.style.overflow='hidden';
   const wrap=document.createElement('div');
-  wrap.style.cssText=`position:absolute;top:0;left:0;width:${renderW}px;height:${renderH}px;transform-origin:top left;background:#fff;overflow:visible;`;
+  wrap.style.cssText=`position:absolute;top:0;left:0;width:${renderW}px;height:${renderH}px;transform-origin:top left;background:${bg||'#fff'};overflow:visible;`;
   wrap.innerHTML=html;
   container.appendChild(wrap);
   const scale=Math.min(containerW/renderW, containerH/renderH);
@@ -10927,7 +10983,7 @@ async function slExportPDF(){
        960×540 content is placed at 1:1 — no CSS scaling — for the capture. */
     host.innerHTML='';
     const wrap=document.createElement('div');
-    wrap.style.cssText=`position:absolute;top:0;left:0;width:${RW}px;height:${RH}px;background:#fff;overflow:hidden;`;
+    wrap.style.cssText=`position:absolute;top:0;left:0;width:${RW}px;height:${RH}px;background:${slide.background||'#fff'};overflow:hidden;`;
     wrap.innerHTML=html;
     host.appendChild(wrap);
 
@@ -10940,7 +10996,7 @@ async function slExportPDF(){
         scale:          SCALE,
         useCORS:        true,
         allowTaint:     false,
-        backgroundColor:'#ffffff',
+        backgroundColor:slide.background||'#ffffff',
         logging:        false,
         width:          RW,
         height:         RH,
