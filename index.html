@@ -285,7 +285,8 @@
 
     <div id="acct-view-signedin" hidden>
       <div class="acct-row"><span data-i18n="account.signed-in-as">Signed in as</span> <b id="acct-signedin-email"></b></div>
-      <div class="sf"><button class="smb apl" onclick="acctSyncNow()" data-i18n="account.sync-now">Sync now</button></div>
+      <div class="acct-row acct-sync-status" id="acct-last-synced"></div>
+      <div class="sf"><button class="smb apl" id="acct-sync-btn" onclick="acctSyncNow()" data-i18n="account.sync-now">Sync now</button></div>
       <div class="sf"><button class="smb can" onclick="acctSignOut()" data-i18n="account.signout">Sign out</button></div>
     </div>
 

@@ -29,6 +29,7 @@
 const ACCT_OAUTH_PENDING_KEY = 'exeg-acct-oauth-pending';
 const ACCT_SEEN_SIGNIN_KEY   = 'exeg-acct-seen-signin';
 const ACCT_DELETE_QUEUE_KEY  = 'exeg-cloud-delete-queue';
+const ACCT_LAST_SYNCED_KEY   = 'exeg-acct-last-synced';
 const ACCT_FLUSH_INTERVAL_MS = 30000;
 
 /* states: unknown | unavailable | offline | signed_out | profile_incomplete | ready
@@ -42,9 +43,21 @@ const ACCT = {
   dirty: new Set(),
   pushCache: {},
   flushing: false,
+  lastSyncedAt: null, // ms epoch, persisted across reloads — see acctReadLastSynced/acctWriteLastSynced
   _unsub: null,
   _flushTimer: null
 };
+ACCT.lastSyncedAt = acctReadLastSynced();
+
+function acctReadLastSynced(){ const v=parseInt(localStorage.getItem(ACCT_LAST_SYNCED_KEY)||'',10); return Number.isFinite(v)?v:null; }
+function acctWriteLastSynced(ms){ try{ localStorage.setItem(ACCT_LAST_SYNCED_KEY, String(ms)); }catch(_e){} }
+function acctStampLastSynced(){
+  const now=Date.now();
+  ACCT.lastSyncedAt=now;
+  acctWriteLastSynced(now);
+  const modal=document.getElementById('acct-modal');
+  if(modal && !modal.classList.contains('hidden')) acctRender();
+}
 
 function _sync(){ return (window.PhrasingSync && window.PhrasingSync.__ready) ? window.PhrasingSync : null; }
 
@@ -192,6 +205,7 @@ async function acctSyncNow(){
   try{ await acctFlushDirty(); await acctFlushDeleteQueue(); await acctPull(); }
   catch(_e){}
   acctSetBusy(false);
+  acctStampLastSynced();
   toast(typeof t==='function'?t('account.toast.synced'):'Synced');
 }
 
@@ -217,7 +231,14 @@ async function acctMigrateThenPull(){
     }
   }catch(_e){}
   try{ await acctFlushDeleteQueue(); }catch(_e){}
+  // Flush any locally-dirty projects BEFORE pulling — otherwise a project
+  // edited in a prior session but never pushed (e.g. tab closed before the
+  // 30s flush timer fired) is vulnerable to being silently outraced by a
+  // cloud row on this very first pull, before acctPull()'s own dirty-check
+  // ever gets a chance to protect it (mirrors acctSyncNow's ordering).
+  try{ await acctFlushDirty(); }catch(_e){}
   try{ await acctPull(); }catch(_e){}
+  acctStampLastSynced();
 }
 
 async function acctPull(){
@@ -230,12 +251,27 @@ async function acctPull(){
 
   const idx=projIndex();
   let changed=false, skippedOpen=false;
+  // Names of projects whose LOCAL copy existed and either (a) has unpushed
+  // edits so we deliberately skip overwriting it, or (b) got genuinely
+  // overwritten by a newer cloud version — both are cases where a user
+  // could lose track of a change without being told. A brand-new row from
+  // another device (no prior local entry) is normal multi-device use, not
+  // a conflict, so it's tracked separately and stays silent.
+  const conflictNames=[], overwrittenNames=[], newFromCloud=[];
   for(const row of rows){
     const id=String(row.id);
     if(deleteQueue.includes(id)) continue; // pending delete — don't resurrect
     if(typeof CURRENT_PROJECT_ID!=='undefined' && id===CURRENT_PROJECT_ID){ skippedOpen=true; continue; }
-    const cloudTime=row.updated_at?Date.parse(row.updated_at):0;
     const entry=idx.find(e=>e.id===id);
+    if(ACCT.dirty.has(id)){
+      // Unpushed local edits exist for this project — never let an
+      // incoming cloud row silently clobber them, regardless of timestamp
+      // (the local save that made it dirty may be newer than what the
+      // cloud row's updated_at reflects, e.g. while offline or mid-flush).
+      conflictNames.push((entry&&entry.name)||row.name||id);
+      continue;
+    }
+    const cloudTime=row.updated_at?Date.parse(row.updated_at):0;
     if(entry && cloudTime<=(entry.savedAt||0)) continue; // local is same-or-newer
 
     try{ localStorage.setItem(PROJ_DATA_KEY(id), JSON.stringify(row.payload)); }
@@ -243,10 +279,12 @@ async function acctPull(){
 
     const lang=(row.payload && row.payload.langLabel) || row.language_mode || 'Other';
     if(entry){
+      overwrittenNames.push(row.name||entry.name||id);
       entry.name=row.name||entry.name; entry.lang=lang;
       entry.verseRef=row.verse_reference||entry.verseRef;
       entry.savedAt=cloudTime||Date.now(); entry.cloudAt=cloudTime||Date.now();
     } else {
+      newFromCloud.push(row.name||'Untitled');
       idx.unshift({id, name:row.name||'Untitled', lang, verseRef:row.verse_reference||'', savedAt:cloudTime||Date.now(), cloudAt:cloudTime||Date.now()});
     }
     changed=true;
@@ -256,7 +294,21 @@ async function acctPull(){
     if(typeof renderProjPanel==='function') renderProjPanel();
     if(typeof renderS1Recent==='function') renderS1Recent();
   }
-  if(skippedOpen) toast(typeof t==='function'?t('account.toast.remote-newer'):'A newer cloud version exists — save here to keep your current edits');
+  // Two DIFFERENT situations, two different messages — do not conflate them:
+  // skippedOpen/conflictNames = local edits were PROTECTED (nothing changed,
+  // but a newer cloud version is waiting); overwrittenNames = local data was
+  // ACTUALLY replaced. newFromCloud is intentionally excluded from both — a
+  // brand-new project pulled from another device isn't a conflict.
+  if(skippedOpen || conflictNames.length){
+    toast(typeof t==='function'?t('account.toast.remote-newer'):'A newer cloud version exists — save here to keep your current edits');
+  }
+  const affected=overwrittenNames;
+  if(affected.length){
+    const msg=typeof t==='function'
+      ? t('account.toast.remote-overwrote').replace('{n}', affected.length)
+      : affected.length+' project(s) were updated from another device';
+    toast(msg);
+  }
 }
 
 /* ── Push (fire-and-forget) + dirty flusher ── */
@@ -353,7 +405,12 @@ function acctStopFlusher(){
   window.removeEventListener('online', acctOnOnline);
 }
 function acctOnVisibilityChange(){ if(document.visibilityState==='hidden'){ acctFlushDirty(); acctFlushDeleteQueue(); } }
-function acctOnOnline(){ acctFlushDirty(); acctFlushDeleteQueue(); if(ACCT.state==='ready') acctPull(); }
+async function acctOnOnline(){
+  await acctFlushDirty(); await acctFlushDeleteQueue();
+  if(ACCT.state!=='ready') return;
+  await acctPull();
+  acctStampLastSynced();
+}
 
 /* ── Cloud badge for project cards (called from app.js's renderers) ── */
 function acctBadgeHTML(entry){
@@ -416,6 +473,11 @@ function acctShowMsg(text, isError){
 function acctSetBusy(busy){
   ACCT.busy=busy;
   document.querySelectorAll('#acct-modal button').forEach(b=>{ b.disabled=busy; });
+  const syncBtn=document.getElementById('acct-sync-btn');
+  if(syncBtn){
+    if(busy) syncBtn.textContent=typeof t==='function'?t('account.syncing'):'Syncing…';
+    else syncBtn.textContent=typeof t==='function'?t('account.sync-now'):'Sync now';
+  }
 }
 
 /* ── UI: badges outside the modal (toolbar dot, S1 button, panel dot) ──
@@ -449,6 +511,12 @@ function acctRender(){
   if(view==='signedin'){
     const emailEl=document.getElementById('acct-signedin-email');
     if(emailEl) emailEl.textContent=(ACCT.user&&ACCT.user.email)||'';
+    const syncedEl=document.getElementById('acct-last-synced');
+    if(syncedEl){
+      syncedEl.textContent = ACCT.lastSyncedAt
+        ? (typeof t==='function'?t('account.last-synced'):'Last synced')+' '+new Date(ACCT.lastSyncedAt).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})
+        : (typeof t==='function'?t('account.last-synced.never'):'Not synced yet');
+    }
   }
 }
 
