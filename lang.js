@@ -288,6 +288,7 @@ const LANGS = {
     'version.ph':          'Version (e.g., ESV, BHS, NA28)',
     'add-line':            'Add line',
     'merge-line':          'Merge line up',
+    'delete-line':         'Delete row',
 
     /* ── Bottom bar ── */
     'bbar.save':           'Save',
@@ -804,6 +805,7 @@ const LANGS = {
     'version.ph':          '版本（例如 ESV、BHS、NA28）',
     'add-line':            '添加行',
     'merge-line':          '向上合并行',
+    'delete-line':         '删除该行',
 
     /* ── Bottom bar ── */
     'bbar.save':           '保存',

@@ -661,6 +661,19 @@ function addEmptyRow(afterEl){
   return row;
 }
 
+// addEmptyRow()/addRow() are shared by non-interactive callers too (bulk
+// paste-import, session bootstrap, the 'clear' undo/redo op's own internal
+// re-render) where pushing a per-row undo entry would be wrong (hundreds of
+// spurious entries on import, or a corrupted stack if pushed while already
+// inside applyRowUndo/applyRowRedo). This wrapper is for the two genuinely
+// interactive call sites only — Ctrl++ and the "Add line" toolbar button —
+// so only a deliberate user action becomes undoable.
+function addEmptyRowUndoable(afterEl){
+  const row=addEmptyRow(afterEl);
+  rowPush({type:'row-add', rid:row.dataset.rid, afterRid: afterEl?afterEl.dataset.rid:null});
+  return row;
+}
+
 /* ════════════════════════════════════════
    DIAGRAM VIEW
    Stage 1: toggle between Phrasing View and
@@ -1124,7 +1137,8 @@ function _makeDiagramSectionEl(ann, kind){
     label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
     label.textContent=ann.label||'';
     label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
-    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('focus',()=>{ _annLabelFocusSnap(ann.id,label); });
+    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); _annLabelBlurSnap(ann.id,ann); autoSave(); });
     label.addEventListener('mousedown',ev=>ev.stopPropagation());
     label.addEventListener('pointerdown',ev=>ev.stopPropagation());
     el.appendChild(label);
@@ -1136,10 +1150,12 @@ function _makeDiagramSectionEl(ann, kind){
     swatch.addEventListener('mousedown',ev=>ev.stopPropagation());
     swatch.addEventListener('pointerdown',ev=>ev.stopPropagation());
     swatch.addEventListener('change',()=>{
+      const oldVal=ann.color;
       ann.color=swatch.value;
       document.querySelectorAll(`.dsec-divider[data-ann-id="${ann.id}"]`)
         .forEach(d=>d.style.setProperty('--sec-color', ann.color));
       autoSave();
+      rowPush({type:'ann-edit', annId:ann.id, prop:'color', oldVal, newVal:ann.color});
     });
     el.appendChild(swatch);
 
@@ -1290,9 +1306,11 @@ function _makeLabelEl(lb){
   del.innerHTML='&times;';
   del.addEventListener('pointerdown', ev=>ev.stopPropagation());
   del.addEventListener('click', ()=>{
+    const snapshot={...lb};
     DIAGRAM_DATA.labels=DIAGRAM_DATA.labels.filter(l=>l.id!==lb.id);
     el.remove();
     autoSave();
+    rowPush({type:'labelremove', id:lb.id, snapshot});
   });
   bar.appendChild(del);
   el.appendChild(bar);
@@ -3262,6 +3280,32 @@ function deleteFocusedRow(){
   mergeRowUp(rid);
 }
 
+// Genuinely discards a row's content — distinct from mergeRowUp()/
+// "Merge line up" above, which folds the row into the previous one and is
+// this app's only other row-removal action. Additive: does not change
+// mergeRowUp's own behavior or its Ctrl+-/Backspace-at-start bindings.
+function deleteRowContent(rid){
+  if(!rid) return;
+  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const idx=rows.findIndex(r=>r.dataset.rid===String(rid));
+  if(idx<0) return;
+  const row=rows[idx];
+  const afterRid=idx>0?rows[idx-1].dataset.rid:null;
+  const verse=row.querySelector('.vin')?.value||'';
+  const oc=row.querySelector(`#oc-${rid} .cedit`);
+  const tc=row.querySelector(`#tc-${rid} .cedit`);
+  const html=oc?oc.innerHTML:'';
+  const transHTML=tc?tc.innerHTML:'';
+  row.remove();
+  recomputeIds();
+  autoSave();
+  rowPush({type:'row-delete', rid:String(rid), afterRid, verse, html, transHTML});
+}
+function deleteFocusedRowContent(){
+  if(!lastFocusedRowEl)return;
+  deleteRowContent(lastFocusedRowEl.dataset.rid);
+}
+
 /* ════════════════════════════════════════
    ROW-LEVEL UNDO STACK
    Only tracks split/merge/add row operations.
@@ -3315,6 +3359,31 @@ function redo(){
     if(activeEl){activeEl.blur();activeEl.focus();}
     updateTb();
   },0);
+}
+
+// Shared by 'row-add' and 'row-delete' undo/redo — 'row-add' undo and
+// 'row-delete' redo both just remove a row by id; 'row-add' redo and
+// 'row-delete' undo both reconstruct and reinsert one. Factored out once
+// instead of duplicated four times across applyRowUndo/applyRowRedo.
+function _removeRowById(rid){
+  const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
+  if(row) row.remove();
+}
+// pos.afterRid set = insert right after that row. pos.afterRid null with
+// pos.atEnd true = append to the very end (matches addRow()'s own "no
+// afterEl" behavior, used by 'row-add'). pos.afterRid null with pos.atEnd
+// false = the row was the very first row when removed, so prepend it back
+// to the start (used by 'row-delete', where null never means "goes at the
+// end" — it means "there was nothing before it").
+function _reinsertRow(rid, verse, html, transHTML, pos){
+  const row=makeRowEl(rid, verse||'', html||'', transHTML||'', null);
+  row.dataset.rid=rid;
+  const body=document.getElementById('rows-body');
+  const afterRow=pos.afterRid?document.querySelector(`.xrow[data-rid="${pos.afterRid}"]`):null;
+  if(afterRow) afterRow.insertAdjacentElement('afterend',row);
+  else if(pos.atEnd) body.appendChild(row);
+  else body.prepend(row);
+  return row;
 }
 
 function applyRowUndo(op){
@@ -3391,6 +3460,16 @@ function applyRowUndo(op){
     renderDiagram();
     return;
   }
+  if(op.type==='labelremove'){
+    // Undo removing a label: restore it from its pre-delete snapshot —
+    // same restore logic as labeladd's redo below, since this op is
+    // labeladd's exact mirror image.
+    if(!DIAGRAM_DATA.labels.find(l=>l.id===op.id)){
+      DIAGRAM_DATA.labels.push({...op.snapshot});
+    }
+    renderDiagram();
+    return;
+  }
   // ── Comment box ops ───────────────────────────────────────────────────
   if(op.type==='cmt-add'){
     // Undo comment creation: remove the card and unmark the row
@@ -3449,6 +3528,16 @@ function applyRowUndo(op){
       updateTb();
       autoSave();
     }
+    return;
+  }
+  if(op.type==='row-add'){
+    _removeRowById(op.rid);
+    return;
+  }
+  if(op.type==='row-delete'){
+    const restored=_reinsertRow(op.rid, op.verse, op.html, op.transHTML, {afterRid:op.afterRid, atEnd:false});
+    const oc=restored.querySelector(`#oc-${op.rid} .cedit`);
+    if(oc){ oc.focus(); placeCaret(oc,'start'); }
     return;
   }
   if(op.type==='split'){
@@ -3548,6 +3637,13 @@ function applyRowRedo(op){
     renderDiagram();
     return;
   }
+  if(op.type==='labelremove'){
+    // Redo removing a label: remove it again — same logic as labeladd's
+    // undo above, since this op is labeladd's exact mirror image.
+    DIAGRAM_DATA.labels=DIAGRAM_DATA.labels.filter(l=>l.id!==op.id);
+    renderDiagram();
+    return;
+  }
   // ── Comment box ops ───────────────────────────────────────────────────
   if(op.type==='cmt-add'){
     // Redo comment creation: rebuild the card
@@ -3606,6 +3702,16 @@ function applyRowRedo(op){
       updateTb();
       autoSave();
     }
+    return;
+  }
+  if(op.type==='row-add'){
+    const restored=_reinsertRow(op.rid, '', '', '', {afterRid:op.afterRid, atEnd:true});
+    const oc=restored.querySelector(`#oc-${op.rid} .cedit`);
+    if(oc){ oc.focus(); placeCaret(oc,'start'); }
+    return;
+  }
+  if(op.type==='row-delete'){
+    _removeRowById(op.rid);
     return;
   }
   if(op.type==='split'){
@@ -4304,6 +4410,7 @@ document.addEventListener('keydown',e=>{
     if(e.key==='L'||e.key==='l'){e.preventDefault();clearAll();return;}
     if(e.key==='M'||e.key==='m'){e.preventDefault();addCommentOnFocusedRow();return;}
     if(e.key==='\\'||e.key==='|'){e.preventDefault();if(typeof bTogglePin==='function')bTogglePin();return;}
+    if(e.key==='Backspace'){e.preventDefault();deleteFocusedRowContent();return;}      // Ctrl+Shift+Backspace  Delete row content
     return;
   }
   if(e.key==='z'){e.preventDefault();undo();}
@@ -4331,7 +4438,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='='||e.key==='+'){
     e.preventDefault();
     if(EDITOR_VIEW==='diagram'){ diagramZoomIn(); }
-    else { addEmptyRow(lastFocusedRowEl||undefined); }
+    else { addEmptyRowUndoable(lastFocusedRowEl||undefined); }
   }
   if(e.key==='-'){
     e.preventDefault();
@@ -7465,7 +7572,8 @@ function renderDividers(){
       ann.label=label.textContent.trim();
       autoSave();
     });
-    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('focus',()=>{ _annLabelFocusSnap(ann.id,label); });
+    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); _annLabelBlurSnap(ann.id,ann); autoSave(); });
 
     const del=document.createElement('button');
     del.className='ann-div-del';
@@ -7479,9 +7587,11 @@ function renderDividers(){
     swatch.value=ann.color||'#C8A84B';
     swatch.title=typeof t==='function'?t('ann.color'):'Color';
     swatch.addEventListener('change',()=>{
+      const oldVal=ann.color;
       ann.color=swatch.value;
       el.style.setProperty('--div-color', ann.color);
       autoSave();
+      rowPush({type:'ann-edit', annId:ann.id, prop:'color', oldVal, newVal:ann.color});
     });
 
     labelWrap.append(label, swatch, del);
@@ -7551,10 +7661,12 @@ function renderSectionStrips(){
     swatch.value=ann.color||'#534AB7';
     swatch.title=typeof t==='function'?t('ann.color'):'Color';
     swatch.addEventListener('change',()=>{
+      const oldVal=ann.color;
       ann.color=swatch.value;
       strip.style.setProperty('--sec-color', ann.color);
       if(EDITOR_VIEW==='diagram') renderDiagram();
       autoSave();
+      rowPush({type:'ann-edit', annId:ann.id, prop:'color', oldVal, newVal:ann.color});
     });
 
     const label=document.createElement('div');
@@ -7564,7 +7676,8 @@ function renderSectionStrips(){
     label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
     label.textContent=ann.label||'';
     label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
-    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('focus',()=>{ _annLabelFocusSnap(ann.id,label); });
+    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); _annLabelBlurSnap(ann.id,ann); autoSave(); });
 
     const topHandle=document.createElement('div');
     topHandle.className='sec-strip-handle sec-strip-handle-top';
@@ -8006,6 +8119,25 @@ function _annHidePopupIfStale(){
   }
 }
 
+/* Per-annotation focus/blur label-text snap for undo — mirrors _cmtFocusSnap/
+   _cmtBlurSnap's coalescing (divider + section labels, both plain-text). */
+const _annLabelBefore={};
+function _annLabelFocusSnap(annId,el){
+  _annLabelBefore[annId]=el.textContent;
+}
+function _annLabelBlurSnap(annId,ann){
+  const before=_annLabelBefore[annId]??'';
+  const after=ann.label||'';
+  if(after===before) return;
+  const lastOp=ROW_STACK[ROW_STACK.length-1];
+  if(lastOp&&lastOp.type==='ann-edit'&&lastOp.annId===annId&&lastOp.prop==='label'){
+    lastOp.newVal=after;
+  } else {
+    rowPush({type:'ann-edit', annId, prop:'label', oldVal:before, newVal:after});
+  }
+  _annLabelBefore[annId]=after;
+}
+
 function _annApplyUndo(op){
   if(!op.type?.startsWith('ann-')) return false;
   if(op.type==='ann-add'){
@@ -8022,7 +8154,7 @@ function _annApplyUndo(op){
   if(op.type==='ann-edit'){
     const ann=ANNOTATIONS.find(a=>a.id===op.annId); if(!ann) return true;
     ann[op.prop]=op.oldVal;
-    renderAnnLayer();
+    if(ann.type==='divider') renderDividers(); else if(ann.type==='section'){ renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); } else renderAnnLayer();
     // Re-open popup with updated values if this annotation is still selected
     if(SELECTED_ANN_ID===op.annId) _showAnnEditPopup(ann);
     return true;
@@ -8047,7 +8179,7 @@ function _annApplyRedo(op){
   if(op.type==='ann-edit'){
     const ann=ANNOTATIONS.find(a=>a.id===op.annId); if(!ann) return true;
     ann[op.prop]=op.newVal;
-    renderAnnLayer();
+    if(ann.type==='divider') renderDividers(); else if(ann.type==='section'){ renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderDiagram(); } else renderAnnLayer();
     if(SELECTED_ANN_ID===op.annId) _showAnnEditPopup(ann);
     return true;
   }
