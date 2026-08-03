@@ -322,7 +322,7 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   display:flex;flex-direction:column;transform:translateX(100%);
   transition:transform .22s cubic-bezier(.4,0,.2,1)}
 #proj-panel.open{transform:translateX(0)}
-#proj-panel-hdr{padding:18px 20px 14px;border-bottom:1px solid rgba(0,0,0,.08);
+#proj-panel-hdr{padding:12px 20px;border-bottom:1px solid rgba(0,0,0,.08);
   display:flex;align-items:center;gap:10px;flex-shrink:0}
 #proj-panel-hdr h3{font-family:var(--ui);font-size:14px;font-weight:700;
   color:var(--ink);flex:1;margin:0}
@@ -4695,7 +4695,7 @@ body.hide-sections #section-strips{display:none}
   text-transform:uppercase;letter-spacing:.04em;color:rgba(247,243,233,.5)}
 
 /* ── Projects panel: search/sort row ── */
-#proj-panel-search-row{display:flex;gap:6px;padding:0 12px 10px;flex-shrink:0}
+#proj-panel-search-row{display:flex;gap:6px;padding:10px 12px;flex-shrink:0}
 #proj-search{
   flex:1;min-width:0;height:30px;padding:0 10px;border:1.5px solid rgba(73,53,72,.18);
   border-radius:var(--rs);background:var(--bg);font-family:var(--ui);font-size:12px;
