@@ -4721,12 +4721,24 @@ const storeKey=()=>'exeg7-'+SESS+(IS_SINGLE?'-'+LANG:'');
 const PROJ_INDEX_KEY='exeg-proj-index';
 const PROJ_DATA_KEY =id=>'exeg-proj-'+id;
 const PROJ_AUTOSAVE_KEY='exeg-autosave-current'; // tracks which project is "open"
+// Folders are LOCAL-ONLY (never synced to the cloud) — the shared
+// phrasing_projects Supabase table has a fixed column set with no folder
+// field, and adding one is a schema migration out of scope here. A project
+// entry's folderId is deliberately never included in acctCloudPayload().
+const PROJ_FOLDERS_KEY='exeg-proj-folders';
 
 let CURRENT_PROJECT_ID=null; // null = new unsaved project
 
 function projIndex(){
   try{ return JSON.parse(localStorage.getItem(PROJ_INDEX_KEY)||'[]'); }
   catch(_){ return []; }
+}
+function projFolders(){
+  try{ return JSON.parse(localStorage.getItem(PROJ_FOLDERS_KEY)||'[]'); }
+  catch(_){ return []; }
+}
+function projSaveFolders(folders){
+  try{ localStorage.setItem(PROJ_FOLDERS_KEY,JSON.stringify(folders)); }catch(_){}
 }
 async function projSave(showPanel){
   if(document.getElementById('app').style.display==='none') return;
@@ -4739,16 +4751,32 @@ async function projSave(showPanel){
     autoSave();
   }
   const name=document.getElementById('refin').value.trim()||'Untitled';
+  const isNewProject=!CURRENT_PROJECT_ID;
+  // Duplicate-detection — only for a genuinely NEW project (overwriting your
+  // own already-open project is normal, expected behavior, never a "duplicate").
+  // Matches on verseRef, not name — name can now diverge intentionally after
+  // a rename (see projRename), so it's no longer a reliable duplicate signal.
+  if(isNewProject && ref){
+    const dupe=projIndex().find(e=>(e.verseRef||'').trim().toLowerCase()===ref.toLowerCase());
+    if(dupe){
+      const msg=(typeof t==='function'?t('confirm.dup-project'):'A project with this verse reference already exists ("{name}"). Save as a new, separate project anyway?').replace('{name}',dupe.name||'Untitled');
+      if(!confirm(msg)){ toast(typeof t==='function'?t('toast.save-cancel'):'Save cancelled'); return; }
+    }
+  }
   const id=CURRENT_PROJECT_ID||(CURRENT_PROJECT_ID='proj-'+Date.now());
   const data=collectData();
   const now=Date.now();
   // Update data store
   try{ localStorage.setItem(PROJ_DATA_KEY(id),JSON.stringify(data)); }
-  catch(_){ toast(typeof t==='function'?t('toast.storage-full'):'Storage full — please export and clear some projects');return; }
+  catch(e){
+    if(e && e.name==='QuotaExceededError') toast(typeof t==='function'?t('toast.storage-full-quota'):'Storage is full. Use Export All to back up your projects, then delete some to free space.');
+    else toast(typeof t==='function'?t('toast.storage-full'):'Storage full — please export and clear some projects');
+    return;
+  }
   // Update index
   const idx=projIndex();
   const entry=idx.find(e=>e.id===id);
-  if(entry){ entry.name=name;entry.lang=LANG;entry.verseRef=ref;entry.savedAt=now; }
+  if(entry){ if(!entry.renamed) entry.name=name; entry.lang=LANG;entry.verseRef=ref;entry.savedAt=now; }
   else { idx.unshift({id,name,lang:LANG,verseRef:ref,savedAt:now}); }
   localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx));
   // Update status bar. Use 'd' not 't' — a LATER const t in this function
@@ -4824,6 +4852,23 @@ function projDelete(id,e){
   // Queues a cloud delete (retried later if offline) so a later cloud pull
   // can't resurrect a project just deleted locally.
   if(typeof acctQueueDelete==='function') acctQueueDelete(id);
+}
+async function projRename(id,ev){
+  if(ev) ev.stopPropagation();
+  const idx=projIndex();
+  const entry=idx.find(e=>e.id===id);
+  if(!entry) return;
+  const newName=await cModalPrompt('proj.rename.title','proj.rename.hint',entry.name||'');
+  if(!newName||!newName.trim()) return;
+  entry.name=newName.trim();
+  entry.renamed=true; // stops projSave()/autoSave() from overwriting this with #refin's value
+  localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx));
+  renderProjPanel();
+  renderS1Recent();
+  // Name is the one project-organization field that DOES stay cloud-synced
+  // (acctCloudPayload already prefers entry.name) — folderId, by contrast,
+  // is deliberately local-only, see PROJ_FOLDERS_KEY's comment above.
+  if(typeof acctMarkDirty==='function') acctMarkDirty(id);
 }
 /* ════════════════════════════════════════
    EXPORT ALL PROJECTS
@@ -5295,37 +5340,323 @@ function _dateStamp(){
   return d.getFullYear()+('0'+(d.getMonth()+1)).slice(-2)+('0'+d.getDate()).slice(-2);
 }
 
-function renderProjPanel(){
-  const list=document.getElementById('proj-list');
-  const idx=projIndex();
-  if(!idx.length){
-    list.innerHTML='<div id="proj-list-empty" data-i18n-html="proj.empty">'+(typeof t==='function'?t('proj.empty'):'No saved projects yet.<br>Press <b>Ctrl+S</b> to save your current work.')+'</div>';
-    return;
-  }
-  list.innerHTML=idx.map(e=>{
-    const d=new Date(e.savedAt);
-    const when=d.toLocaleDateString([],{month:'short',day:'numeric'})+' · '+
-                d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-    const active=e.id===CURRENT_PROJECT_ID?' style="border-color:var(--sig);background:rgba(73,53,72,.04)"':'';
-    const cloudBadge=typeof acctBadgeHTML==='function'?acctBadgeHTML(e):'';
-    return `<div class="proj-card" onclick="projLoad('${e.id}')"${active}>
+let PROJ_SEARCH_Q='';
+let PROJ_SORT='date-desc';
+
+function projSetSearch(v){ PROJ_SEARCH_Q=v||''; renderProjPanel(); }
+function projSetSort(v){ PROJ_SORT=v||'date-desc'; renderProjPanel(); }
+
+function _projFilterSort(idx){
+  let out=idx;
+  const q=PROJ_SEARCH_Q.trim().toLowerCase();
+  if(q) out=out.filter(e=>(e.name||'').toLowerCase().includes(q)||(e.verseRef||'').toLowerCase().includes(q));
+  return out.slice().sort((a,b)=>{
+    if(PROJ_SORT==='name-asc')  return (a.name||'').localeCompare(b.name||'');
+    if(PROJ_SORT==='name-desc') return (b.name||'').localeCompare(a.name||'');
+    if(PROJ_SORT==='date-asc')  return (a.savedAt||0)-(b.savedAt||0);
+    return (b.savedAt||0)-(a.savedAt||0); // date-desc, default — matches today's implicit unshift order
+  });
+}
+
+function _projCardHTML(e){
+  const d=new Date(e.savedAt);
+  const when=d.toLocaleDateString([],{month:'short',day:'numeric'})+' · '+
+              d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const active=e.id===CURRENT_PROJECT_ID?' style="border-color:var(--sig);background:rgba(73,53,72,.04)"':'';
+  const cloudBadge=typeof acctBadgeHTML==='function'?acctBadgeHTML(e):'';
+  return `<div class="proj-card" data-proj-id="${e.id}" onclick="projLoad('${e.id}')"${active}>
   <div class="proj-card-name">${escH(e.name||'Untitled')}${cloudBadge}</div>
   <div class="proj-card-meta">
     <span class="proj-lang-badge">${escH(e.lang||'—')}</span>
     <span>${escH(e.verseRef||'')}</span>
     <span>·</span><span>${when}</span>
   </div>
+  <button class="proj-rename" onclick="projRename('${e.id}',event)" title="Rename project">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
+    </svg>
+  </button>
   <button class="proj-del" onclick="projDelete('${e.id}',event)" title="Delete project">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
       <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
     </svg>
   </button>
 </div>`;
-  }).join('');
 }
 
-function openProjects(){if(typeof window.spOpen==='function')window.spOpen('projects');else{const p=document.getElementById('proj-panel');if(p)p.classList.add('open');}}
+// Collapse state is session-local only (not persisted) — keeps the feature
+// simple; re-opening the panel next session shows everything expanded.
+let PROJ_FOLDERS_COLLAPSED=new Set();
+function projFolderToggle(folderId){
+  if(PROJ_FOLDERS_COLLAPSED.has(folderId)) PROJ_FOLDERS_COLLAPSED.delete(folderId);
+  else PROJ_FOLDERS_COLLAPSED.add(folderId);
+  renderProjPanel();
+}
+async function projFolderCreate(){
+  const name=await cModalPrompt('proj.folder.new-title','proj.folder.new-hint','');
+  if(!name||!name.trim()) return;
+  const folders=projFolders();
+  const maxOrder=folders.reduce((m,f)=>Math.max(m,f.order||0),0);
+  folders.push({id:'fold-'+Date.now(),name:name.trim(),order:maxOrder+1});
+  projSaveFolders(folders);
+  renderProjPanel();
+}
+
+function _projFolderSectionHTML(folder,cards,isUnfiled){
+  const collapsed=PROJ_FOLDERS_COLLAPSED.has(folder.id)?' collapsed':'';
+  const dotsBtn=isUnfiled?'':`<button class="proj-folder-dots" onclick="event.stopPropagation();projShowFolderMenu('${folder.id}',event)" title="Folder options">⋯</button>`;
+  const body=cards.length
+    ? cards.map(_projCardHTML).join('')
+    : `<div class="proj-folder-empty">${typeof t==='function'?t('proj.folder.empty'):'No projects here yet — drag one in.'}</div>`;
+  return `<div class="proj-folder-section${collapsed}" data-folder-id="${folder.id}">
+  <div class="proj-folder-hdr" onclick="projFolderToggle('${folder.id}')">
+    <svg class="proj-folder-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+    <span class="proj-folder-name">${escH(folder.name)}</span>
+    <span class="proj-folder-count">${cards.length}</span>
+    ${dotsBtn}
+  </div>
+  <div class="proj-folder-cards">${body}</div>
+</div>`;
+}
+
+function renderProjPanel(){
+  const list=document.getElementById('proj-list');
+  const idxAll=projIndex();
+  const folders=projFolders().slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  if(typeof projUpdateStorageIndicator==='function') projUpdateStorageIndicator();
+  const hint=document.getElementById('proj-folders-hint');
+  if(hint) hint.hidden=folders.length===0;
+  if(!idxAll.length){
+    list.innerHTML='<div id="proj-list-empty" data-i18n-html="proj.empty">'+(typeof t==='function'?t('proj.empty'):'No saved projects yet.<br>Press <b>Ctrl+S</b> to save your current work.')+'</div>';
+    return;
+  }
+  const idx=_projFilterSort(idxAll);
+  if(!idx.length){
+    list.innerHTML='<div id="proj-list-empty">'+(typeof t==='function'?t('proj.search-empty'):'No projects match your search.')+'</div>';
+    return;
+  }
+  if(!folders.length){
+    // No folders exist at all — skip the grouped layout entirely, render
+    // exactly as before this feature (cheapest path, zero visual change
+    // for anyone who never creates a folder).
+    list.innerHTML=idx.map(_projCardHTML).join('');
+    return;
+  }
+  let html='';
+  folders.forEach(f=>{
+    html+=_projFolderSectionHTML(f, idx.filter(e=>e.folderId===f.id), false);
+  });
+  // Unfiled — always rendered last, even if empty, so it stays a valid
+  // drop target for removing a project from any folder.
+  const unfiledCards=idx.filter(e=>e.folderId==null || !folders.some(f=>f.id===e.folderId));
+  html+=_projFolderSectionHTML({id:'__unfiled__',name:(typeof t==='function'?t('proj.folder.unfiled'):'Unfiled')}, unfiledCards, true);
+  list.innerHTML=html;
+}
+
+function openProjects(){
+  if(typeof window.spOpen==='function')window.spOpen('projects');else{const p=document.getElementById('proj-panel');if(p)p.classList.add('open');}
+  projUpdateStorageIndicator();
+}
 function closeProjects(){if(typeof window.spClose==='function')window.spClose();}
+
+/* ── Drag a project card into a folder ──
+   Modeled directly on slStartThumbDrag (Slides thumbnail reorder) — same
+   pointer-event skeleton (threshold-gated ghost drag + rect hit-test drop
+   highlighting), not HTML5 native drag-and-drop, which this codebase
+   doesn't use anywhere. Drop targets are .proj-folder-hdr rows, including
+   the always-present "Unfiled" header (the explicit remove-from-folder
+   target). #proj-list is rebuilt via innerHTML on every render, so this
+   listener is delegated once on the stable parent rather than re-attached
+   per card. */
+function projStartCardDrag(ev, projId, cardEl){
+  const list=document.getElementById('proj-list'); if(!list) return;
+  let dragStarted=false;
+  const startX=ev.clientX, startY=ev.clientY;
+  let ghost=null;
+
+  const onMove=mv=>{
+    if(!dragStarted && Math.abs(mv.clientX-startX)<4 && Math.abs(mv.clientY-startY)<4) return;
+    if(!dragStarted){
+      dragStarted=true;
+      ghost=cardEl.cloneNode(true);
+      ghost.style.cssText=`position:fixed;z-index:9999;width:${cardEl.offsetWidth}px;opacity:.75;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,.25);border-radius:var(--r);`;
+      document.body.appendChild(ghost);
+      cardEl.style.opacity='0.3';
+    }
+    if(ghost){
+      const r=cardEl.getBoundingClientRect();
+      ghost.style.left=r.left+'px';
+      ghost.style.top=(mv.clientY-cardEl.offsetHeight/2)+'px';
+    }
+    list.querySelectorAll('.proj-folder-hdr').forEach(hdr=>{
+      hdr.classList.remove('drag-over');
+      const r=hdr.getBoundingClientRect();
+      if(mv.clientX>=r.left&&mv.clientX<=r.right&&mv.clientY>=r.top&&mv.clientY<r.bottom) hdr.classList.add('drag-over');
+    });
+  };
+
+  const onUp=mv=>{
+    document.removeEventListener('pointermove',onMove);
+    document.removeEventListener('pointerup',onUp);
+    if(ghost){ ghost.remove(); ghost=null; }
+    cardEl.style.opacity='';
+    if(!dragStarted) return; // was just a click — the card's own onclick handles it
+
+    let targetFolderId;
+    list.querySelectorAll('.proj-folder-hdr').forEach(hdr=>{
+      hdr.classList.remove('drag-over');
+      const r=hdr.getBoundingClientRect();
+      if(mv.clientX>=r.left&&mv.clientX<=r.right&&mv.clientY>=r.top&&mv.clientY<r.bottom){
+        targetFolderId=hdr.closest('.proj-folder-section')?.dataset.folderId;
+      }
+    });
+    if(targetFolderId!==undefined){
+      projMoveToFolder(projId, targetFolderId==='__unfiled__'?null:targetFolderId);
+    }
+  };
+
+  document.addEventListener('pointermove',onMove);
+  document.addEventListener('pointerup',onUp);
+}
+
+function projMoveToFolder(id,folderId){
+  const idx=projIndex();
+  const entry=idx.find(e=>e.id===id);
+  if(!entry || entry.folderId===folderId) return;
+  entry.folderId=folderId||null;
+  localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx));
+  renderProjPanel();
+  // Local-only — folderId is deliberately excluded from acctCloudPayload
+  // (see PROJ_FOLDERS_KEY's comment), so no acctMarkDirty here.
+}
+
+document.getElementById('proj-list')?.addEventListener('pointerdown', ev=>{
+  if(ev.button!==0) return;
+  if(ev.target.closest('.proj-del')||ev.target.closest('.proj-rename')||ev.target.closest('.proj-folder-hdr')) return;
+  const card=ev.target.closest('.proj-card');
+  if(!card) return;
+  projStartCardDrag(ev, card.dataset.projId, card);
+});
+document.getElementById('proj-list')?.addEventListener('contextmenu', ev=>{
+  const card=ev.target.closest('.proj-card');
+  if(!card) return;
+  ev.preventDefault();
+  projShowCardCtxMenu(card.dataset.projId, ev.clientX, ev.clientY);
+});
+
+/* ── Project/folder right-click menu — shared popup, content built fresh
+   on every open (same pattern as Slides' _slShowElCtxMenu), so it never
+   shows stale content from whichever menu was opened last. Also the
+   non-drag "Move to folder" path (accessibility/touch alternative to §3's
+   drag-and-drop). ── */
+function projShowCtxMenu(cx,cy){
+  const menu=document.getElementById('proj-ctx-menu'); if(!menu) return;
+  menu.style.display='block';
+  const mw=180,mh=140;
+  let x=cx,y=cy;
+  if(x+mw>window.innerWidth-8) x=cx-mw;
+  if(y+mh>window.innerHeight-8) y=cy-mh;
+  menu.style.left=x+'px'; menu.style.top=y+'px';
+  applyLang();
+}
+function projHideCtxMenu(){ const m=document.getElementById('proj-ctx-menu'); if(m) m.style.display='none'; }
+document.addEventListener('pointerdown',ev=>{ if(!ev.target.closest('#proj-ctx-menu')) projHideCtxMenu(); });
+
+function projShowCardCtxMenu(projId, clientX, clientY){
+  const idx=projIndex();
+  const entry=idx.find(e=>e.id===projId);
+  if(!entry) return;
+  const folders=projFolders();
+  const folderItems=folders.map(f=>
+    `<button class="sl-ctx-item"${entry.folderId===f.id?' disabled':''} onclick="projHideCtxMenu();projMoveToFolder('${projId}','${f.id}')">${escH(f.name)}</button>`
+  ).join('');
+  const unfiledItem=`<button class="sl-ctx-item"${!entry.folderId?' disabled':''} onclick="projHideCtxMenu();projMoveToFolder('${projId}',null)">${typeof t==='function'?t('proj.folder.unfiled'):'Unfiled'}</button>`;
+  const menu=document.getElementById('proj-ctx-menu'); if(!menu) return;
+  menu.innerHTML=`
+    <button class="sl-ctx-item" onclick="projHideCtxMenu();projRename('${projId}')">${typeof t==='function'?t('proj.rename.title'):'Rename'}</button>
+    <div class="sl-ctx-sep"></div>
+    ${folders.length?`<div class="proj-ctx-label">${typeof t==='function'?t('proj.ctx.move-to'):'Move to folder'}</div>${unfiledItem}${folderItems}<div class="sl-ctx-sep"></div>`:''}
+    <button class="sl-ctx-item sl-ctx-del" onclick="projHideCtxMenu();projDelete('${projId}',{stopPropagation:()=>{}})">${typeof t==='function'?t('proj.delete-btn'):'Delete'}</button>`;
+  projShowCtxMenu(clientX,clientY);
+}
+
+async function projFolderRename(folderId){
+  const folders=projFolders();
+  const folder=folders.find(f=>f.id===folderId);
+  if(!folder) return;
+  const newName=await cModalPrompt('proj.folder.rename-title','proj.folder.rename-hint',folder.name);
+  if(!newName||!newName.trim()) return;
+  folder.name=newName.trim();
+  projSaveFolders(folders);
+  renderProjPanel();
+}
+
+function projFolderDelete(folderId){
+  const folders=projFolders();
+  const folder=folders.find(f=>f.id===folderId);
+  if(!folder) return;
+  const count=projIndex().filter(e=>e.folderId===folderId).length;
+  const msg=(typeof t==='function'?t('confirm.delete-folder'):'Delete folder "{name}"? {n} project(s) inside will become Unfiled — nothing is deleted.\n\nThis cannot be undone.')
+    .replace('{name}',folder.name).replace('{n}',count);
+  if(!confirm(msg)) return;
+  // Contained projects become unfiled — deleting a folder is purely
+  // organizational and must never delete the projects inside it.
+  const idx=projIndex();
+  idx.forEach(e=>{ if(e.folderId===folderId) e.folderId=null; });
+  localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx));
+  projSaveFolders(folders.filter(f=>f.id!==folderId));
+  renderProjPanel();
+}
+
+function projShowFolderMenu(folderId, ev){
+  ev.stopPropagation();
+  const menu=document.getElementById('proj-ctx-menu'); if(!menu) return;
+  menu.innerHTML=`
+    <button class="sl-ctx-item" onclick="projHideCtxMenu();projFolderRename('${folderId}')">${typeof t==='function'?t('proj.folder.rename-title'):'Rename folder'}</button>
+    <div class="sl-ctx-sep"></div>
+    <button class="sl-ctx-item sl-ctx-del" onclick="projHideCtxMenu();projFolderDelete('${folderId}')">${typeof t==='function'?t('proj.folder.delete'):'Delete folder'}</button>`;
+  projShowCtxMenu(ev.clientX,ev.clientY);
+}
+
+// navigator.storage.estimate() reports the ORIGIN's overall quota, which
+// modern browsers often grant as tens/hundreds of MB — much larger than
+// localStorage's own conventional ~5MB-per-origin ceiling, which is where
+// QuotaExceededError actually originates. estimate() alone would therefore
+// under-report how close a save is to actually failing. The character-
+// length sum against the conventional 5MB figure is the metric that
+// actually matters for THIS warning's purpose, so it's the primary number;
+// estimate() (when available) is only a supplementary tooltip figure.
+let PROJ_STORAGE_WARNED_80=false, PROJ_STORAGE_WARNED_95=false;
+let PROJ_AUTOSAVE_QUOTA_WARNED=false;
+const PROJ_STORAGE_ASSUMED_QUOTA=5*1024*1024;
+async function projUpdateStorageIndicator(){
+  const el=document.getElementById('proj-storage-indicator'); if(!el) return;
+  let usedBytes=0;
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    usedBytes += (k.length+(localStorage.getItem(k)||'').length)*2; // UTF-16 ≈ 2 bytes/char
+  }
+  const pct=Math.min(100,Math.round(usedBytes/PROJ_STORAGE_ASSUMED_QUOTA*100));
+  let estimateTip='';
+  if(navigator.storage && navigator.storage.estimate){
+    try{
+      const est=await navigator.storage.estimate();
+      if(est.quota) estimateTip=' · browser quota: '+(est.usage/1024/1024).toFixed(1)+' / '+(est.quota/1024/1024).toFixed(0)+' MB';
+    }catch(_){}
+  }
+  el.innerHTML='<span>'+(usedBytes/1024/1024).toFixed(1)+' MB used ('+pct+'%)</span>'
+    +'<div class="proj-storage-bar"><div class="proj-storage-bar-fill" style="width:'+pct+'%"></div></div>';
+  el.title='App storage — used against the ~5MB per-site limit most browsers give localStorage.'+estimateTip;
+  el.classList.toggle('proj-storage-warn', pct>=80 && pct<95);
+  el.classList.toggle('proj-storage-critical', pct>=95);
+  if(pct>=95 && !PROJ_STORAGE_WARNED_95){
+    PROJ_STORAGE_WARNED_95=true;
+    toast(typeof t==='function'?t('toast.storage-full-quota'):'Storage nearly full — export projects now to avoid losing new work');
+  } else if(pct>=80 && !PROJ_STORAGE_WARNED_80){
+    PROJ_STORAGE_WARNED_80=true;
+    toast(typeof t==='function'?t('toast.storage-warn'):'Storage is getting full — consider using Export All to back up and free space');
+  }
+}
 
 /* Render up to 4 recent projects on Screen 1 */
 function renderS1Recent(){
@@ -5371,10 +5702,19 @@ function autoSave(){
       const name=ref||'Untitled';
       const data=collectData();
       const now=Date.now();
-      try{ localStorage.setItem(PROJ_DATA_KEY(CURRENT_PROJECT_ID),JSON.stringify(data)); }catch(_){}
+      try{ localStorage.setItem(PROJ_DATA_KEY(CURRENT_PROJECT_ID),JSON.stringify(data)); PROJ_AUTOSAVE_QUOTA_WARNED=false; }
+      catch(e){
+        // Was fully silent before — now surfaces QuotaExceededError specifically,
+        // gated to once per occurrence so continuous typing doesn't spam a toast
+        // every 700ms; the flag resets on the next successful write above.
+        if(e && e.name==='QuotaExceededError' && !PROJ_AUTOSAVE_QUOTA_WARNED){
+          PROJ_AUTOSAVE_QUOTA_WARNED=true;
+          toast(typeof t==='function'?t('toast.storage-full-quota'):'Storage is full. Use Export All to back up your projects, then delete some to free space.');
+        }
+      }
       const idx=projIndex();
       const entry=idx.find(e=>e.id===CURRENT_PROJECT_ID);
-      if(entry){ entry.name=name;entry.lang=LANG;entry.verseRef=ref;entry.savedAt=now;
+      if(entry){ if(!entry.renamed) entry.name=name; entry.lang=LANG;entry.verseRef=ref;entry.savedAt=now;
         localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx)); }
       // Marks dirty only — NOT a cloud push on every keystroke burst. The
       // actual push happens on account.js's own coarse flusher (~30s,
@@ -5745,6 +6085,10 @@ function loadFile(e){
       }
       loadData(data);
       CURRENT_FILENAME=loadedName;
+      // A disk file is a fresh, independent document — never let it stay
+      // silently bound to whatever project id was open before, or the next
+      // Ctrl+S would overwrite that unrelated saved project.
+      CURRENT_PROJECT_ID=null;
       toast((typeof t==='function'?t('toast.loaded'):'Loaded: ')+loadedName);
     }catch(_){toast(typeof t==='function'?t('toast.load-error'):'Could not read file');}
   };
@@ -5768,6 +6112,7 @@ function loadFromScreen1(e){
       openEditor();
       loadData(data);
       CURRENT_FILENAME=loadedName;
+      CURRENT_PROJECT_ID=null; // same reasoning as loadFile() above
       toast((typeof t==='function'?t('toast.loaded'):'Loaded: ')+loadedName);
     }catch(_){toast(typeof t==='function'?t('toast.load-error'):'Could not read file');}
   };

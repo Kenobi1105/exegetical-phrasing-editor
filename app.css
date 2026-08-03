@@ -343,13 +343,16 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 .proj-lang-badge{background:rgba(73,53,72,.1);color:var(--sig);
   padding:1px 6px;border-radius:99px;font-size:9px;font-weight:700;
   letter-spacing:.06em;text-transform:uppercase}
-.proj-del{position:absolute;top:10px;right:10px;width:22px;height:22px;
+.proj-del,.proj-rename{position:absolute;top:10px;width:22px;height:22px;
   border:none;background:transparent;cursor:pointer;border-radius:4px;
   display:flex;align-items:center;justify-content:center;color:var(--muted);
   opacity:0;transition:opacity .15s,background .13s}
-.proj-card:hover .proj-del{opacity:1}
+.proj-del{right:10px}
+.proj-rename{right:34px}
+.proj-card:hover .proj-del,.proj-card:hover .proj-rename{opacity:1}
 .proj-del:hover{background:rgba(180,40,40,.12);color:#b42828}
-.proj-del svg{width:13px;height:13px;pointer-events:none}
+.proj-rename:hover{background:rgba(73,53,72,.1);color:var(--sig)}
+.proj-del svg,.proj-rename svg{width:13px;height:13px;pointer-events:none}
 #proj-panel-footer{padding:14px 12px;border-top:1px solid rgba(0,0,0,.08);flex-shrink:0}
 #proj-save-btn,#proj-export-all-btn{width:100%;height:36px;border-radius:99px;
   font-family:var(--ui);font-size:12px;font-weight:700;cursor:pointer;
@@ -4666,3 +4669,63 @@ body.hide-sections #section-strips{display:none}
 }
 .proj-cloud-badge.is-synced{background:#3fa34d}
 .proj-cloud-badge.is-pending{background:var(--muted)}
+
+/* ── Projects panel: folder sections ── */
+.proj-folder-section{margin-bottom:4px}
+.proj-folder-hdr{
+  display:flex;align-items:center;gap:6px;padding:7px 8px;border-radius:6px;
+  cursor:pointer;user-select:none;transition:background .13s,outline .1s;
+  font-family:var(--ui);font-size:12px;font-weight:700;color:var(--sig)
+}
+.proj-folder-hdr:hover{background:rgba(73,53,72,.06)}
+.proj-folder-hdr.drag-over{outline:2px dashed var(--active,#C8A84B);outline-offset:2px;background:rgba(200,168,75,.1)}
+.proj-folder-chevron{width:11px;height:11px;flex-shrink:0;transition:transform .15s}
+.proj-folder-section.collapsed .proj-folder-chevron{transform:rotate(-90deg)}
+.proj-folder-name{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.proj-folder-count{font-size:10px;font-weight:600;color:var(--muted);background:rgba(73,53,72,.08);
+  border-radius:99px;padding:1px 7px;flex-shrink:0}
+.proj-folder-dots{width:18px;height:18px;flex-shrink:0;border:none;background:transparent;color:var(--muted);
+  cursor:pointer;border-radius:4px;display:flex;align-items:center;justify-content:center;opacity:0;transition:opacity .13s}
+.proj-folder-hdr:hover .proj-folder-dots{opacity:1}
+.proj-folder-dots:hover{background:rgba(73,53,72,.12);color:var(--sig)}
+.proj-folder-cards{display:flex;flex-direction:column;gap:8px;padding:6px 0 4px}
+.proj-folder-section.collapsed .proj-folder-cards{display:none}
+.proj-folder-empty{padding:4px 8px 8px;font-family:var(--ui);font-size:10.5px;color:var(--muted);font-style:italic}
+.proj-ctx-label{padding:5px 10px 3px;font-family:var(--ui);font-size:9.5px;font-weight:700;
+  text-transform:uppercase;letter-spacing:.04em;color:rgba(247,243,233,.5)}
+
+/* ── Projects panel: search/sort row ── */
+#proj-panel-search-row{display:flex;gap:6px;padding:0 12px 10px;flex-shrink:0}
+#proj-search{
+  flex:1;height:30px;padding:0 10px;border:1.5px solid rgba(73,53,72,.18);
+  border-radius:var(--rs);background:var(--bg);font-family:var(--ui);font-size:12px;
+  color:var(--ink);outline:none;box-sizing:border-box
+}
+#proj-search:focus{border-color:var(--sig)}
+#proj-sort{
+  height:30px;padding:0 6px;border:1.5px solid rgba(73,53,72,.18);
+  border-radius:var(--rs);background:var(--bg);font-family:var(--ui);font-size:11px;
+  color:var(--ink);outline:none;flex-shrink:0
+}
+#proj-new-folder-btn{
+  width:30px;height:30px;flex-shrink:0;border:1.5px solid rgba(73,53,72,.18);
+  border-radius:var(--rs);background:var(--bg);color:var(--sig);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:background .13s
+}
+#proj-new-folder-btn:hover{background:rgba(73,53,72,.08)}
+.proj-folders-hint{
+  padding:0 12px 10px;font-family:var(--ui);font-size:10px;color:var(--muted);
+  font-style:italic;line-height:1.4
+}
+
+/* ── Projects panel: storage usage indicator ── */
+#proj-storage-indicator{
+  font-family:var(--ui);font-size:10px;color:var(--muted);margin-bottom:8px;
+  display:flex;align-items:center;gap:6px
+}
+#proj-storage-indicator .proj-storage-bar{
+  flex:1;height:4px;border-radius:2px;background:rgba(73,53,72,.12);overflow:hidden
+}
+#proj-storage-indicator .proj-storage-bar-fill{height:100%;background:var(--active);transition:width .2s}
+#proj-storage-indicator.proj-storage-warn .proj-storage-bar-fill{background:#d98c00}
+#proj-storage-indicator.proj-storage-critical .proj-storage-bar-fill{background:#c83c3c}
