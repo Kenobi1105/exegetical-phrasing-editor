@@ -4697,14 +4697,14 @@ body.hide-sections #section-strips{display:none}
 /* ── Projects panel: search/sort row ── */
 #proj-panel-search-row{display:flex;gap:6px;padding:0 12px 10px;flex-shrink:0}
 #proj-search{
-  flex:1;height:30px;padding:0 10px;border:1.5px solid rgba(73,53,72,.18);
+  flex:1;min-width:0;height:30px;padding:0 10px;border:1.5px solid rgba(73,53,72,.18);
   border-radius:var(--rs);background:var(--bg);font-family:var(--ui);font-size:12px;
   color:var(--ink);outline:none;box-sizing:border-box
 }
 #proj-search:focus{border-color:var(--sig)}
 #proj-sort{
-  height:30px;padding:0 6px;border:1.5px solid rgba(73,53,72,.18);
-  border-radius:var(--rs);background:var(--bg);font-family:var(--ui);font-size:11px;
+  width:78px;height:30px;padding:0 4px;border:1.5px solid rgba(73,53,72,.18);
+  border-radius:var(--rs);background:var(--bg);font-family:var(--ui);font-size:10.5px;
   color:var(--ink);outline:none;flex-shrink:0
 }
 #proj-new-folder-btn{
