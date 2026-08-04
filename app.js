@@ -2049,11 +2049,6 @@ function _isPlainFormatSpan(el){
   if(el.querySelector&&el.querySelector('sup,.crit-mark')) return false;
   return /\S/.test(el.textContent||'');
 }
-function _touchesWithNoSpace(el, side){
-  const txt=el.textContent||'';
-  if(!txt) return false;
-  return side==='before' ? !/\s$/.test(txt) : !/^\s/.test(txt);
-}
 
 /* Wrap words in a single .dblock's text with .ann-word spans for word-level
    connector anchoring. Only touches the given block element, not the whole canvas,
@@ -8580,9 +8575,16 @@ function _demTokenize(blockEl){
             // unless it's a plain color/formatting span glued with no
             // whitespace to what follows (e.g. a separately-colored vav
             // prefix): that's the same word, not a boundary, so keep
-            // walking backward through it instead of breaking.
+            // walking backward through it instead of breaking. _gluedRun
+            // checks the actual gap between prev and ch by serializing
+            // everything in between (so a whitespace TEXT NODE SIBLING
+            // sitting between prev and ch is correctly seen) — checking
+            // only prev's own internal trailing edge isn't enough, since
+            // an ordinarily-spaced colored word's own text has no
+            // trailing space even though a separate whitespace sibling
+            // still follows it before the next real word.
             if(prev.querySelector && prev.querySelector('.dedit-word')){
-              if(!(_isPlainFormatSpan(prev) && _touchesWithNoSpace(prev,'before'))) break;
+              if(!(_isPlainFormatSpan(prev) && _gluedRun(prev,ch))) break;
             }
             // A crit-mark's OWN glyph tells us which side it belongs to:
             //   • closing half of a pair (ends with ] or › or is ″) always
