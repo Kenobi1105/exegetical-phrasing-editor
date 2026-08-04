@@ -2118,16 +2118,29 @@ function _mergeGluedWordSpans(textEl, wordClass){
     const outerA=_outerAt(a,b), outerB=_outerAt(b,a);
     if(!outerA||!outerB||outerA.parentNode!==outerB.parentNode) continue;
 
+    // outerA/outerB are the sibling-level wrapper elements containing a/b
+    // — but a real paste (e.g. from Logos/BibleArc) commonly wraps EVERY
+    // run in its own <span style="font-size:...">, including runs that
+    // hold several whitespace-separated words, not just the one glued
+    // word. A naive "move outerA..outerB wholesale into a new wrapper"
+    // would then swallow those other, legitimately-separate words too
+    // (e.g. absorbing "תְּשַׂבֵּ֗רְנָה עַ֚ד" merely because they happen to
+    // share outerB with the glued "׀"). A Range spanning from outerA's
+    // start to just after b itself (not to the end of outerB) sidesteps
+    // this: extractContents() automatically splits outerB at that exact
+    // boundary, cloning its own style/attrs onto BOTH halves, so only
+    // b's own contribution moves into the merge and everything after it
+    // stays behind as its own correctly-styled sibling — the same
+    // partial-boundary splitting the diagram split-click handler already
+    // relies on elsewhere in this file.
+    const range=document.createRange();
+    range.setStartBefore(outerA);
+    range.setEndAfter(b);
+    const frag=range.extractContents();
     const wrapper=document.createElement('span');
     wrapper.className=wordClass;
-    outerA.parentNode.insertBefore(wrapper, outerA);
-    let n=outerA;
-    while(n){
-      const next=n===outerB?null:n.nextSibling;
-      wrapper.appendChild(n);
-      if(n===outerB) break;
-      n=next;
-    }
+    wrapper.appendChild(frag);
+    range.insertNode(wrapper);
     // Unwrap the two original (now-nested, redundant) word spans —
     // querySelectorAll('.'+wordClass) must return exactly ONE element
     // for this merged word, not three.
@@ -4839,6 +4852,16 @@ function loadData(data){
     const tc=row.querySelector(`#tc-${rid} .cedit`);
     if(tc&&rd.transHTML)tc.innerHTML=_stripBgFromHTML(rd.transHTML);
     if(tc&&rd.transIndent){tc.dataset.indent=rd.transIndent;}
+    // Unlike makeRowEl (used by addRow/split/etc.), this template never
+    // applied the current session font-size — _applySessionFontDefaults()
+    // is called BEFORE loadData() at every one of its call sites (project
+    // load, JSON load, language selection), so its own bulk re-apply loop
+    // always runs against zero rows and is a no-op here. Loaded rows fell
+    // back to whatever bare CSS default .cedit has, which is why a freshly
+    // split/added row (styled correctly at creation via makeRowEl) could
+    // visibly mismatch every row that came from the loaded project.
+    if(oc) oc.style.fontSize=CEDIT_O_SIZE+'px';
+    if(tc) tc.style.fontSize=CEDIT_T_SIZE+'px';
     document.getElementById('rows-body').appendChild(row);
   });
   recomputeIds();
@@ -8575,16 +8598,20 @@ function _demTokenize(blockEl){
             // unless it's a plain color/formatting span glued with no
             // whitespace to what follows (e.g. a separately-colored vav
             // prefix): that's the same word, not a boundary, so keep
-            // walking backward through it instead of breaking. _gluedRun
-            // checks the actual gap between prev and ch by serializing
-            // everything in between (so a whitespace TEXT NODE SIBLING
-            // sitting between prev and ch is correctly seen) — checking
-            // only prev's own internal trailing edge isn't enough, since
-            // an ordinarily-spaced colored word's own text has no
-            // trailing space even though a separate whitespace sibling
-            // still follows it before the next real word.
+            // walking backward through it instead of breaking. Two checks
+            // are both needed, for two different ways whitespace can sit
+            // between prev and ch: _gluedRun catches a separate whitespace
+            // TEXT NODE SIBLING between prev and ch (e.g. a bare colored
+            // word followed by " " then the next word); the trailing-
+            // space check on prev's OWN textContent catches whitespace
+            // baked INSIDE prev's own trailing edge — common when every
+            // run is individually span-wrapped (e.g. pasted-in content
+            // where "...בְּנֹתַ֗י " ends in a space right before its own
+            // closing tag, with zero gap to the next sibling) — a case
+            // _gluedRun alone can't see since it only serializes the gap
+            // BETWEEN two nodes, not either node's own internal content.
             if(prev.querySelector && prev.querySelector('.dedit-word')){
-              if(!(_isPlainFormatSpan(prev) && _gluedRun(prev,ch))) break;
+              if(!(_isPlainFormatSpan(prev) && !/\s$/.test(prev.textContent||'') && _gluedRun(prev,ch))) break;
             }
             // A crit-mark's OWN glyph tells us which side it belongs to:
             //   • closing half of a pair (ends with ] or › or is ″) always
