@@ -2099,19 +2099,22 @@ function _wrapBlockTextWords_single(blockEl){
     }
     tn.parentNode.replaceChild(frag,tn);
   });
-  _mergeGluedAnnWords(textEl);
+  _mergeGluedWordSpans(textEl, 'ann-word');
 }
 
-/* Post-pass for _wrapBlockTextWords_single: the per-text-node wrap above
-   can't see across element boundaries, so a word split across a color/
-   highlight span (e.g. a separately-colored vav-conjunction prefix,
-   <span class="hl">וְ</span>כִלְיֹון֙) ends up as two separate .ann-word
-   spans. Walk them in document order and splice any pair with no
-   whitespace between them into a single .ann-word wrapping BOTH original
-   nodes (preserving the inner color span so highlighting/text-color is
-   not lost), so connector word-anchoring (_getWordIdx) sees one word. */
-function _mergeGluedAnnWords(textEl){
-  let words=[...textEl.querySelectorAll('.ann-word')];
+/* Post-pass shared by _wrapBlockTextWords_single (.ann-word, connector
+   word-anchoring) and _demTokenize (.dedit-word, Diagram Edit Mode word-
+   split): each caller's per-text-node wrap can't see across element
+   boundaries, so a word split across a color/highlight span (e.g. a
+   separately-colored vav-conjunction prefix, <span class="hl">וְ</span>
+   כִלְיֹון֙) ends up as two separate word spans of that caller's class.
+   Walk them in document order and splice any pair with no whitespace
+   between them into a single span of the same class wrapping BOTH
+   original nodes (preserving the inner color span so highlighting/text-
+   color is not lost), so both connector word-anchoring (_getWordIdx) and
+   Diagram Edit Mode's split-click/hover see exactly one word/token. */
+function _mergeGluedWordSpans(textEl, wordClass){
+  let words=[...textEl.querySelectorAll('.'+wordClass)];
   for(let i=0;i<words.length-1;i++){
     const a=words[i], b=words[i+1];
     if(!a.isConnected||!b.isConnected) continue; // already merged away
@@ -2121,7 +2124,7 @@ function _mergeGluedAnnWords(textEl){
     if(!outerA||!outerB||outerA.parentNode!==outerB.parentNode) continue;
 
     const wrapper=document.createElement('span');
-    wrapper.className='ann-word';
+    wrapper.className=wordClass;
     outerA.parentNode.insertBefore(wrapper, outerA);
     let n=outerA;
     while(n){
@@ -2130,11 +2133,11 @@ function _mergeGluedAnnWords(textEl){
       if(n===outerB) break;
       n=next;
     }
-    // Unwrap the two original (now-nested, redundant) .ann-word spans —
-    // querySelectorAll('.ann-word') must return exactly ONE element for
-    // this merged word, not three.
+    // Unwrap the two original (now-nested, redundant) word spans —
+    // querySelectorAll('.'+wordClass) must return exactly ONE element
+    // for this merged word, not three.
     [a,b].forEach(sp=>{ if(sp.isConnected) sp.replaceWith(...sp.childNodes); });
-    words=[...textEl.querySelectorAll('.ann-word')]; // re-query after mutation
+    words=[...textEl.querySelectorAll('.'+wordClass)]; // re-query after mutation
   }
 }
 
@@ -8470,6 +8473,15 @@ function _demTokenize(blockEl){
     tn.parentNode.replaceChild(frag, tn);
   });
 
+  // A word split across a color/formatting span boundary (e.g. a
+  // separately-colored vav-conjunction prefix) is still one .dedit-word
+  // at this point — merge it into one span BEFORE Phase 3 assigns split
+  // markers/group indices, so it's genuinely one token (one hover
+  // target, one click target), not just a group that happens to move
+  // together when split. Mirrors _wrapBlockTextWords_single's own
+  // .ann-word merge via the same shared helper.
+  _mergeGluedWordSpans(textEl, 'dedit-word');
+
   /* Phase 3: insert split-point markers (.dedit-sp) just BEFORE each word's
      "group start" = the first non-word node after the previous word (or start).
      We walk the flat child list of textEl (and inline element children) in order,
@@ -8629,9 +8641,11 @@ function _demTokenize(blockEl){
 function _demUntokenize(blockEl){
   const textEl=blockEl.querySelector('.dblock-text');
   if(!textEl) return;
-  // Remove .dedit-word spans (replace with text content)
+  // Unwrap .dedit-word spans (keep children, not just text content — a
+  // merged .dedit-word can wrap a nested color/highlight span, see
+  // _mergeGluedWordSpans, so flattening to plain text would discard it)
   textEl.querySelectorAll('.dedit-word').forEach(sp=>{
-    sp.replaceWith(document.createTextNode(sp.textContent));
+    sp.replaceWith(...sp.childNodes);
   });
   // Remove .dedit-sp markers
   textEl.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
@@ -8807,7 +8821,7 @@ document.addEventListener('click', ev=>{
     beforeHTML='';
     // afterHTML = full content (minus tokenization markup)
     const tmp=clone.cloneNode(true);
-    tmp.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    tmp.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(...sp.childNodes));
     tmp.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
     tmp.normalize();
     afterHTML=tmp.innerHTML.replace(/^\s+|\s+$/g,'');
@@ -8821,8 +8835,9 @@ document.addEventListener('click', ev=>{
     const beforeFrag=rangeBefore.cloneContents();
     const beforeDiv=document.createElement('div');
     beforeDiv.appendChild(beforeFrag);
-    // Unwrap tokenization spans
-    beforeDiv.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    // Unwrap tokenization spans (keep children — a merged .dedit-word can
+    // wrap a nested color/highlight span, see _mergeGluedWordSpans)
+    beforeDiv.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(...sp.childNodes));
     beforeDiv.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
     beforeDiv.normalize();
     beforeHTML=beforeDiv.innerHTML.replace(/^\s+|\s+$/g,'');
@@ -8834,7 +8849,7 @@ document.addEventListener('click', ev=>{
     const afterFrag=rangeAfter.cloneContents();
     const afterDiv=document.createElement('div');
     afterDiv.appendChild(afterFrag);
-    afterDiv.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    afterDiv.querySelectorAll('.dedit-word').forEach(sp=>sp.replaceWith(...sp.childNodes));
     afterDiv.querySelectorAll('.dedit-sp').forEach(sp=>sp.remove());
     afterDiv.normalize();
     afterHTML=afterDiv.innerHTML.replace(/^\s+|\s+$/g,'');
