@@ -1282,6 +1282,30 @@ function renderDiagram(){
   if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 50);
 }
 
+/* Serializes a plain-text contenteditable's live DOM into a string with
+   real newlines — a bare contenteditable has no explicit Enter handling,
+   so the browser inserts <div>/<br> children instead of literal "\n",
+   which Node.textContent silently drops at those element boundaries. */
+function _ceTextWithNewlines(el){
+  let out='';
+  el.childNodes.forEach(node=>{
+    if(node.nodeType===Node.TEXT_NODE){
+      out+=node.nodeValue;
+    } else if(node.nodeType===Node.ELEMENT_NODE){
+      if(node.nodeName==='BR'){
+        out+='\n';
+      } else if(node.nodeName==='DIV'||node.nodeName==='P'){
+        if(out && !out.endsWith('\n')) out+='\n';
+        out+=_ceTextWithNewlines(node);
+        if(!out.endsWith('\n')) out+='\n';
+      } else {
+        out+=_ceTextWithNewlines(node);
+      }
+    }
+  });
+  return out;
+}
+
 /* Build and mount one .dlabel element from a data object.
    Called both by renderDiagramLabels (rebuild) and addDiagramLabel (new). */
 function _makeLabelEl(lb){
@@ -1324,7 +1348,7 @@ function _makeLabelEl(lb){
   txt.textContent=lb.text||'';
   txt.addEventListener('input', ()=>{
     const found=DIAGRAM_DATA.labels.find(l=>l.id===lb.id);
-    if(found) found.text=txt.textContent;
+    if(found) found.text=_ceTextWithNewlines(txt).replace(/\n+$/,'');
     autoSave();
   });
   txt.addEventListener('keydown', ev=>{
@@ -1345,7 +1369,7 @@ function _makeLabelEl(lb){
     const startX=ev.clientX, startW=el.offsetWidth;
     function onMove(e){
       if(_pinchActive) return;
-      const dx=IS_RTL?(startX-e.clientX):(e.clientX-startX);
+      const dx=e.clientX-startX;
       const newW=Math.max(80, startW+dx);
       el.style.width=newW+'px';
       const found=DIAGRAM_DATA.labels.find(l=>l.id===lb.id);
@@ -2013,6 +2037,24 @@ function _getWordIdx(textEl, targetNode){
   return -1;
 }
 
+/* A plain color/highlight/format span (no crit-mark/sup semantics) is
+   never itself a word boundary — e.g. a separately-colored vav-
+   conjunction prefix must still count as one word with what follows.
+   Shared by _wrapBlockTextWords_single (connector word-anchoring) and
+   _insertSplitPoints inside _demTokenize (Diagram Edit Mode word-split). */
+function _isPlainFormatSpan(el){
+  if(!el||el.nodeType!==Node.ELEMENT_NODE) return false;
+  if(el.nodeName==='SUP') return false;
+  if(el.classList&&el.classList.contains('crit-mark')) return false;
+  if(el.querySelector&&el.querySelector('sup,.crit-mark')) return false;
+  return /\S/.test(el.textContent||'');
+}
+function _touchesWithNoSpace(el, side){
+  const txt=el.textContent||'';
+  if(!txt) return false;
+  return side==='before' ? !/\s$/.test(txt) : !/^\s/.test(txt);
+}
+
 /* Wrap words in a single .dblock's text with .ann-word spans for word-level
    connector anchoring. Only touches the given block element, not the whole canvas,
    so it's safe to call during a mousedown without disrupting other blocks' DOM. */
@@ -2057,6 +2099,62 @@ function _wrapBlockTextWords_single(blockEl){
     }
     tn.parentNode.replaceChild(frag,tn);
   });
+  _mergeGluedAnnWords(textEl);
+}
+
+/* Post-pass for _wrapBlockTextWords_single: the per-text-node wrap above
+   can't see across element boundaries, so a word split across a color/
+   highlight span (e.g. a separately-colored vav-conjunction prefix,
+   <span class="hl">וְ</span>כִלְיֹון֙) ends up as two separate .ann-word
+   spans. Walk them in document order and splice any pair with no
+   whitespace between them into a single .ann-word wrapping BOTH original
+   nodes (preserving the inner color span so highlighting/text-color is
+   not lost), so connector word-anchoring (_getWordIdx) sees one word. */
+function _mergeGluedAnnWords(textEl){
+  let words=[...textEl.querySelectorAll('.ann-word')];
+  for(let i=0;i<words.length-1;i++){
+    const a=words[i], b=words[i+1];
+    if(!a.isConnected||!b.isConnected) continue; // already merged away
+    if(!_gluedRun(a,b)) continue;
+
+    const outerA=_outerAt(a,b), outerB=_outerAt(b,a);
+    if(!outerA||!outerB||outerA.parentNode!==outerB.parentNode) continue;
+
+    const wrapper=document.createElement('span');
+    wrapper.className='ann-word';
+    outerA.parentNode.insertBefore(wrapper, outerA);
+    let n=outerA;
+    while(n){
+      const next=n===outerB?null:n.nextSibling;
+      wrapper.appendChild(n);
+      if(n===outerB) break;
+      n=next;
+    }
+    // Unwrap the two original (now-nested, redundant) .ann-word spans —
+    // querySelectorAll('.ann-word') must return exactly ONE element for
+    // this merged word, not three.
+    [a,b].forEach(sp=>{ if(sp.isConnected) sp.replaceWith(...sp.childNodes); });
+    words=[...textEl.querySelectorAll('.ann-word')]; // re-query after mutation
+  }
+}
+
+/* True if there's no whitespace anywhere between the end of `a` and the
+   start of `b` in rendered document order (siblings or across element
+   boundaries alike) — the plain-formatting-span "glued word" case. */
+function _gluedRun(a,b){
+  const range=document.createRange();
+  range.setStartAfter(a);
+  range.setEndBefore(b);
+  return !/\s/.test(range.toString());
+}
+
+/* Returns the ancestor-or-self of `node` that is a direct child of the
+   nearest common ancestor of `node` and `other` — i.e. the node at the
+   level where `node` and `other` are true siblings. */
+function _outerAt(node, other){
+  let n=node;
+  while(n.parentNode && !n.parentNode.contains(other)) n=n.parentNode;
+  return n.parentNode ? n : null;
 }
 
 function startConnectorDraw(ev, fromRid){
@@ -8461,9 +8559,14 @@ function _demTokenize(blockEl){
             break; // punctuation (and everything before it) stays behind
           }
           if(prev.nodeType===Node.ELEMENT_NODE){
-            // An element containing a real word ends the group unconditionally
-            // (can happen when words live inside color spans at this level).
-            if(prev.querySelector && prev.querySelector('.dedit-word')) break;
+            // An element containing a real word normally ends the group —
+            // unless it's a plain color/formatting span glued with no
+            // whitespace to what follows (e.g. a separately-colored vav
+            // prefix): that's the same word, not a boundary, so keep
+            // walking backward through it instead of breaking.
+            if(prev.querySelector && prev.querySelector('.dedit-word')){
+              if(!(_isPlainFormatSpan(prev) && _touchesWithNoSpace(prev,'before'))) break;
+            }
             // A crit-mark's OWN glyph tells us which side it belongs to:
             //   • closing half of a pair (ends with ] or › or is ″) always
             //     belongs to whatever precedes it — never sweeps forward
