@@ -8419,9 +8419,14 @@ function _demTokenize(blockEl){
   // within whatever span it's currently recursing inside). Stripping
   // any pre-existing .ann-word wrapping back to plain text first keeps
   // this function's input consistent no matter what touched the block
-  // beforehand.
+  // beforehand. Unwrap (keep children) rather than flatten to a plain
+  // text node — .ann-word can nest a color/highlight span (e.g. a glued
+  // vav-conjunction prefix, see _mergeGluedAnnWords), and flattening to
+  // .textContent silently discarded that nested formatting every time
+  // Diagram Edit Mode was entered (including the Shift-held temporary
+  // toggle), even though the underlying saved row HTML was never touched.
   if(textEl.querySelector('.ann-word')){
-    textEl.querySelectorAll('.ann-word').forEach(sp=>sp.replaceWith(document.createTextNode(sp.textContent)));
+    textEl.querySelectorAll('.ann-word').forEach(sp=>sp.replaceWith(...sp.childNodes));
     textEl.normalize();
   }
 
