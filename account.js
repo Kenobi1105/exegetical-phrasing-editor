@@ -274,6 +274,39 @@ async function acctPull(){
     }
     changed=true;
   }
+
+  // Prune local projects that were deleted on another device. deleteProjectFromCloud
+  // is a hard delete with no tombstone, so the only signal available is absence from
+  // a successful, complete pull — this loop is deliberately conservative about when
+  // that absence actually means "deleted elsewhere" vs. "never synced yet":
+  //   - Only a project with cloudAt set has EVER been confirmed to exist in the
+  //     cloud; one that's never synced (no cloudAt) is simply not-yet-pushed, and
+  //     its absence here says nothing about deletion — must never be pruned.
+  //   - Skips anything already dirty (unpushed local edits) or already in this
+  //     device's own delete queue, matching the same protections used above.
+  //   - Never silently deletes the CURRENTLY OPEN project out from under an active
+  //     edit — surfaces a toast instead, same philosophy as the newer-cloud-version
+  //     warning above, rather than destroying local work without telling the user.
+  const cloudIds=new Set(rows.map(r=>String(r.id)));
+  const prunedNames=[];
+  let openDeletedRemotely=false;
+  for(const entry of idx.slice()){
+    const id=entry.id;
+    if(cloudIds.has(id)) continue;
+    if(typeof entry.cloudAt!=='number') continue;
+    if(deleteQueue.includes(id)) continue;
+    if(ACCT.dirty.has(id)) continue;
+    if(typeof CURRENT_PROJECT_ID!=='undefined' && id===CURRENT_PROJECT_ID){
+      openDeletedRemotely=true;
+      continue;
+    }
+    try{ localStorage.removeItem(PROJ_DATA_KEY(id)); }catch(_e){}
+    const i=idx.findIndex(e=>e.id===id);
+    if(i!==-1) idx.splice(i,1);
+    prunedNames.push(entry.name||id);
+    changed=true;
+  }
+
   if(changed){
     try{ localStorage.setItem(PROJ_INDEX_KEY, JSON.stringify(idx)); }catch(_e){}
     if(typeof renderProjPanel==='function') renderProjPanel();
@@ -293,6 +326,15 @@ async function acctPull(){
       ? t('account.toast.remote-overwrote').replace('{n}', affected.length)
       : affected.length+' project(s) were updated from another device';
     toast(msg);
+  }
+  if(prunedNames.length){
+    const msg=typeof t==='function'
+      ? t('account.toast.remote-deleted').replace('{n}', prunedNames.length)
+      : prunedNames.length+' project(s) were deleted from another device';
+    toast(msg);
+  }
+  if(openDeletedRemotely){
+    toast(typeof t==='function'?t('account.toast.open-deleted-remotely'):'This project was deleted from another device — save here to keep it');
   }
 }
 
