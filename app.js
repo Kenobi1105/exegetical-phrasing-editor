@@ -2122,19 +2122,22 @@ function _mergeGluedWordSpans(textEl, wordClass){
     // — but a real paste (e.g. from Logos/BibleArc) commonly wraps EVERY
     // run in its own <span style="font-size:...">, including runs that
     // hold several whitespace-separated words, not just the one glued
-    // word. A naive "move outerA..outerB wholesale into a new wrapper"
-    // would then swallow those other, legitimately-separate words too
-    // (e.g. absorbing "תְּשַׂבֵּ֗רְנָה עַ֚ד" merely because they happen to
-    // share outerB with the glued "׀"). A Range spanning from outerA's
-    // start to just after b itself (not to the end of outerB) sidesteps
-    // this: extractContents() automatically splits outerB at that exact
-    // boundary, cloning its own style/attrs onto BOTH halves, so only
-    // b's own contribution moves into the merge and everything after it
-    // stays behind as its own correctly-styled sibling — the same
-    // partial-boundary splitting the diagram split-click handler already
-    // relies on elsewhere in this file.
+    // word, and those runs can carry LEADING or trailing whitespace of
+    // their own (e.g. a plain span "  אֶת־כָּל־" whose glued word is only
+    // the last part of its content). Starting the range at `a` itself
+    // (not outerA's own start) and ending right after `b` itself (not
+    // outerB's end) sidesteps both directions of that problem at once:
+    // extractContents() automatically splits outerA/outerB at those exact
+    // boundaries, cloning their own style/attrs onto every resulting
+    // piece, so only the actually-glued a..b span moves into the merge —
+    // any leading whitespace before `a` (which would otherwise get
+    // dragged inside the merged word, making it look glued to whatever
+    // precedes it too) and any trailing content after `b` both stay
+    // behind as their own correctly-styled siblings — the same partial-
+    // boundary splitting the diagram split-click handler already relies
+    // on elsewhere in this file.
     const range=document.createRange();
-    range.setStartBefore(outerA);
+    range.setStartBefore(a);
     range.setEndAfter(b);
     const frag=range.extractContents();
     const wrapper=document.createElement('span');
@@ -2146,6 +2149,12 @@ function _mergeGluedWordSpans(textEl, wordClass){
     // for this merged word, not three.
     [a,b].forEach(sp=>{ if(sp.isConnected) sp.replaceWith(...sp.childNodes); });
     words=[...textEl.querySelectorAll('.'+wordClass)]; // re-query after mutation
+    // The merge just collapsed two entries into one, shifting everything
+    // after it down by one position — without this, the loop's own i++
+    // would skip re-checking the merged word against its NEW neighbor
+    // (a three-way glued run, e.g. a+b+c all touching with no whitespace,
+    // would otherwise only ever merge a+b and never notice c).
+    i--;
   }
 }
 
@@ -2156,7 +2165,18 @@ function _gluedRun(a,b){
   const range=document.createRange();
   range.setStartAfter(a);
   range.setEndBefore(b);
-  return !/\s/.test(range.toString());
+  if(/\s/.test(range.toString())) return false;
+  // A <sup> apparatus-letter or .crit-mark sitting in the gap (e.g. a
+  // real word immediately followed by a footnote-letter superscript and
+  // then end-of-verse punctuation, with no actual space anywhere) is
+  // invisible-width but never grounds for gluing two otherwise-separate
+  // tokens together — Phase 1 deliberately excludes both from
+  // tokenization for exactly this reason (see _demTokenize's TreeWalker),
+  // so a merge pass built on the same word list must respect the same
+  // exclusion rather than naively reading "no whitespace" as "glued".
+  const frag=range.cloneContents();
+  if(frag.querySelector && frag.querySelector('sup,.crit-mark')) return false;
+  return true;
 }
 
 /* Returns the ancestor-or-self of `node` that is a direct child of the
@@ -8574,8 +8594,32 @@ function _demTokenize(blockEl){
           return null;
         };
         let groupStart=ch;
+        let groupStartParent=parent;
         let prev=ch.previousSibling;
-        while(prev){
+        let prevContainer=parent;
+        while(true){
+          if(!prev){
+            // Exhausted siblings at this nesting level with nothing
+            // triggering a break — e.g. ch is the first real content
+            // inside its own wrapper span. A per-level walk would just
+            // stop here, but a matched-pair opening marker (crit-mark or
+            // <sup>letter</sup>) can legitimately sit ONE LEVEL UP, as
+            // this wrapper's own previous sibling (e.g. "...בַּשַּׁ֛עַר
+            // </span><sup>a</sup><span>וְהַזְּקֵנִ֖ים...` — the opening
+            // "a" is a sibling of the span wrapping the word, not of the
+            // word itself). Popping up — treating the exhausted
+            // container as fully absorbed (everything in it up to ch
+            // already passed every check) and continuing the SAME walk
+            // against ITS previous sibling — lets the existing crit-
+            // mark/sup opening/closing logic below actually reach it.
+            if(prevContainer===textEl) break; // reached the block's own root — nowhere left to pop up to
+            const upParent=prevContainer.parentNode;
+            if(!upParent) break;
+            groupStart=prevContainer; groupStartParent=upParent;
+            prev=prevContainer.previousSibling;
+            prevContainer=upParent;
+            continue;
+          }
           if(prev.nodeType===Node.ELEMENT_NODE && (prev.classList.contains('dedit-word')||prev.classList.contains('dedit-sp'))){
             break; // found previous word or marker — group starts at the node after this
           }
@@ -8589,7 +8633,7 @@ function _demTokenize(blockEl){
             const m=txt.match(/\s(\S+)$/);
             if(m){
               const tail=prev.splitText(txt.length-m[1].length);
-              groupStart=tail;
+              groupStart=tail; groupStartParent=prevContainer;
             }
             break; // punctuation (and everything before it) stays behind
           }
@@ -8653,10 +8697,10 @@ function _demTokenize(blockEl){
             const sup=_effectiveSupLetter(prev);
             if(sup && _supLetterSide(sup)==='closing') break;
           }
-          groupStart=prev;
+          groupStart=prev; groupStartParent=prevContainer;
           prev=prev.previousSibling;
         }
-        parent.insertBefore(marker, groupStart);
+        groupStartParent.insertBefore(marker, groupStart);
         prevWordNode=ch;
       } else if(ch.nodeType===Node.ELEMENT_NODE && ch.nodeName!=='SUP'){
         // Recurse into inline elements (color spans, <b>, <i>, etc.) but not <sup>
