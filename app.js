@@ -926,11 +926,15 @@ function refreshDiagramIfActive(){
    model for block content/position; it's a different rendering of the
    same row. Horizontal position is driven by the Original cell's indent
    only (confirmed scope — Translation indent is not represented here). */
-/* Build a Diagram View comment badge cell (.drow-cmt-cell). Shared by
-   makeDiagramRowEl (initial render) and _dcmtSyncBadge (live add/remove
-   while already in Diagram View, e.g. via addCommentOnFocusedRow or
-   comment undo/redo) so both paths produce identical markup. */
-function _buildDiagCmtCell(cid){
+/* Build a Diagram View comment badge cell (.drow-cmt-cell). ALWAYS mounted
+   for every row (mirrors .drow-pip-cell's always-present pattern) so a
+   row's lane width never depends on whether it has a comment — only the
+   badge's own visibility toggles (via the .has-cmt class), never the
+   cell's presence, which would otherwise shift that row's block relative
+   to same-indent rows without a comment. Shared by makeDiagramRowEl
+   (initial render) and _dcmtSyncBadge (live add/remove while already in
+   Diagram View, e.g. via addCommentOnFocusedRow or comment undo/redo). */
+function _buildDiagCmtCell(){
   const cmtCell=document.createElement('div');
   cmtCell.className='drow-cmt-cell';
   const cmtBadge=document.createElement('button');
@@ -939,7 +943,10 @@ function _buildDiagCmtCell(cid){
   cmtBadge.setAttribute('aria-label', typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment');
   cmtBadge.title=typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment';
   cmtBadge.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-  cmtBadge.addEventListener('click', ev=>{ ev.stopPropagation(); jumpToCmt(cid); });
+  // Read cid live from the cell's own dataset at click time — _dcmtSyncBadge
+  // updates an existing cell's cid in place, so a value captured in this
+  // closure at build time could go stale.
+  cmtBadge.addEventListener('click', ev=>{ ev.stopPropagation(); jumpToCmt(cmtCell.dataset.cid); });
   cmtCell.appendChild(cmtBadge);
   return cmtCell;
 }
@@ -949,24 +956,24 @@ function _buildDiagCmtCell(cid){
    going through a full renderDiagram() — e.g. creating a comment via the
    toolbar while already in Diagram View (addCommentOnFocusedRow), closing
    one (closeCmt), or comment undo/redo. No-op if the row isn't currently
-   rendered in Diagram View. */
+   rendered in Diagram View. The .drow-cmt-cell itself is always present
+   (see _buildDiagCmtCell) — only its cid/has-cmt state is toggled here. */
 function _dcmtSyncBadge(rid){
   const drow=document.querySelector(`#dcanvas .drow[data-rid="${rid}"]`);
   if(!drow) return;
   const block=drow.querySelector('.dblock');
-  if(!block) return;
+  const cmtCell=drow.querySelector('.drow-cmt-cell');
+  if(!block||!cmtCell) return;
   const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
   const cid=row?row.dataset.cid:null;
-  const existingCell=drow.querySelector('.drow-cmt-cell');
   if(cid){
     block.dataset.cid=cid;
-    if(!existingCell){
-      const pipCell=drow.querySelector('.drow-pip-cell');
-      drow.insertBefore(_buildDiagCmtCell(cid), pipCell||null);
-    }
+    cmtCell.dataset.cid=cid;
+    cmtCell.classList.add('has-cmt');
   } else {
     delete block.dataset.cid;
-    if(existingCell) existingCell.remove();
+    delete cmtCell.dataset.cid;
+    cmtCell.classList.remove('has-cmt');
   }
 }
 
@@ -1105,10 +1112,13 @@ function makeDiagramRowEl(row){
   dRow.appendChild(lCell);
   dRow.appendChild(lane);
 
-  // Comment badge — only present when this row has a comment. Always
-  // visible/interactive (unlike the pip cell below, which is gated behind
-  // Shift/bracket-mode). Clicking scrolls #cmargin to the linked card.
-  if(cid) dRow.appendChild(_buildDiagCmtCell(cid));
+  // Comment badge cell — ALWAYS mounted (mirrors the pip cell below) so
+  // every row's lane keeps the same width whether or not it has a
+  // comment; only the badge icon's own visibility toggles via .has-cmt.
+  // Clicking it scrolls #cmargin to the linked card.
+  const cmtCell=_buildDiagCmtCell();
+  if(cid){ cmtCell.dataset.cid=cid; cmtCell.classList.add('has-cmt'); }
+  dRow.appendChild(cmtCell);
 
   // Pip cell — margin-left:auto pushes it flush to the right edge
   const pipCell = document.createElement('div');
