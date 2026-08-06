@@ -954,6 +954,18 @@ function makeDiagramRowEl(row){
   const block=document.createElement('div');
   block.className='dblock';
   block.dataset.rid=rid;
+  const cid=row.dataset.cid;
+  if(cid){
+    block.dataset.cid=cid;
+    block.addEventListener('mouseenter',()=>{
+      const card=document.querySelector(`.ccard[data-cid="${cid}"]`);
+      if(card) card.classList.add('row-linked');
+    });
+    block.addEventListener('mouseleave',()=>{
+      const card=document.querySelector(`.ccard[data-cid="${cid}"]`);
+      if(card) card.classList.remove('row-linked');
+    });
+  }
   const offsetPx=indent*INDENT_PX;
   if(IS_RTL){
     // Mirror Phrasing View's RTL behavior: indent grows toward the right edge,
@@ -1039,10 +1051,27 @@ function makeDiagramRowEl(row){
     lane.appendChild(transEl);
   }
 
-  // Always: verse | line | lane | spacer | pip — same in LTR and RTL
+  // Always: verse | line | lane | spacer | comment badge | pip — same in LTR and RTL
   dRow.appendChild(vCell);
   dRow.appendChild(lCell);
   dRow.appendChild(lane);
+
+  // Comment badge — only present when this row has a comment. Always
+  // visible/interactive (unlike the pip cell below, which is gated behind
+  // Shift/bracket-mode). Clicking scrolls #cmargin to the linked card.
+  if(cid){
+    const cmtCell=document.createElement('div');
+    cmtCell.className='drow-cmt-cell';
+    const cmtBadge=document.createElement('button');
+    cmtBadge.type='button';
+    cmtBadge.className='dcmt-badge';
+    cmtBadge.setAttribute('aria-label', typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment');
+    cmtBadge.title=typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment';
+    cmtBadge.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+    cmtBadge.addEventListener('click', ev=>{ ev.stopPropagation(); jumpToCmt(cid); });
+    cmtCell.appendChild(cmtBadge);
+    dRow.appendChild(cmtCell);
+  }
 
   // Pip cell — margin-left:auto pushes it flush to the right edge
   const pipCell = document.createElement('div');
@@ -4407,6 +4436,34 @@ function _scrollCmarginToVisible(){
   const cardH=bestCard.offsetHeight||100;
   const target=cardTop+cardH/2-cmarginEl.clientHeight/2;
   cmarginEl.scrollTo({top:Math.max(0,target),behavior:'smooth'});
+}
+
+/* Jump from a Diagram View comment badge to its card: un-hide it if
+   collapsed, scroll #cmargin to centre it, and flash it briefly.
+   Mirrors the show/hide branch in toggleCmt() and the scroll math in
+   _scrollCmarginToVisible(), and the two-class flash/fade timing bible.js
+   uses for .bverse-highlight/-fade. */
+function jumpToCmt(cid){
+  const card=document.querySelector(`.ccard[data-cid="${cid}"]`);
+  if(!card) return;
+  const cmarginEl=document.getElementById('cmargin');
+  if(card.style.display==='none'){
+    card.style.display='flex';
+    const rid=card.dataset.rid;
+    const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
+    const btn=row?row.querySelector('.cmtbtn'):null;
+    if(btn) btn.classList.add('on');
+    drawConns();
+  }
+  if(cmarginEl){
+    const cardTop=parseInt(card.style.top)||0;
+    const cardH=card.offsetHeight||100;
+    const target=cardTop+cardH/2-cmarginEl.clientHeight/2;
+    cmarginEl.scrollTo({top:Math.max(0,target),behavior:'smooth'});
+  }
+  card.classList.add('ccard-jump-flash');
+  setTimeout(()=>card.classList.add('ccard-jump-flash-fade'),50);
+  setTimeout(()=>card.classList.remove('ccard-jump-flash','ccard-jump-flash-fade'),1400);
 }
 
 /* Select a diagram block by rid — gold outline, deselects previous */
@@ -12433,6 +12490,22 @@ document.addEventListener('DOMContentLoaded',()=>{
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
   document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);
   document.getElementById('cmargin')?.addEventListener('scroll', drawConns);
+  // Reciprocal hover: hovering a comment card highlights its linked
+  // Diagram View block. Delegated (not wired per-card) so it also covers
+  // cards restored via undo/redo or loadData(). No-op outside Diagram View
+  // since #dcanvas .dblock simply won't match.
+  document.getElementById('cmargin')?.addEventListener('mouseover', ev=>{
+    const card=ev.target.closest('.ccard');
+    if(!card) return;
+    const blk=document.querySelector(`#dcanvas .dblock[data-rid="${card.dataset.rid}"]`);
+    if(blk) blk.classList.add('cmt-linked');
+  });
+  document.getElementById('cmargin')?.addEventListener('mouseout', ev=>{
+    const card=ev.target.closest('.ccard');
+    if(!card) return;
+    const blk=document.querySelector(`#dcanvas .dblock[data-rid="${card.dataset.rid}"]`);
+    if(blk) blk.classList.remove('cmt-linked');
+  });
   window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); refreshDiagramConnectors(); if(typeof renderSectionStrips==='function') renderSectionStrips(); });
   // Rich paste handler for Screen 2
   const pasteTA=document.getElementById('paste-ta');

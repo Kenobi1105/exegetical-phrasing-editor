@@ -4705,4 +4705,47 @@ body.hide-sections #section-strips{display:none}
 }
 #proj-storage-indicator .proj-storage-bar-fill{height:100%;background:var(--active);transition:width .2s}
 #proj-storage-indicator.proj-storage-warn .proj-storage-bar-fill{background:#d98c00}
+
+/* ════════════════════════════════════════
+   DIAGRAM VIEW — comment badge + reciprocal hover highlight
+════════════════════════════════════════ */
+/* Badge cell: fixed-width column, sits flush right (before the pip cell)
+   alongside it thanks to .dlane's flex:1. Unlike .drow-pip-cell, this is
+   NOT gated behind any body.brk-* class — always visible/interactive
+   when a row has a comment. */
+.drow-cmt-cell{
+  width:22px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  pointer-events:auto;
+}
+.dcmt-badge{
+  width:20px;height:20px;padding:0;border:none;background:none;
+  display:flex;align-items:center;justify-content:center;
+  color:var(--active,#C8A84B);cursor:pointer;border-radius:50%;
+  transition:background .12s,color .12s;
+}
+.dcmt-badge svg{width:14px;height:14px}
+.dcmt-badge:hover{background:rgba(200,168,75,.16);color:var(--sig)}
+
+/* Diagram block linked to a hovered/focused comment card — same gold-ring
+   recipe as .dblock.selected::before, kept as a separate class since
+   .selected already carries connector-selection semantics. */
+.dblock.cmt-linked::before{
+  border-color:#C8A84B;box-shadow:0 0 0 2px rgba(200,168,75,.3);
+}
+
+/* Comment card linked to a hovered Diagram View block */
+.ccard.row-linked{
+  border-color:#C8A84B;box-shadow:0 0 0 2px rgba(200,168,75,.3);
+}
+
+/* Flash-on-jump — same two-class technique as .bverse-highlight/-fade */
+.ccard-jump-flash{
+  background:rgba(240,208,143,.4);
+  transition:none;
+}
+.ccard-jump-flash-fade{
+  background:transparent;
+  transition:background 1s ease;
+}
 #proj-storage-indicator.proj-storage-critical .proj-storage-bar-fill{background:#c83c3c}
