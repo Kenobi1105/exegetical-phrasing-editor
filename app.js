@@ -4539,7 +4539,15 @@ function toggleCmtPane(){
   const hidden=cm.classList.toggle('pane-hidden');
   const btn=document.getElementById('btn-cmt-pane');
   if(btn) btn.classList.toggle('active',!hidden);
-  if(!hidden) setTimeout(drawConns,50);
+  // #cmargin.pane-hidden collapses to width:0, which resizes #dcanvas-scroll
+  // either way (hide or show) — refresh every SVG overlay that's keyed off
+  // canvas geometry, same set the window 'resize' handler already refreshes.
+  setTimeout(()=>{
+    drawConns();
+    refreshBrackets();
+    refreshDiagramConnectors();
+    if(typeof renderSectionStrips==='function') renderSectionStrips();
+  },50);
 }
 
 /* Feature 3: Add comment anchored to the currently focused or last-focused row */
