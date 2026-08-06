@@ -4930,14 +4930,25 @@ function collectData(){
    stripped every time they're loaded. Regex-based (not DOM-based) since
    this also runs inside the batch diagram-PDF export loop across many
    projects. */
+/* Strips source-app backgrounds (e.g. Logos/BibleArc/Word paste swatches)
+   from HTML, but preserves .hl spans — the app's own Highlight tool
+   (applyHl()) stores its color as an inline background-color on a .hl
+   span, and this function used to strip that too on every loadData(),
+   silently erasing user-applied highlights on reload. DOM-based (not
+   regex) so it can check each element's own class before touching its
+   style. */
 function _stripBgFromHTML(html){
   if(!html) return html;
-  return html
-    .replace(/style="([^"]*)"/gi, (m,decls)=>{
-      const kept=decls.split(';').map(d=>d.trim()).filter(d=>d && !/^background(-color)?\s*:/i.test(d));
-      return kept.length ? `style="${kept.join('; ')}"` : '';
-    })
-    .replace(/\sbgcolor="[^"]*"/gi, ''); // legacy attribute form
+  const tmp=document.createElement('div');
+  tmp.innerHTML=html;
+  tmp.querySelectorAll('[style]').forEach(el=>{
+    if(el.classList.contains('hl')) return;
+    el.style.removeProperty('background');
+    el.style.removeProperty('background-color');
+    if(!el.getAttribute('style')) el.removeAttribute('style');
+  });
+  tmp.querySelectorAll('[bgcolor]').forEach(el=>el.removeAttribute('bgcolor'));
+  return tmp.innerHTML;
 }
 
 function loadData(data){
