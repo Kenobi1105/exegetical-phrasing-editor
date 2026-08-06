@@ -926,6 +926,50 @@ function refreshDiagramIfActive(){
    model for block content/position; it's a different rendering of the
    same row. Horizontal position is driven by the Original cell's indent
    only (confirmed scope — Translation indent is not represented here). */
+/* Build a Diagram View comment badge cell (.drow-cmt-cell). Shared by
+   makeDiagramRowEl (initial render) and _dcmtSyncBadge (live add/remove
+   while already in Diagram View, e.g. via addCommentOnFocusedRow or
+   comment undo/redo) so both paths produce identical markup. */
+function _buildDiagCmtCell(cid){
+  const cmtCell=document.createElement('div');
+  cmtCell.className='drow-cmt-cell';
+  const cmtBadge=document.createElement('button');
+  cmtBadge.type='button';
+  cmtBadge.className='dcmt-badge';
+  cmtBadge.setAttribute('aria-label', typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment');
+  cmtBadge.title=typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment';
+  cmtBadge.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
+  cmtBadge.addEventListener('click', ev=>{ ev.stopPropagation(); jumpToCmt(cid); });
+  cmtCell.appendChild(cmtBadge);
+  return cmtCell;
+}
+
+/* Keep a live #dcanvas diagram block's comment badge in sync with its
+   row's dataset.cid, for code paths that add/remove a comment WITHOUT
+   going through a full renderDiagram() — e.g. creating a comment via the
+   toolbar while already in Diagram View (addCommentOnFocusedRow), closing
+   one (closeCmt), or comment undo/redo. No-op if the row isn't currently
+   rendered in Diagram View. */
+function _dcmtSyncBadge(rid){
+  const drow=document.querySelector(`#dcanvas .drow[data-rid="${rid}"]`);
+  if(!drow) return;
+  const block=drow.querySelector('.dblock');
+  if(!block) return;
+  const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
+  const cid=row?row.dataset.cid:null;
+  const existingCell=drow.querySelector('.drow-cmt-cell');
+  if(cid){
+    block.dataset.cid=cid;
+    if(!existingCell){
+      const pipCell=drow.querySelector('.drow-pip-cell');
+      drow.insertBefore(_buildDiagCmtCell(cid), pipCell||null);
+    }
+  } else {
+    delete block.dataset.cid;
+    if(existingCell) existingCell.remove();
+  }
+}
+
 function makeDiagramRowEl(row){
   const rid=row.dataset.rid;
   const oc=row.querySelector(`#oc-${rid} .cedit`);
@@ -955,17 +999,22 @@ function makeDiagramRowEl(row){
   block.className='dblock';
   block.dataset.rid=rid;
   const cid=row.dataset.cid;
-  if(cid){
-    block.dataset.cid=cid;
-    block.addEventListener('mouseenter',()=>{
-      const card=document.querySelector(`.ccard[data-cid="${cid}"]`);
-      if(card) card.classList.add('row-linked');
-    });
-    block.addEventListener('mouseleave',()=>{
-      const card=document.querySelector(`.ccard[data-cid="${cid}"]`);
-      if(card) card.classList.remove('row-linked');
-    });
-  }
+  if(cid) block.dataset.cid=cid;
+  // Read block.dataset.cid live (not the closed-over cid) so this stays
+  // correct even after _dcmtSyncBadge adds/removes a comment later without
+  // rebuilding the block.
+  block.addEventListener('mouseenter',()=>{
+    const liveCid=block.dataset.cid;
+    if(!liveCid) return;
+    const card=document.querySelector(`.ccard[data-cid="${liveCid}"]`);
+    if(card) card.classList.add('row-linked');
+  });
+  block.addEventListener('mouseleave',()=>{
+    const liveCid=block.dataset.cid;
+    if(!liveCid) return;
+    const card=document.querySelector(`.ccard[data-cid="${liveCid}"]`);
+    if(card) card.classList.remove('row-linked');
+  });
   const offsetPx=indent*INDENT_PX;
   if(IS_RTL){
     // Mirror Phrasing View's RTL behavior: indent grows toward the right edge,
@@ -1059,19 +1108,7 @@ function makeDiagramRowEl(row){
   // Comment badge — only present when this row has a comment. Always
   // visible/interactive (unlike the pip cell below, which is gated behind
   // Shift/bracket-mode). Clicking scrolls #cmargin to the linked card.
-  if(cid){
-    const cmtCell=document.createElement('div');
-    cmtCell.className='drow-cmt-cell';
-    const cmtBadge=document.createElement('button');
-    cmtBadge.type='button';
-    cmtBadge.className='dcmt-badge';
-    cmtBadge.setAttribute('aria-label', typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment');
-    cmtBadge.title=typeof t==='function'?t('diagram.jump-to-comment'):'Jump to comment';
-    cmtBadge.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>';
-    cmtBadge.addEventListener('click', ev=>{ ev.stopPropagation(); jumpToCmt(cid); });
-    cmtCell.appendChild(cmtBadge);
-    dRow.appendChild(cmtCell);
-  }
+  if(cid) dRow.appendChild(_buildDiagCmtCell(cid));
 
   // Pip cell — margin-left:auto pushes it flush to the right edge
   const pipCell = document.createElement('div');
@@ -3636,6 +3673,7 @@ function applyRowUndo(op){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     if(row){row.classList.remove('has-cmt');delete row.dataset.cid;
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.remove('on');}
+    _dcmtSyncBadge(op.rid);
     drawConns(); return;
   }
   if(op.type==='cmt-remove'){
@@ -3650,6 +3688,7 @@ function applyRowUndo(op){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     if(row){row.dataset.cid=op.cid;row.classList.add('has-cmt');
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.add('on');}
+    _dcmtSyncBadge(op.rid);
     drawConns(); return;
   }
   if(op.type==='cmt-move'){
@@ -3815,6 +3854,7 @@ function applyRowRedo(op){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     if(row){row.dataset.cid=op.cid;row.classList.add('has-cmt');
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.add('on');}
+    _dcmtSyncBadge(op.rid);
     drawConns(); return;
   }
   if(op.type==='cmt-remove'){
@@ -3824,6 +3864,7 @@ function applyRowRedo(op){
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     if(row){row.classList.remove('has-cmt');delete row.dataset.cid;
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.remove('on');}
+    _dcmtSyncBadge(op.rid);
     drawConns(); return;
   }
   if(op.type==='cmt-move'){
@@ -4288,6 +4329,7 @@ function toggleCmt(btn,rid){
   mg.appendChild(card);
   new ResizeObserver(drawConns).observe(card);
   rowPush({type:'cmt-add',cid,rid,top:initTop,left:initLeft,width:initW,lid});
+  _dcmtSyncBadge(rid);
   setTimeout(()=>{card.querySelector('.cedit-c').focus();drawConns();},40);
   autoSave();
 }
@@ -4345,6 +4387,7 @@ function closeCmt(cid){
   const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
   if(row){row.classList.remove('has-cmt');delete row.dataset.cid;const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.remove('on');}
   rowPush({type:'cmt-remove',cid,rid,top,left,width,html,lid});
+  _dcmtSyncBadge(rid);
   card.remove();drawConns();autoSave();
 }
 function drawConns(){
@@ -4535,6 +4578,7 @@ function addCommentOnFocusedRow(){
     mg.appendChild(card);
     new ResizeObserver(drawConns).observe(card);
     rowPush({type:'cmt-add',cid,rid,top,left:initLeft,width:initW,lid});
+    _dcmtSyncBadge(rid);
     setTimeout(()=>{card.querySelector('.cedit-c').focus();drawConns();},40);
     autoSave();
     return;
