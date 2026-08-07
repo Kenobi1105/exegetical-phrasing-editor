@@ -9863,7 +9863,10 @@ function slSetView(view){
   document.getElementById('sl-view-diagram')?.classList.toggle('active',view==='diagram');
   _slUpdateVisRowsForView(view);
   autoSave();
-  // No live re-render — user clicks Refresh or selects slide to update
+  // Live re-render, same as the row checkbox / background picker below —
+  // slRenderActive() already debounces (next-tick coalesce), so this is
+  // cheap even if the user clicks Phrasing/Diagram back and forth fast.
+  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 function slVisChange(key,val){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
@@ -9871,7 +9874,8 @@ function slVisChange(key,val){
   sl.visibility[key]=val;
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'visibility',key,oldVal:old,newVal:val});
   autoSave();
-  // No live re-render — user clicks Refresh to see result
+  // Live re-render — see slSetView above for why this is safe to do here.
+  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 // Unlike slSetView/slVisChange above, background needs an immediate live
 // preview (it's a swatch-picker interaction, often dragged across
@@ -9931,6 +9935,9 @@ function slSelectAllRows(){
   sl.rowIds=Array.from(document.querySelectorAll('.xrow')).map(r=>r.dataset.rid).filter(Boolean);
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[...sl.rowIds]});
   slUpdateRowList(); autoSave();
+  // Live re-render, matching the individual row checkbox this button sits
+  // next to (app.js slUpdateRowList's per-row change handler).
+  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 function slClearAllRows(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
@@ -9938,6 +9945,7 @@ function slClearAllRows(){
   sl.rowIds=[];
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[]});
   slUpdateRowList(); autoSave();
+  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 
 /* ── Update props panel from active slide ── */
