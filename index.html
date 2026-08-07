@@ -655,37 +655,39 @@
             <div class="sl-prop-label" data-i18n="slides.regions">Regions</div>
             <div id="sl-passage-tabs"><!-- region tabs injected by JS --></div>
           </div>
-          <div class="sl-prop-section">
-            <div class="sl-prop-label" data-i18n="view.diagram">View</div>
-            <div class="sl-view-toggle">
-              <button class="sl-view-btn active" id="sl-view-phrasing" onclick="slSetView('phrasing')" data-i18n="slides.view-phrasing">Phrasing</button>
-              <button class="sl-view-btn" id="sl-view-diagram" onclick="slSetView('diagram')" data-i18n="slides.view-diagram">Diagram</button>
+          <div id="sl-passage-props">
+            <div class="sl-prop-section">
+              <div class="sl-prop-label" data-i18n="view.diagram">View</div>
+              <div class="sl-view-toggle">
+                <button class="sl-view-btn active" id="sl-view-phrasing" onclick="slSetView('phrasing')" data-i18n="slides.view-phrasing">Phrasing</button>
+                <button class="sl-view-btn" id="sl-view-diagram" onclick="slSetView('diagram')" data-i18n="slides.view-diagram">Diagram</button>
+              </div>
+            </div>
+            <div class="sl-prop-section">
+              <div class="sl-prop-label">
+                <span data-i18n="col.verse">Rows</span>
+                <span class="sl-row-btns">
+                  <button class="sl-micro-btn" onclick="slSelectAllRows()" data-i18n="slides.rows.all">All</button>
+                  <button class="sl-micro-btn" onclick="slClearAllRows()" data-i18n="slides.rows.none">None</button>
+                </span>
+              </div>
+              <div id="sl-row-list"><!-- row checkboxes injected by JS --></div>
+            </div>
+            <div class="sl-prop-section">
+              <div class="sl-prop-label" data-i18n="slides.vis.section">Visibility</div>
+              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-indent"    onchange="slVisChange('indentation',   this.checked)"><span data-i18n="slides.vis.indent">Indentation</span></label>
+              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-trans"     onchange="slVisChange('translation',   this.checked)"><span data-i18n="slides.vis.trans">Translation lines</span></label>
+              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-verse"     onchange="slVisChange('verseNums',     this.checked)"><span data-i18n="slides.vis.verse">Verse numbers</span></label>
+              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-comments"  onchange="slVisChange('comments',      this.checked)"><span data-i18n="slides.vis.comments">Comments</span></label>
+              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-connectors"onchange="slVisChange('connectors',    this.checked)"><span data-i18n="slides.vis.connectors">Connectors</span></label>
+              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-brackets"  onchange="slVisChange('brackets',      this.checked)"><span data-i18n="slides.vis.brackets">Brackets</span></label>
+              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-labels"    onchange="slVisChange('labels',        this.checked)"><span data-i18n="slides.vis.labels">Labels</span></label>
             </div>
           </div>
           <div class="sl-prop-section">
             <div class="sl-prop-label" data-i18n="slides.bg.section">Background</div>
             <button type="button" class="sl-swatch-btn" id="sl-bg-btn" title="Background"
                     onclick="openColorPalette('slSlideBackground', this, SL_DECK.slides[SL_ACTIVE_IDX]?.background||'#ffffff')"></button>
-          </div>
-          <div class="sl-prop-section">
-            <div class="sl-prop-label">
-              <span data-i18n="col.verse">Rows</span>
-              <span class="sl-row-btns">
-                <button class="sl-micro-btn" onclick="slSelectAllRows()" data-i18n="slides.rows.all">All</button>
-                <button class="sl-micro-btn" onclick="slClearAllRows()" data-i18n="slides.rows.none">None</button>
-              </span>
-            </div>
-            <div id="sl-row-list"><!-- row checkboxes injected by JS --></div>
-          </div>
-          <div class="sl-prop-section">
-            <div class="sl-prop-label" data-i18n="slides.vis.section">Visibility</div>
-            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-indent"    onchange="slVisChange('indentation',   this.checked)"><span data-i18n="slides.vis.indent">Indentation</span></label>
-            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-trans"     onchange="slVisChange('translation',   this.checked)"><span data-i18n="slides.vis.trans">Translation lines</span></label>
-            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-verse"     onchange="slVisChange('verseNums',     this.checked)"><span data-i18n="slides.vis.verse">Verse numbers</span></label>
-            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-comments"  onchange="slVisChange('comments',      this.checked)"><span data-i18n="slides.vis.comments">Comments</span></label>
-            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-connectors"onchange="slVisChange('connectors',    this.checked)"><span data-i18n="slides.vis.connectors">Connectors</span></label>
-            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-brackets"  onchange="slVisChange('brackets',      this.checked)"><span data-i18n="slides.vis.brackets">Brackets</span></label>
-            <label class="sl-vis-row"><input type="checkbox" id="sl-vis-labels"    onchange="slVisChange('labels',        this.checked)"><span data-i18n="slides.vis.labels">Labels</span></label>
           </div>
           <div class="sl-prop-section sl-notes-section">
             <div class="sl-prop-label" data-i18n="slides.notes.section">Speaker Notes</div>

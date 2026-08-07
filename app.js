@@ -9438,7 +9438,7 @@ function slMakePassage(rowIds){
 }
 function slMakeBlank(){
   return {id:'sl-'+(++SL_SLIDE_CTR),type:'blank',
-    passages:[slMakePassage([])],
+    passages:[],
     background:'#ffffff',
     elements:[],notes:''};
 }
@@ -10116,10 +10116,18 @@ function slClearAllRows(){
 function slUpdatePropsPanel(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   slRenderPassageTabs();
-  const passage=_slActivePassage(); if(!passage) return;
+  const bgBtn=document.getElementById('sl-bg-btn'); if(bgBtn) bgBtn.style.background=sl.background||'#ffffff';
+  const notesEl=document.getElementById('sl-notes');
+  if(notesEl && document.activeElement!==notesEl) notesEl.innerHTML=_slNotesToHTML(sl.notes);
+  const passage=_slActivePassage();
+  // View/Rows/Visibility are region-level fields — hide the whole section
+  // when the slide has no region to show them for (a fresh blank slide,
+  // or every region deleted), rather than leaving stale data on screen.
+  const passageProps=document.getElementById('sl-passage-props');
+  if(passageProps) passageProps.style.display=passage?'':'none';
+  if(!passage) return;
   document.getElementById('sl-view-phrasing')?.classList.toggle('active',passage.view==='phrasing');
   document.getElementById('sl-view-diagram')?.classList.toggle('active',passage.view==='diagram');
-  const bgBtn=document.getElementById('sl-bg-btn'); if(bgBtn) bgBtn.style.background=sl.background||'#ffffff';
   _slUpdateVisRowsForView(passage.view);
   document.getElementById('sl-vis-indent')   .checked=!!passage.visibility.indentation;
   document.getElementById('sl-vis-trans')    .checked=!!passage.visibility.translation;
@@ -10128,8 +10136,6 @@ function slUpdatePropsPanel(){
   document.getElementById('sl-vis-connectors').checked=!!passage.visibility.connectors;
   document.getElementById('sl-vis-brackets') .checked=!!passage.visibility.brackets;
   document.getElementById('sl-vis-labels')   .checked=!!passage.visibility.labels;
-  const notesEl=document.getElementById('sl-notes');
-  if(notesEl && document.activeElement!==notesEl) notesEl.innerHTML=_slNotesToHTML(sl.notes);
   slUpdateRowList();
 }
 // One pill per slide.passages[i] plus a trailing "+" tab. Clicking a tab
@@ -10147,14 +10153,14 @@ function slRenderPassageTabs(){
     tab.className='sl-passage-tab'+(p.id===activeId?' active':'');
     tab.textContent='Region '+(i+1);
     tab.onclick=()=>{ SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl(_slPassageSelId(p.id)); slUpdatePropsPanel(); };
-    if(sl.passages.length>1){
-      const del=document.createElement('span');
-      del.className='sl-passage-tab-del';
-      del.textContent='×';
-      del.title=typeof t==='function'?t('slides.delete-region'):'Delete region';
-      del.onclick=(ev)=>{ ev.stopPropagation(); slDeleteRegion(p.id); };
-      tab.appendChild(del);
-    }
+    // A slide can have zero regions, so every existing region — even the
+    // only one — can be deleted (no minimum to protect).
+    const del=document.createElement('span');
+    del.className='sl-passage-tab-del';
+    del.textContent='×';
+    del.title=typeof t==='function'?t('slides.delete-region'):'Delete region';
+    del.onclick=(ev)=>{ ev.stopPropagation(); slDeleteRegion(p.id); };
+    tab.appendChild(del);
     wrap.appendChild(tab);
   });
   const addTab=document.createElement('button');
@@ -10187,23 +10193,22 @@ function slUpdateRowList(){
     list.appendChild(label);
   });
 }
-// "+ Add region" — new independent content region on the active slide,
-// offset from the last region so it isn't placed exactly on top of it.
+// "+ Add region" — new independent content region on the active slide, at
+// slMakePassage's fixed default position/size every time (same spot a
+// text box/shape gets dropped at) — not offset from any existing region,
+// so it never reads as "duplicating" one. The user drags it into place.
 function slAddRegion(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const passage=slMakePassage([]);
-  const last=sl.passages[sl.passages.length-1];
-  if(last){ passage.contentArea={...last.contentArea, y:Math.min(90,last.contentArea.y+8), x:Math.min(90,last.contentArea.x+4)}; }
   sl.passages.push(passage);
   _slPush({type:'sl-add-passage',slideIdx:SL_ACTIVE_IDX,passage:{...passage}});
   SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl(_slPassageSelId(passage.id));
   slUpdatePropsPanel(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
 }
-// Removes a region; refuses to remove a slide's last remaining region
-// (mirrors the existing "can't delete the last slide" guard).
+// Removes a region. A slide can have zero regions (same state a fresh
+// blank slide already starts in), so there's no minimum to enforce.
 function slDeleteRegion(passageId){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  if(sl.passages.length<=1){ toast(typeof t==='function'?t('slides.region-min'):'A slide needs at least one region.'); return; }
   const idx=sl.passages.findIndex(p=>p.id===passageId); if(idx<0) return;
   const [removed]=sl.passages.splice(idx,1);
   _slPush({type:'sl-remove-passage',slideIdx:SL_ACTIVE_IDX,idx,passage:removed});
@@ -10485,11 +10490,13 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
 // requestAnimationFrame — slRenderSlideInto batches all regions' measure/
 // scale work into one shared rAF (see below) to avoid interleaving N
 // regions' DOM reads and writes (layout thrash). Returns null if this
-// region has no rows and we're not in the Slides editor (nothing to show
-// on a thumbnail/export for an empty region), matching the original
-// single-passage gate.
+// region has no rows and either we're not in the interactive Slides editor
+// (thumbnails/PDF/projector all pass isExport=true) or this isn't the
+// live main canvas — an empty region renders nothing there (no placeholder
+// text, no phantom draggable box), only the interactive editor canvas
+// shows the "add rows here" placeholder + resize handles.
 function _slRenderOnePassage(passage, slide, container, w, h, isExport){
-  if(passage.rowIds.length===0 && EDITOR_VIEW!=='slides') return null;
+  if(passage.rowIds.length===0 && (EDITOR_VIEW!=='slides' || isExport)) return null;
 
   const passageEl=document.createElement('div');
   passageEl.className='sl-el sl-el-passage';
