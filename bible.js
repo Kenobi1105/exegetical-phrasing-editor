@@ -1148,11 +1148,23 @@ function bApplyPin(){
       divider.addEventListener('mousedown',e=>{
         e.preventDefault();
         const startX=e.clientX,startW=panel.offsetWidth;
-        const mm=ev=>{panel.style.width=Math.max(240,Math.min(700,startW-(ev.clientX-startX)))+'px';};
-        const mu=()=>{document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};
+        const mm=ev=>{
+          panel.style.width=Math.max(240,Math.min(700,startW-(ev.clientX-startX)))+'px';
+          // Live-resizing the pinned panel resizes #dcanvas-scroll the same
+          // way pin/unpin does — keep bracket/connector lines tracking in
+          // real time, mirroring startBlockDrag()'s onMove in app.js.
+          if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
+          if(typeof refreshBrackets==='function') refreshBrackets();
+        };
+        const mu=()=>{
+          document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
+          if(typeof drawConns==='function') drawConns();
+          if(typeof renderSectionStrips==='function') renderSectionStrips();
+        };
         document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
       });
     }
+    _bRefreshDiagramOverlays();
   } else {
     panel.classList.remove('pinned');
     if(divider)divider.style.display='none';
@@ -1164,7 +1176,21 @@ function bApplyPin(){
     if(ew){ew.style.flex='';ew.style.minWidth='';ew.style.overflow='';}
     panel.classList.add('open');
     bPanelOpen=true;
+    _bRefreshDiagramOverlays();
   }
+}
+
+/* Pinning/unpinning (and dragging the divider) resizes #dcanvas-scroll the
+   same way toggling the comment pane does (see toggleCmtPane() in app.js)
+   — refresh the same canvas-geometry-dependent SVG overlays so bracket and
+   connector lines don't go stale relative to the reflowed blocks. */
+function _bRefreshDiagramOverlays(){
+  setTimeout(()=>{
+    if(typeof drawConns==='function') drawConns();
+    if(typeof refreshBrackets==='function') refreshBrackets();
+    if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
+    if(typeof renderSectionStrips==='function') renderSectionStrips();
+  },50);
 }
 
 function openProjects(){
