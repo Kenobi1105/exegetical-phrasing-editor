@@ -10185,8 +10185,11 @@ function slUpdateRowList(){
     label.innerHTML=`<input type="checkbox" ${checked?'checked':''}><span class="sl-row-lbl">${lid!=='—'?lid:''}</span><span style="color:var(--muted);font-size:10px">${verse}</span>`;
     label.querySelector('input').addEventListener('change',function(){
       const old=[...passage.rowIds];
-      if(this.checked){ if(!passage.rowIds.includes(rid)) passage.rowIds.push(rid); }
-      else { passage.rowIds=passage.rowIds.filter(r=>r!==rid); }
+      // Re-derive from true document order rather than push-to-end, so a
+      // row rechecked after being unchecked reappears where it belongs
+      // instead of jumping to the bottom of the region's stack.
+      const checkedSet=new Set(this.checked ? [...passage.rowIds, rid] : passage.rowIds.filter(r=>r!==rid));
+      passage.rowIds=_realRows().map(r=>r.dataset.rid).filter(rid2=>checkedSet.has(rid2));
       _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[...passage.rowIds]});
       slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
     });
@@ -10520,6 +10523,12 @@ function _slRenderOnePassage(passage, slide, container, w, h, isExport){
         if(!xrow) return;
         const clone=xrow.cloneNode(true);
         clone.querySelectorAll('button,.cmtbtn,.drow-pip-cell').forEach(el=>el.remove());
+        // .has-cmt is a Phrasing View editing affordance (border-left "this
+        // row has a comment" marker, app.css .xrow.has-cmt) — unrelated to
+        // whether the comment's own text shows as a footnote (that's the
+        // Comments visibility toggle below); strip it like the interactive
+        // elements above so it doesn't leak into the slide.
+        clone.classList.remove('has-cmt');
         rb.appendChild(clone);
       });
       const v=passage.visibility;
