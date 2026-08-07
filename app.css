@@ -4754,3 +4754,25 @@ body.hide-sections #section-strips{display:none}
   transition:background 1s ease;
 }
 #proj-storage-indicator.proj-storage-critical .proj-storage-bar-fill{background:#c83c3c}
+
+/* ── Slides View: multi-region passage tab strip ── */
+#sl-passage-tabs{display:flex;flex-wrap:wrap;gap:5px}
+.sl-passage-tab{
+  display:flex;align-items:center;gap:5px;
+  height:22px;padding:0 8px;border-radius:5px;
+  border:1.5px solid rgba(73,53,72,.2);background:transparent;
+  color:var(--sig);font-family:var(--ui);font-size:11px;font-weight:600;
+  cursor:pointer;transition:background .12s,color .12s,border-color .12s;
+}
+.sl-passage-tab:hover{border-color:var(--sig)}
+.sl-passage-tab.active{background:var(--sig);color:var(--label);border-color:var(--sig)}
+.sl-passage-tab-add{
+  width:22px;padding:0;justify-content:center;
+  font-size:14px;line-height:1;color:var(--active);border-style:dashed;
+}
+.sl-passage-tab-del{
+  display:inline-flex;align-items:center;justify-content:center;
+  width:13px;height:13px;border-radius:50%;
+  font-size:11px;line-height:1;opacity:.6;
+}
+.sl-passage-tab-del:hover{opacity:1;background:rgba(0,0,0,.15)}

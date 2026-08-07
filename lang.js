@@ -512,6 +512,10 @@ const LANGS = {
     'slides.export-pdf':    'Export Slides PDF',
     'slides.add-textbox':   'Add Text Box',
     'slides.delete-el':     'Delete',
+    'slides.regions':       'Regions',
+    'slides.add-region':    'Add Region',
+    'slides.delete-region': 'Delete region',
+    'slides.region-min':    'A slide needs at least one region.',
     'help.slides':          'Open Slides view (Alt+P)',
 
     /* ── Service worker update banner ── */
@@ -1032,6 +1036,10 @@ const LANGS = {
     'slides.export-pdf':    '导出幻灯片 PDF',
     'slides.add-textbox':   '添加文本框',
     'slides.delete-el':     '删除',
+    'slides.regions':       '区域',
+    'slides.add-region':    '添加区域',
+    'slides.delete-region': '删除区域',
+    'slides.region-min':    '幻灯片至少需要一个区域。',
     'help.slides':          '打开幻灯片视图（Alt+P）',
 
     /* ── Service worker update banner ── */

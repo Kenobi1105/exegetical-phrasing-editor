@@ -9121,11 +9121,12 @@ document.addEventListener('click', ev=>{
 let SL_DECK       = { slides: [] };   // the deck
 let SL_ACTIVE_IDX = 0;                // currently selected slide index
 let SL_SEL_EL_ID  = null;             // selected element id on active slide — derived alias, see SL_SEL_EL_IDS/_slSyncSelAlias below
-let SL_SEL_EL_IDS = [];               // multi-select: 0-N selected element ids ('__passage__' is never in here)
+let SL_SEL_EL_IDS = [];               // multi-select: 0-N selected element ids (a passage selection id is never in here)
 let SL_CLIPBOARD  = null;             // {sourceSlideId, elements:[deep-cloned element objects]} | null — session-only, matches Slides state having no separate persistence layer
 let SL_CTX_EL_ID  = null;             // element id for context menu
 let SL_EL_CTR     = 0;                // element id seed
 let SL_SLIDE_CTR  = 0;                // slide id seed
+let SL_PASSAGE_CTR = 0;               // passage (slide content region) id seed
 let SL_PROJ_WIN   = null;             // projector window reference
 let SL_PRES_IDX   = 0;                // current slide index in presenter mode
 let SL_CANVAS_W   = 960;              // computed canvas width in px
@@ -9136,6 +9137,26 @@ const SL_RENDER_H = 540;             // canonical render height (16:9)
 
 const SL_RATIO    = 16/9;
 
+/* ── Passage (slide content region) selection addressing ──
+   A passage's selection id is '__passage__:<passageId>' — this lets
+   SL_SEL_EL_ID (which already doubles as "what's selected on the canvas")
+   also double as "which passage's fields the props panel should show",
+   with no separate parallel state to keep in sync. Never appears in
+   SL_SEL_EL_IDS (the multi-select array), same as the old single-passage
+   '__passage__' sentinel it replaces. */
+const SL_PASSAGE_SEL_PREFIX='__passage__:';
+function _slPassageSelId(passageId){ return SL_PASSAGE_SEL_PREFIX+passageId; }
+function _slIsPassageSel(id){ return typeof id==='string' && id.startsWith(SL_PASSAGE_SEL_PREFIX); }
+function _slPassageIdFromSel(id){ return _slIsPassageSel(id) ? id.slice(SL_PASSAGE_SEL_PREFIX.length) : null; }
+// The passage whose fields the props panel (view/visibility/row list)
+// currently shows — the one selected on canvas, or the slide's first
+// passage as a sensible fallback when nothing/an element is selected.
+function _slActivePassage(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl||!sl.passages) return null;
+  const pid=_slPassageIdFromSel(SL_SEL_EL_ID);
+  return sl.passages.find(p=>p.id===pid) || sl.passages[0] || null;
+}
+
 /* ── Default visibility ── */
 const SL_VIS_DEFAULT = {
   indentation:false, translation:false, verseNums:true,
@@ -9144,9 +9165,33 @@ const SL_VIS_DEFAULT = {
 };
 
 /* ── Serialise / restore ── */
-function slCollectDeck(){ return { slides: SL_DECK.slides.map(s=>({...s, elements:s.elements.map(e=>({...e}))})) }; }
+function slCollectDeck(){ return { slides: SL_DECK.slides.map(s=>({...s, elements:s.elements.map(e=>({...e})), passages:s.passages.map(p=>({...p, rowIds:[...p.rowIds], visibility:{...p.visibility}, contentArea:{...p.contentArea}}))})) }; }
+// Upgrade a pre-multi-region slide (singular view/rowIds/visibility/
+// contentArea fields) into the current passages[] shape. Done eagerly here
+// (not lazily per call site) so every other Slides function can assume
+// slide.passages exists and is non-empty — no scattered fallback checks.
+function _slMigrateSlide(s){
+  if(!Array.isArray(s.passages)){
+    s.passages=[{
+      id:'pg-'+(++SL_PASSAGE_CTR),
+      view: s.view || 'phrasing',
+      rowIds: [...(s.rowIds||[])],
+      visibility: {...SL_VIS_DEFAULT, ...(s.visibility||{})},
+      contentArea: {...(s.contentArea||{x:3,y:3,w:94,h:55})}
+    }];
+    delete s.view; delete s.rowIds; delete s.visibility; delete s.contentArea;
+  } else {
+    s.passages.forEach(p=>{
+      p.id=p.id||'pg-'+(++SL_PASSAGE_CTR);
+      p.rowIds=p.rowIds||[];
+      p.visibility={...SL_VIS_DEFAULT, ...(p.visibility||{})};
+      p.contentArea=p.contentArea||{x:3,y:3,w:94,h:55};
+    });
+  }
+  return s;
+}
 function slLoadDeck(data){
-  SL_DECK = { slides: Array.isArray(data?.slides) ? data.slides.map(s=>({...s, elements:(s.elements||[]).map(e=>({...e}))})) : [] };
+  SL_DECK = { slides: Array.isArray(data?.slides) ? data.slides.map(s=>_slMigrateSlide({...s, elements:(s.elements||[]).map(e=>({...e}))})) : [] };
   SL_DECK.slides.forEach(s=>{ s.id=s.id||'sl-'+(++SL_SLIDE_CTR); (s.elements||[]).forEach(e=>{ e.id=e.id||'el-'+(++SL_EL_CTR); }); });
   SL_ACTIVE_IDX = 0; SL_SEL_EL_ID = null; SL_SEL_EL_IDS = [];
   // Do NOT call slRenderAll here — setEditorView and explicit refresh calls handle rendering.
@@ -9188,6 +9233,38 @@ function _slApplyElOpRedo(sl, entry){
   }
 }
 
+// Same shape/spirit as _slApplyElOpUndo/Redo above, for slide.passages[]
+// instead of slide.elements[]. entry: {kind:'add',passage} /
+// {kind:'remove',idx,passage} / {kind:'prop',passageId,prop,key?,oldVal,newVal}.
+function _slApplyPassageOpUndo(sl, entry){
+  if(entry.kind==='add'){
+    sl.passages=sl.passages.filter(p=>p.id!==entry.passage.id);
+    if(_slIsPassageSel(SL_SEL_EL_ID) && _slPassageIdFromSel(SL_SEL_EL_ID)===entry.passage.id) slSelectEl(null);
+  } else if(entry.kind==='remove'){
+    sl.passages.splice(entry.idx,0,entry.passage);
+  } else if(entry.kind==='prop'){
+    const p=sl.passages.find(x=>x.id===entry.passageId); if(!p) return;
+    if(entry.prop==='visibility') p.visibility={...p.visibility,[entry.key]:entry.oldVal};
+    else if(entry.prop==='rowIds') p.rowIds=[...entry.oldVal];
+    else if(entry.prop==='contentArea') Object.assign(p.contentArea, entry.oldVal);
+    else p[entry.prop]=entry.oldVal; // 'view'
+  }
+}
+function _slApplyPassageOpRedo(sl, entry){
+  if(entry.kind==='add'){
+    if(!sl.passages.some(p=>p.id===entry.passage.id)) sl.passages.push({...entry.passage});
+  } else if(entry.kind==='remove'){
+    sl.passages=sl.passages.filter(p=>p.id!==entry.passage.id);
+    if(_slIsPassageSel(SL_SEL_EL_ID) && _slPassageIdFromSel(SL_SEL_EL_ID)===entry.passage.id) slSelectEl(null);
+  } else if(entry.kind==='prop'){
+    const p=sl.passages.find(x=>x.id===entry.passageId); if(!p) return;
+    if(entry.prop==='visibility') p.visibility={...p.visibility,[entry.key]:entry.newVal};
+    else if(entry.prop==='rowIds') p.rowIds=[...entry.newVal];
+    else if(entry.prop==='contentArea') Object.assign(p.contentArea, entry.newVal);
+    else p[entry.prop]=entry.newVal;
+  }
+}
+
 function _slApplyUndo(op){
   if(!op.type?.startsWith('sl-')) return false;
   if(op.type==='sl-add-slide'){
@@ -9201,11 +9278,30 @@ function _slApplyUndo(op){
   }
   if(op.type==='sl-slide-prop'){
     const sl=SL_DECK.slides[op.idx]; if(!sl) return true;
+    // view/rowIds/contentArea/visibility are dead branches, kept only so an
+    // in-flight undo entry from before passages[] existed can't crash —
+    // nothing pushes these three anymore (see sl-passage-prop below).
+    // background/notes are still genuinely slide-level and stay live.
     if(op.prop==='visibility') sl.visibility={...sl.visibility,[op.key]:op.oldVal};
     else if(op.prop==='rowIds') sl.rowIds=[...op.oldVal];
-    else if(op.prop==='contentArea') Object.assign(sl.contentArea, op.oldVal);
+    else if(op.prop==='contentArea'){ if(sl.contentArea) Object.assign(sl.contentArea, op.oldVal); }
     else sl[op.prop]=op.oldVal;
     slRenderAll(); return true;
+  }
+  if(op.type==='sl-add-passage'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    _slApplyPassageOpUndo(sl,{kind:'add',passage:op.passage});
+    slUpdatePropsPanel(); slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
+  if(op.type==='sl-remove-passage'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    _slApplyPassageOpUndo(sl,{kind:'remove',idx:op.idx,passage:op.passage});
+    slUpdatePropsPanel(); slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
+  if(op.type==='sl-passage-prop'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    _slApplyPassageOpUndo(sl,{kind:'prop',passageId:op.passageId,prop:op.prop,key:op.key,oldVal:op.oldVal,newVal:op.newVal});
+    slUpdatePropsPanel(); slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-move-slide'){
     // Undo: move back from toIdx to fromIdx
@@ -9262,11 +9358,28 @@ function _slApplyRedo(op){
   }
   if(op.type==='sl-slide-prop'){
     const sl=SL_DECK.slides[op.idx]; if(!sl) return true;
+    // See the matching comment in _slApplyUndo — view/rowIds/contentArea/
+    // visibility are dead branches kept only for crash-safety.
     if(op.prop==='visibility') sl.visibility={...sl.visibility,[op.key]:op.newVal};
     else if(op.prop==='rowIds') sl.rowIds=[...op.newVal];
-    else if(op.prop==='contentArea') Object.assign(sl.contentArea, op.newVal);
+    else if(op.prop==='contentArea'){ if(sl.contentArea) Object.assign(sl.contentArea, op.newVal); }
     else sl[op.prop]=op.newVal;
     slRenderAll(); return true;
+  }
+  if(op.type==='sl-add-passage'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    _slApplyPassageOpRedo(sl,{kind:'add',passage:op.passage});
+    slUpdatePropsPanel(); slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
+  if(op.type==='sl-remove-passage'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    _slApplyPassageOpRedo(sl,{kind:'remove',idx:op.idx,passage:op.passage});
+    slUpdatePropsPanel(); slRenderActive(); slRenderThumb(op.slideIdx); return true;
+  }
+  if(op.type==='sl-passage-prop'){
+    const sl=SL_DECK.slides[op.slideIdx]; if(!sl) return true;
+    _slApplyPassageOpRedo(sl,{kind:'prop',passageId:op.passageId,prop:op.prop,key:op.key,oldVal:op.oldVal,newVal:op.newVal});
+    slUpdatePropsPanel(); slRenderActive(); slRenderThumb(op.slideIdx); return true;
   }
   if(op.type==='sl-move-slide'){
     // Redo: move from fromIdx to toIdx again
@@ -9313,18 +9426,26 @@ const _slOrigApplyUndo=applyRowUndo;
 // Patched into applyRowUndo/applyRowRedo at the top via the existing bracket pattern
 
 /* ── Slide factory ── */
-function slMakeBlank(){
-  return {id:'sl-'+(++SL_SLIDE_CTR),type:'blank',view:'phrasing',rowIds:[],
+/* A "passage" is one independently-positioned content region on a slide —
+   its own row selection, view (phrasing/diagram), visibility toggles, and
+   contentArea. A slide holds an array of these (slide.passages) so it can
+   show multiple regions at once (e.g. verses 1-5 in one box, 6-10 in
+   another) instead of exactly one passage per slide. */
+function slMakePassage(rowIds){
+  return {id:'pg-'+(++SL_PASSAGE_CTR), view:'phrasing', rowIds:rowIds||[],
     visibility:{...SL_VIS_DEFAULT},
-    contentArea:{x:3,y:3,w:94,h:55},
+    contentArea:{x:3,y:3,w:94,h:55}};
+}
+function slMakeBlank(){
+  return {id:'sl-'+(++SL_SLIDE_CTR),type:'blank',
+    passages:[slMakePassage([])],
     background:'#ffffff',
     elements:[],notes:''};
 }
 function slMakeContent(){
   const allRids=_realRows().map(r=>r.dataset.rid).filter(Boolean);
-  return {id:'sl-'+(++SL_SLIDE_CTR),type:'content',view:'phrasing',rowIds:allRids,
-    visibility:{...SL_VIS_DEFAULT},
-    contentArea:{x:3,y:3,w:94,h:55},
+  return {id:'sl-'+(++SL_SLIDE_CTR),type:'content',
+    passages:[slMakePassage(allRids)],
     background:'#ffffff',
     elements:[],notes:''};
 }
@@ -9359,7 +9480,15 @@ function slDeleteSlide(idx){
 function slDuplicateSlide(idx){
   const src=SL_DECK.slides[idx];
   const copy={...JSON.parse(JSON.stringify(src)),id:'sl-'+(++SL_SLIDE_CTR)};
-  copy.elements.forEach(e=>{e.id='el-'+(++SL_EL_CTR);});
+  // Regenerate passage ids, remapping any element's sourcePassageId
+  // (floatlabels/commentboxes) so derived elements stay attached to the
+  // correct (now-duplicated) region rather than the original slide's.
+  const passageIdMap={};
+  copy.passages.forEach(p=>{ const oldId=p.id; p.id='pg-'+(++SL_PASSAGE_CTR); passageIdMap[oldId]=p.id; });
+  copy.elements.forEach(e=>{
+    e.id='el-'+(++SL_EL_CTR);
+    if(e.sourcePassageId && passageIdMap[e.sourcePassageId]) e.sourcePassageId=passageIdMap[e.sourcePassageId];
+  });
   const newIdx=idx+1;
   SL_DECK.slides.splice(newIdx,0,copy);
   _slPush({type:'sl-add-slide',idx:newIdx,slide:JSON.parse(JSON.stringify(copy))});
@@ -9387,61 +9516,74 @@ function slSyncDerivedElements(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
 
   // ── Floating diagram labels → floatlabel elements ──
-  if(sl.view==='diagram'){
+  // Labels (DIAGRAM_DATA.labels) carry no row/passage association at all —
+  // they're a flat, project-wide, position-only list created from the main
+  // Diagram View editor, entirely independent of Slides View. With multiple
+  // regions there's no reliable signal to auto-assign a label to one
+  // specific region, so — documented limitation, not a bug — labels sync
+  // only to the FIRST region on the slide that's in diagram view (matches
+  // the single-passage behavior this replaces). A slide with two
+  // diagram-view regions only gets labels on the first.
+  const diagramPassage=sl.passages.find(p=>p.view==='diagram');
+  if(diagramPassage){
     const existingLabels=sl.elements.filter(e=>e.type==='floatlabel');
     const newLabels=[];
-    (DIAGRAM_DATA.labels||[]).forEach((lb,i)=>{
+    (DIAGRAM_DATA.labels||[]).forEach((lb)=>{
       const existing=existingLabels.find(e=>e.sourceId===lb.id);
       if(existing){
         // Update text from live data; keep user-moved position
         existing.html=lb.text||'';
+        existing.sourcePassageId=diagramPassage.id;
         newLabels.push(existing);
       } else {
         // New label — add at its diagram position
         newLabels.push({
-          id:'el-'+(++SL_EL_CTR), type:'floatlabel', sourceId:lb.id,
+          id:'el-'+(++SL_EL_CTR), type:'floatlabel', sourceId:lb.id, sourcePassageId:diagramPassage.id,
           x: parseFloat(lb.x)||5, y: parseFloat(lb.y)||5,
           w:18, h:8,
           html: lb.text||''
         });
       }
     });
-    // Remove non-label and non-commentbox derived elements, keep user text boxes
     sl.elements=sl.elements.filter(e=>e.type!=='floatlabel');
     sl.elements.push(...newLabels);
   } else {
-    // Clear floatlabels when in phrasing mode
+    // No region in diagram view — clear floatlabels
     sl.elements=sl.elements.filter(e=>e.type!=='floatlabel');
   }
 
-  // ── Comment boxes → commentbox elements ──
+  // ── Comment boxes → commentbox elements, scoped to their owning region ──
   const existingCmts=sl.elements.filter(e=>e.type==='commentbox');
   const newCmts=[];
-  let cmtIdx=0;
-  sl.rowIds.forEach(rid=>{
-    const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
-    const cid=xrow?.dataset.cid; if(!cid) return;
-    const raw=SL_CMT_CACHE[cid]
-      ||(document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`)?.innerHTML||'');
-    const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
-    if(!txt) return;
-    const lid=xrow.querySelector('.lid')?.textContent||'';
-    const labelStr=lid!=='—'?lid:'';
-    const existing=existingCmts.find(e=>e.sourceCid===cid);
-    if(existing){
-      existing.html=`<b style="color:#C8A84B">${labelStr}</b> ${txt}`;
-      newCmts.push(existing);
-    } else {
-      // Default position: stagger in bottom-right
-      const col=cmtIdx%2, row=Math.floor(cmtIdx/2);
-      newCmts.push({
-        id:'el-'+(++SL_EL_CTR), type:'commentbox', sourceCid:cid,
-        x: 55+col*20, y: 70+row*15,
-        w:38, h:12,
-        html:`<b style="color:#C8A84B">${labelStr}</b> ${txt}`
-      });
-    }
-    cmtIdx++;
+  sl.passages.forEach(passage=>{
+    let cmtIdx=0;
+    passage.rowIds.forEach(rid=>{
+      const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+      const cid=xrow?.dataset.cid; if(!cid) return;
+      const raw=SL_CMT_CACHE[cid]
+        ||(document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`)?.innerHTML||'');
+      const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
+      if(!txt) return;
+      const lid=xrow.querySelector('.lid')?.textContent||'';
+      const labelStr=lid!=='—'?lid:'';
+      const existing=existingCmts.find(e=>e.sourceCid===cid && e.sourcePassageId===passage.id);
+      if(existing){
+        existing.html=`<b style="color:#C8A84B">${labelStr}</b> ${txt}`;
+        newCmts.push(existing);
+      } else {
+        // Default position: stagger near the owning region's own contentArea
+        // rather than a fixed slide-wide corner.
+        const col=cmtIdx%2, row=Math.floor(cmtIdx/2);
+        const ca=passage.contentArea;
+        newCmts.push({
+          id:'el-'+(++SL_EL_CTR), type:'commentbox', sourceCid:cid, sourcePassageId:passage.id,
+          x: Math.min(90, ca.x+ca.w*0.4+col*20), y: Math.min(85, ca.y+ca.h+2+row*15),
+          w:38, h:12,
+          html:`<b style="color:#C8A84B">${labelStr}</b> ${txt}`
+        });
+      }
+      cmtIdx++;
+    });
   });
   sl.elements=sl.elements.filter(e=>e.type!=='commentbox');
   sl.elements.push(...newCmts);
@@ -9877,10 +10019,10 @@ function _slUpdateVisRowsForView(view){
 }
 
 function slSetView(view){
-  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  const old=sl.view; if(old===view) return;
-  sl.view=view;
-  _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'view',oldVal:old,newVal:view});
+  const passage=_slActivePassage(); if(!passage) return;
+  const old=passage.view; if(old===view) return;
+  passage.view=view;
+  _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'view',oldVal:old,newVal:view});
   document.getElementById('sl-view-phrasing')?.classList.toggle('active',view==='phrasing');
   document.getElementById('sl-view-diagram')?.classList.toggle('active',view==='diagram');
   _slUpdateVisRowsForView(view);
@@ -9891,10 +10033,10 @@ function slSetView(view){
   slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 function slVisChange(key,val){
-  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  const old=sl.visibility[key];
-  sl.visibility[key]=val;
-  _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'visibility',key,oldVal:old,newVal:val});
+  const passage=_slActivePassage(); if(!passage) return;
+  const old=passage.visibility[key];
+  passage.visibility[key]=val;
+  _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'visibility',key,oldVal:old,newVal:val});
   autoSave();
   // Live re-render — see slSetView above for why this is safe to do here.
   slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
@@ -9952,20 +10094,20 @@ function slNotesFmtCmd(cmd){
   document.execCommand(cmd,false,null);
 }
 function slSelectAllRows(){
-  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  const old=[...sl.rowIds];
-  sl.rowIds=_realRows().map(r=>r.dataset.rid).filter(Boolean);
-  _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[...sl.rowIds]});
+  const passage=_slActivePassage(); if(!passage) return;
+  const old=[...passage.rowIds];
+  passage.rowIds=_realRows().map(r=>r.dataset.rid).filter(Boolean);
+  _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[...passage.rowIds]});
   slUpdateRowList(); autoSave();
   // Live re-render, matching the individual row checkbox this button sits
   // next to (app.js slUpdateRowList's per-row change handler).
   slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 function slClearAllRows(){
-  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  const old=[...sl.rowIds];
-  sl.rowIds=[];
-  _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[]});
+  const passage=_slActivePassage(); if(!passage) return;
+  const old=[...passage.rowIds];
+  passage.rowIds=[];
+  _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[]});
   slUpdateRowList(); autoSave();
   slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
@@ -9973,42 +10115,100 @@ function slClearAllRows(){
 /* ── Update props panel from active slide ── */
 function slUpdatePropsPanel(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
-  document.getElementById('sl-view-phrasing')?.classList.toggle('active',sl.view==='phrasing');
-  document.getElementById('sl-view-diagram')?.classList.toggle('active',sl.view==='diagram');
+  slRenderPassageTabs();
+  const passage=_slActivePassage(); if(!passage) return;
+  document.getElementById('sl-view-phrasing')?.classList.toggle('active',passage.view==='phrasing');
+  document.getElementById('sl-view-diagram')?.classList.toggle('active',passage.view==='diagram');
   const bgBtn=document.getElementById('sl-bg-btn'); if(bgBtn) bgBtn.style.background=sl.background||'#ffffff';
-  _slUpdateVisRowsForView(sl.view);
-  document.getElementById('sl-vis-indent')   .checked=!!sl.visibility.indentation;
-  document.getElementById('sl-vis-trans')    .checked=!!sl.visibility.translation;
-  document.getElementById('sl-vis-verse')    .checked=!!sl.visibility.verseNums;
-  document.getElementById('sl-vis-comments') .checked=!!sl.visibility.comments;
-  document.getElementById('sl-vis-connectors').checked=!!sl.visibility.connectors;
-  document.getElementById('sl-vis-brackets') .checked=!!sl.visibility.brackets;
-  document.getElementById('sl-vis-labels')   .checked=!!sl.visibility.labels;
+  _slUpdateVisRowsForView(passage.view);
+  document.getElementById('sl-vis-indent')   .checked=!!passage.visibility.indentation;
+  document.getElementById('sl-vis-trans')    .checked=!!passage.visibility.translation;
+  document.getElementById('sl-vis-verse')    .checked=!!passage.visibility.verseNums;
+  document.getElementById('sl-vis-comments') .checked=!!passage.visibility.comments;
+  document.getElementById('sl-vis-connectors').checked=!!passage.visibility.connectors;
+  document.getElementById('sl-vis-brackets') .checked=!!passage.visibility.brackets;
+  document.getElementById('sl-vis-labels')   .checked=!!passage.visibility.labels;
   const notesEl=document.getElementById('sl-notes');
   if(notesEl && document.activeElement!==notesEl) notesEl.innerHTML=_slNotesToHTML(sl.notes);
   slUpdateRowList();
 }
-function slUpdateRowList(){
+// One pill per slide.passages[i] plus a trailing "+" tab. Clicking a tab
+// calls slSelectEl exactly like clicking the region on the canvas does —
+// SL_SEL_EL_ID stays the single source of truth for "which region is
+// being edited," driving both the canvas highlight and this panel.
+function slRenderPassageTabs(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const wrap=document.getElementById('sl-passage-tabs'); if(!wrap) return;
+  wrap.innerHTML='';
+  const activeId=_slActivePassage()?.id;
+  sl.passages.forEach((p,i)=>{
+    const tab=document.createElement('button');
+    tab.type='button';
+    tab.className='sl-passage-tab'+(p.id===activeId?' active':'');
+    tab.textContent='Region '+(i+1);
+    tab.onclick=()=>{ SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl(_slPassageSelId(p.id)); slUpdatePropsPanel(); };
+    if(sl.passages.length>1){
+      const del=document.createElement('span');
+      del.className='sl-passage-tab-del';
+      del.textContent='×';
+      del.title=typeof t==='function'?t('slides.delete-region'):'Delete region';
+      del.onclick=(ev)=>{ ev.stopPropagation(); slDeleteRegion(p.id); };
+      tab.appendChild(del);
+    }
+    wrap.appendChild(tab);
+  });
+  const addTab=document.createElement('button');
+  addTab.type='button';
+  addTab.className='sl-passage-tab sl-passage-tab-add';
+  addTab.textContent='+';
+  addTab.title=typeof t==='function'?t('slides.add-region'):'Add region';
+  addTab.onclick=()=>slAddRegion();
+  wrap.appendChild(addTab);
+}
+function slUpdateRowList(){
+  const passage=_slActivePassage(); if(!passage) return;
   const list=document.getElementById('sl-row-list'); if(!list) return;
   list.innerHTML='';
   _realRows().forEach(xrow=>{
     const rid=xrow.dataset.rid; if(!rid) return;
     const lid=xrow.querySelector('.lid')?.textContent||'—';
     const verse=xrow.querySelector('.vin')?.value||'';
-    const checked=sl.rowIds.includes(rid);
+    const checked=passage.rowIds.includes(rid);
     const label=document.createElement('label');
     label.className='sl-row-check';
     label.innerHTML=`<input type="checkbox" ${checked?'checked':''}><span class="sl-row-lbl">${lid!=='—'?lid:''}</span><span style="color:var(--muted);font-size:10px">${verse}</span>`;
     label.querySelector('input').addEventListener('change',function(){
-      const old=[...sl.rowIds];
-      if(this.checked){ if(!sl.rowIds.includes(rid)) sl.rowIds.push(rid); }
-      else { sl.rowIds=sl.rowIds.filter(r=>r!==rid); }
-      _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[...sl.rowIds]});
+      const old=[...passage.rowIds];
+      if(this.checked){ if(!passage.rowIds.includes(rid)) passage.rowIds.push(rid); }
+      else { passage.rowIds=passage.rowIds.filter(r=>r!==rid); }
+      _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[...passage.rowIds]});
       slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
     });
     list.appendChild(label);
   });
+}
+// "+ Add region" — new independent content region on the active slide,
+// offset from the last region so it isn't placed exactly on top of it.
+function slAddRegion(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const passage=slMakePassage([]);
+  const last=sl.passages[sl.passages.length-1];
+  if(last){ passage.contentArea={...last.contentArea, y:Math.min(90,last.contentArea.y+8), x:Math.min(90,last.contentArea.x+4)}; }
+  sl.passages.push(passage);
+  _slPush({type:'sl-add-passage',slideIdx:SL_ACTIVE_IDX,passage:{...passage}});
+  SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl(_slPassageSelId(passage.id));
+  slUpdatePropsPanel(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+}
+// Removes a region; refuses to remove a slide's last remaining region
+// (mirrors the existing "can't delete the last slide" guard).
+function slDeleteRegion(passageId){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  if(sl.passages.length<=1){ toast(typeof t==='function'?t('slides.region-min'):'A slide needs at least one region.'); return; }
+  const idx=sl.passages.findIndex(p=>p.id===passageId); if(idx<0) return;
+  const [removed]=sl.passages.splice(idx,1);
+  _slPush({type:'sl-remove-passage',slideIdx:SL_ACTIVE_IDX,idx,passage:removed});
+  if(_slIsPassageSel(SL_SEL_EL_ID) && _slPassageIdFromSel(SL_SEL_EL_ID)===passageId) slSelectEl(null);
+  slUpdatePropsPanel(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
 }
 
 /* ── Canvas sizing: maintain 16:9, scale to fit outer container ── */
@@ -10280,6 +10480,231 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
 }
 
 /* ── Render a slide into a target container ── */
+// Builds one region's DOM (passageEl + its content inner/diagWrap) and
+// wires its drag/click-to-select handlers. Does NOT schedule its own
+// requestAnimationFrame — slRenderSlideInto batches all regions' measure/
+// scale work into one shared rAF (see below) to avoid interleaving N
+// regions' DOM reads and writes (layout thrash). Returns null if this
+// region has no rows and we're not in the Slides editor (nothing to show
+// on a thumbnail/export for an empty region), matching the original
+// single-passage gate.
+function _slRenderOnePassage(passage, slide, container, w, h, isExport){
+  if(passage.rowIds.length===0 && EDITOR_VIEW!=='slides') return null;
+
+  const passageEl=document.createElement('div');
+  passageEl.className='sl-el sl-el-passage';
+  passageEl.dataset.elType='passage';
+  passageEl.dataset.passageId=passage.id;
+  const ca=passage.contentArea;
+  passageEl.style.cssText=`left:${ca.x/100*w}px;top:${ca.y/100*h}px;width:${ca.w/100*w}px;height:${ca.h/100*h}px;overflow:visible;background:transparent;position:absolute;`;
+
+  let inner=null, diagWrap=null;
+
+  if(passage.rowIds.length>0){
+    // Build content inner frame
+    inner=document.createElement('div');
+    inner.style.cssText='position:absolute;top:0;left:0;transform-origin:top left;';
+
+    if(passage.view==='phrasing'){
+      const rb=document.createElement('div');
+      rb.style.cssText='background:transparent;';
+      passage.rowIds.forEach(rid=>{
+        const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+        if(!xrow) return;
+        const clone=xrow.cloneNode(true);
+        clone.querySelectorAll('button,.cmtbtn,.drow-pip-cell').forEach(el=>el.remove());
+        rb.appendChild(clone);
+      });
+      const v=passage.visibility;
+      if(!v.indentation) rb.querySelectorAll('.cedit').forEach(c=>{c.style.paddingLeft='0';c.style.paddingRight='0';});
+      if(!v.translation)  rb.querySelectorAll('.xcell.grow + .vdiv, .xcell.grow ~ .xcell.grow').forEach(e=>e.style.display='none');
+      // Reuses the .sl-hide-verse CSS rule (targets .xcell:first-child) —
+      // same class the PDF/projector render path applies for this toggle.
+      if(!v.verseNums) rb.classList.add('sl-hide-verse');
+      // Comments as footnotes — read from in-memory cache (DOM may be hidden)
+      if(v.comments){
+        const fns=[];
+        passage.rowIds.forEach(rid=>{
+          const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+          const cid=xrow?.dataset.cid; if(!cid) return;
+          // Read from in-memory comment cache, fallback to DOM
+          const cached=SL_CMT_CACHE[cid];
+          const raw=cached!==undefined ? cached
+            : (document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`)?.innerHTML||'');
+          const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
+          if(!txt) return;
+          const lid=xrow.querySelector('.lid')?.textContent||'';
+          fns.push({lid:lid!=='—'?lid:'',txt});
+        });
+        if(fns.length){
+          const fnDiv=document.createElement('div');
+          fnDiv.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid rgba(73,53,72,.2);font-family:var(--ui,sans-serif);font-size:10px;color:#555;';
+          fns.forEach(fn=>{
+            const row=document.createElement('div');
+            row.style.cssText='margin-bottom:3px;';
+            row.innerHTML=`<b style="color:#C8A84B;margin-right:4px">${fn.lid}</b>${fn.txt}`;
+            fnDiv.appendChild(row);
+          });
+          rb.appendChild(fnDiv);
+        }
+      }
+      inner.appendChild(rb);
+      // Render discourse unit dividers between cloned rows
+      slDrawDividersIntoClone(rb.querySelectorAll('.xrow'), passage);
+    } else {
+      // Build diagram content by cloning actual .dblock elements from the live
+      // diagram rows — this preserves exact block dimensions (padding, font-size,
+      // border) so connector Y positions match the live diagram precisely.
+      // We must first ensure #dcanvas is populated with current rows.
+      const dc=document.getElementById('dcanvas');
+      const hasBlocks=dc&&dc.querySelectorAll('.dblock').length>0;
+      if(!hasBlocks) renderDiagram();
+
+      diagWrap=document.createElement('div');
+      // Use a fixed natural width matching typical diagram canvas width.
+      // dc.scrollWidth returns 0 when #dzone is display:none (Slides View hides it),
+      // which makes all block offsets 0 and breaks connector path calculations.
+      diagWrap.style.cssText='position:relative;background:transparent;width:900px;';
+      const v=passage.visibility;
+      // Reuses the .sl-hide-verse CSS rule (targets .dcell.dv) — same
+      // class the PDF/projector render path applies for this toggle.
+      if(!v.verseNums) diagWrap.classList.add('sl-hide-verse');
+
+      passage.rowIds.forEach(rid=>{
+        const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+        if(!xrow) return;
+
+        // Clone the live .drow from #dcanvas so block dimensions match exactly
+        const liveDrow=dc.querySelector(`.drow[data-rid="${rid}"]`);
+
+        const dRow=document.createElement('div');
+        dRow.className='drow'+(IS_RTL?' rtl':'');
+        dRow.dataset.rid=rid;
+        dRow.style.cssText='display:flex;align-items:flex-start;margin-bottom:10px;';
+
+        // Verse cell
+        const verse=xrow.querySelector('.vin')?.value||'';
+        const vCell=document.createElement('div');
+        vCell.className='dcell dv';
+        vCell.style.cssText='width:60px;min-width:60px;font-family:var(--ui,sans-serif);font-size:11px;color:#A89F90;padding-top:6px;flex-shrink:0;';
+        vCell.textContent=verse;
+
+        // Line ID cell
+        const lidEl=xrow.querySelector('.lid');
+        const lCell=document.createElement('div');
+        lCell.className='dcell dl';
+        lCell.style.cssText='width:52px;min-width:52px;font-family:var(--ui,sans-serif);font-size:11px;color:#C8A84B;font-weight:700;padding-top:6px;flex-shrink:0;';
+        lCell.textContent=lidEl?lidEl.textContent:'';
+
+        const lane=document.createElement('div');
+        lane.className='dlane';
+        lane.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column;align-items:'+(IS_RTL?'flex-end':'flex-start')+';';
+
+        if(liveDrow){
+          // Use the actual .dblock clone from live diagram — preserves exact metrics
+          const liveBlock=liveDrow.querySelector('.dblock');
+          if(liveBlock){
+            const block=liveBlock.cloneNode(true);
+            // Remove interactive elements (pip cells handled separately)
+            block.querySelectorAll('.drow-pip-cell,.dbrk-pip,button').forEach(el=>el.remove());
+            // Remove any zoom transform that might have been applied
+            block.style.zoom='';
+            lane.appendChild(block);
+          }
+          // Translation line
+          if(v.translation){
+            const liveTrans=liveDrow.querySelector('.dblock-trans');
+            if(liveTrans){
+              const trans=liveTrans.cloneNode(true);
+              lane.appendChild(trans);
+            }
+          }
+        } else {
+          // Fallback if live drow not found: build from xrow data
+          const origCedit=xrow.querySelector('#oc-'+rid+' .cedit');
+          const indent=parseInt(origCedit?.dataset.indent||'0');
+          const block=document.createElement('div');
+          block.className='dblock';
+          block.dataset.rid=rid;
+          block.style.cssText='display:inline-block;border:1.5px solid rgba(73,53,72,.22);border-radius:6px;padding:5px 10px;font-family:var(--serif,serif);font-size:13px;max-width:520px;'+(IS_RTL?'margin-right:'+(indent*32)+'px;direction:rtl;text-align:right;':'margin-left:'+(indent*32)+'px;');
+          block.innerHTML=origCedit?origCedit.innerHTML:'';
+          lane.appendChild(block);
+        }
+
+        dRow.appendChild(vCell);
+        dRow.appendChild(lCell);
+        dRow.appendChild(lane);
+        diagWrap.appendChild(dRow);
+      });
+
+      inner.appendChild(diagWrap);
+    }
+
+    passageEl.appendChild(inner);
+  } else if(EDITOR_VIEW==='slides'){
+    const msg=document.createElement('div');
+    msg.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--ui);font-size:11px;color:rgba(0,0,0,.2);font-style:italic;pointer-events:none;text-align:center;padding:20px;';
+    msg.textContent=t('slides.no-rows');
+    passageEl.appendChild(msg);
+  }
+
+  // Drag in editor — region is draggable; clicking selects it, which drives
+  // both the canvas highlight and (via slUpdatePropsPanel) which region's
+  // fields the props panel shows — SL_SEL_EL_ID is the single source of
+  // truth for both.
+  if(EDITOR_VIEW==='slides'){
+    passageEl.style.cursor='move';
+    passageEl.style.touchAction='none';
+    const selId=_slPassageSelId(passage.id);
+    passageEl.addEventListener('pointerdown',ev=>{
+      if(ev.target.closest('.sl-resize-handle')) return;
+      ev.stopPropagation();
+      // Select without re-rendering — slSelectEl handles visual state.
+      // Passage selection is mutually exclusive with the element
+      // multi-selection array (never appears together with it).
+      if(SL_SEL_EL_ID!==selId){ SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl(selId); slUpdatePropsPanel(); }
+      const ca=passage.contentArea;
+      const startX=ev.clientX,startY=ev.clientY;
+      const startCax=ca.x,startCay=ca.y;
+      const oldCA={...ca};
+      const othersForCA=[...(slide.elements||[]), ...slide.passages.filter(p=>p!==passage).map(p=>p.contentArea)];
+      const onMove=mv=>{
+        const dx=(mv.clientX-startX)/w*100;
+        const dy=(mv.clientY-startY)/h*100;
+        let x=Math.max(0,Math.min(100-ca.w,startCax+dx));
+        let y=Math.max(0,Math.min(100-ca.h,startCay+dy));
+        const snap=_slCheckSnap(x,y,ca.w,ca.h,w,h,othersForCA);
+        x=snap.x; y=snap.y;
+        _slUpdateSnapGuides(
+          snap.snappedH ? (snap.guideXPct/100*w) : null,
+          snap.snappedV ? (snap.guideYPct/100*h) : null
+        );
+        ca.x=x; ca.y=y;
+        passageEl.style.left=(ca.x/100*w)+'px';
+        passageEl.style.top=(ca.y/100*h)+'px';
+      };
+      const onUp=()=>{
+        document.removeEventListener('pointermove',onMove);
+        document.removeEventListener('pointerup',onUp);
+        _slHideSnapGuides();
+        if(ca.x!==oldCA.x||ca.y!==oldCA.y){
+          _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
+          autoSave();
+        }
+        slRenderThumb(SL_ACTIVE_IDX);
+      };
+      document.addEventListener('pointermove',onMove);
+      document.addEventListener('pointerup',onUp);
+    });
+    passageEl.addEventListener('click',ev=>{ev.stopPropagation(); SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl(selId); slUpdatePropsPanel();});
+    // Apply selection state without re-render
+    if(SL_SEL_EL_ID===selId) passageEl.classList.add('selected');
+  }
+
+  container.appendChild(passageEl);
+  return {passage, passageEl, inner, diagWrap};
+}
+
 function slRenderSlideInto(slide, container, w, h, isExport){
   container.innerHTML='';
   container.style.width=w+'px';
@@ -10288,193 +10713,50 @@ function slRenderSlideInto(slide, container, w, h, isExport){
   container.style.background=slide.background||'#fff';
   container.style.overflow='hidden';
 
-  // Passage content area — treated as a draggable/resizable element
-  if(slide.rowIds.length>0 || EDITOR_VIEW==='slides'){
-    const passageEl=document.createElement('div');
-    passageEl.className='sl-el sl-el-passage';
-    passageEl.dataset.elType='passage';
-    const ca=slide.contentArea;
-    passageEl.style.cssText=`left:${ca.x/100*w}px;top:${ca.y/100*h}px;width:${ca.w/100*w}px;height:${ca.h/100*h}px;overflow:visible;background:transparent;position:absolute;`;
+  // Build every region's DOM up front, then batch ALL of their
+  // measure/scale work into one shared rAF below — interleaving N
+  // regions' reads and writes across N separate rAFs would thrash layout.
+  const passageRenders=slide.passages
+    .map(p=>_slRenderOnePassage(p, slide, container, w, h, isExport))
+    .filter(pr=>pr && pr.inner); // drop empty/no-content regions — nothing to measure/scale
 
-    if(slide.rowIds.length>0){
-      // Build content inner frame
-      const inner=document.createElement('div');
-      inner.style.cssText='position:absolute;top:0;left:0;transform-origin:top left;';
-      let _slDiagWrap=null; // holds diagWrap ref for use in the rAF below
+  // rAF: draw connectors/brackets for every region, THEN measure every
+  // region's natural size, THEN apply every region's scale — three
+  // batched passes (not interleaved per-region) to avoid layout thrash.
+  //
+  // Each region's bounding box (passageEl) is its own user-defined content
+  // area. Content that is naturally larger than the box is scaled DOWN to
+  // fit inside it uniformly (scale ≤ 1, transform-origin: top left).
+  // This applies in ALL render contexts — editor, projector, presenter, PDF.
+  //
+  // Overlay elements (comment cards, text boxes) are positioned at % of the
+  // FULL canvas (w×h) and are siblings of passageEl in container — they are
+  // NOT children of any region's inner, so they are not affected by that
+  // region's scale. This is intentional: overlays are canvas-level elements
+  // the user places freely, independent of any one region's content area.
+  if(passageRenders.length){
+    requestAnimationFrame(()=>{
+      const live=passageRenders.filter(pr=>container.contains(pr.passageEl)); // drop stale renders
+      if(!live.length) return;
 
-      if(slide.view==='phrasing'){
-        const rb=document.createElement('div');
-        rb.style.cssText='background:transparent;';
-        slide.rowIds.forEach(rid=>{
-          const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
-          if(!xrow) return;
-          const clone=xrow.cloneNode(true);
-          clone.querySelectorAll('button,.cmtbtn,.drow-pip-cell').forEach(el=>el.remove());
-          rb.appendChild(clone);
-        });
-        const v=slide.visibility;
-        if(!v.indentation) rb.querySelectorAll('.cedit').forEach(c=>{c.style.paddingLeft='0';c.style.paddingRight='0';});
-        if(!v.translation)  rb.querySelectorAll('.xcell.grow + .vdiv, .xcell.grow ~ .xcell.grow').forEach(e=>e.style.display='none');
-        // Reuses the .sl-hide-verse CSS rule (targets .xcell:first-child) —
-        // same class the PDF/projector render path applies for this toggle.
-        if(!v.verseNums) rb.classList.add('sl-hide-verse');
-        // Comments as footnotes — read from in-memory cache (DOM may be hidden)
-        if(v.comments){
-          const fns=[];
-          slide.rowIds.forEach(rid=>{
-            const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
-            const cid=xrow?.dataset.cid; if(!cid) return;
-            // Read from in-memory comment cache, fallback to DOM
-            const cached=SL_CMT_CACHE[cid];
-            const raw=cached!==undefined ? cached
-              : (document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`)?.innerHTML||'');
-            const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
-            if(!txt) return;
-            const lid=xrow.querySelector('.lid')?.textContent||'';
-            fns.push({lid:lid!=='—'?lid:'',txt});
-          });
-          if(fns.length){
-            const fnDiv=document.createElement('div');
-            fnDiv.style.cssText='margin-top:8px;padding-top:6px;border-top:1px solid rgba(73,53,72,.2);font-family:var(--ui,sans-serif);font-size:10px;color:#555;';
-            fns.forEach(fn=>{
-              const row=document.createElement('div');
-              row.style.cssText='margin-bottom:3px;';
-              row.innerHTML=`<b style="color:#C8A84B;margin-right:4px">${fn.lid}</b>${fn.txt}`;
-              fnDiv.appendChild(row);
-            });
-            rb.appendChild(fnDiv);
-          }
+      // Pass 1: draw connectors/brackets/annotations (diagram regions only).
+      live.forEach(pr=>{
+        if(pr.passage.view==='diagram' && pr.diagWrap){
+          const v=pr.passage.visibility;
+          if(v.connectors) slDrawConnectorsIntoClone(pr.diagWrap, pr.passage.rowIds);
+          if(v.brackets)   slDrawBracketsIntoClone(pr.diagWrap, pr.passage.rowIds);
+          slDrawAnnotationsIntoClone(pr.diagWrap, pr.passage.rowIds);
         }
-        inner.appendChild(rb);
-        // Render discourse unit dividers between cloned rows
-        slDrawDividersIntoClone(rb.querySelectorAll('.xrow'), slide);
-      } else {
-        // Build diagram content by cloning actual .dblock elements from the live
-        // diagram rows — this preserves exact block dimensions (padding, font-size,
-        // border) so connector Y positions match the live diagram precisely.
-        // We must first ensure #dcanvas is populated with current rows.
-        const dc=document.getElementById('dcanvas');
-        const hasBlocks=dc&&dc.querySelectorAll('.dblock').length>0;
-        if(!hasBlocks) renderDiagram();
+      });
 
-        const diagWrap=document.createElement('div');
-        _slDiagWrap=diagWrap; // store for rAF access
-        // Use a fixed natural width matching typical diagram canvas width.
-        // dc.scrollWidth returns 0 when #dzone is display:none (Slides View hides it),
-        // which makes all block offsets 0 and breaks connector path calculations.
-        diagWrap.style.cssText='position:relative;background:transparent;width:900px;';
-        const v=slide.visibility;
-        // Reuses the .sl-hide-verse CSS rule (targets .dcell.dv) — same
-        // class the PDF/projector render path applies for this toggle.
-        if(!v.verseNums) diagWrap.classList.add('sl-hide-verse');
-
-        slide.rowIds.forEach(rid=>{
-          const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
-          if(!xrow) return;
-
-          // Clone the live .drow from #dcanvas so block dimensions match exactly
-          const liveDrow=dc.querySelector(`.drow[data-rid="${rid}"]`);
-
-          const dRow=document.createElement('div');
-          dRow.className='drow'+(IS_RTL?' rtl':'');
-          dRow.dataset.rid=rid;
-          dRow.style.cssText='display:flex;align-items:flex-start;margin-bottom:10px;';
-
-          // Verse cell
-          const verse=xrow.querySelector('.vin')?.value||'';
-          const vCell=document.createElement('div');
-          vCell.className='dcell dv';
-          vCell.style.cssText='width:60px;min-width:60px;font-family:var(--ui,sans-serif);font-size:11px;color:#A89F90;padding-top:6px;flex-shrink:0;';
-          vCell.textContent=verse;
-
-          // Line ID cell
-          const lidEl=xrow.querySelector('.lid');
-          const lCell=document.createElement('div');
-          lCell.className='dcell dl';
-          lCell.style.cssText='width:52px;min-width:52px;font-family:var(--ui,sans-serif);font-size:11px;color:#C8A84B;font-weight:700;padding-top:6px;flex-shrink:0;';
-          lCell.textContent=lidEl?lidEl.textContent:'';
-
-          const lane=document.createElement('div');
-          lane.className='dlane';
-          lane.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column;align-items:'+(IS_RTL?'flex-end':'flex-start')+';';
-
-          if(liveDrow){
-            // Use the actual .dblock clone from live diagram — preserves exact metrics
-            const liveBlock=liveDrow.querySelector('.dblock');
-            if(liveBlock){
-              const block=liveBlock.cloneNode(true);
-              // Remove interactive elements (pip cells handled separately)
-              block.querySelectorAll('.drow-pip-cell,.dbrk-pip,button').forEach(el=>el.remove());
-              // Remove any zoom transform that might have been applied
-              block.style.zoom='';
-              lane.appendChild(block);
-            }
-            // Translation line
-            if(v.translation){
-              const liveTrans=liveDrow.querySelector('.dblock-trans');
-              if(liveTrans){
-                const trans=liveTrans.cloneNode(true);
-                lane.appendChild(trans);
-              }
-            }
-          } else {
-            // Fallback if live drow not found: build from xrow data
-            const origCedit=xrow.querySelector('#oc-'+rid+' .cedit');
-            const indent=parseInt(origCedit?.dataset.indent||'0');
-            const block=document.createElement('div');
-            block.className='dblock';
-            block.dataset.rid=rid;
-            block.style.cssText='display:inline-block;border:1.5px solid rgba(73,53,72,.22);border-radius:6px;padding:5px 10px;font-family:var(--serif,serif);font-size:13px;max-width:520px;'+(IS_RTL?'margin-right:'+(indent*32)+'px;direction:rtl;text-align:right;':'margin-left:'+(indent*32)+'px;');
-            block.innerHTML=origCedit?origCedit.innerHTML:'';
-            lane.appendChild(block);
-          }
-
-          dRow.appendChild(vCell);
-          dRow.appendChild(lCell);
-          dRow.appendChild(lane);
-          diagWrap.appendChild(dRow);
-        });
-
-        inner.appendChild(diagWrap);
-      }
-
-      passageEl.appendChild(inner);
-      container.appendChild(passageEl);
-
-      // rAF: draw connectors/brackets, then scale passage content to fit the bounding box.
-      //
-      // The passage bounding box (passageEl) is the user-defined content area.
-      // Content that is naturally larger than the box is scaled DOWN to fit inside it
-      // uniformly (scale ≤ 1, transform-origin: top left).
-      // This applies in ALL render contexts — editor, projector, presenter, PDF —
-      // so the bounding box always contains the content regardless of how much text
-      // there is.
-      //
-      // Overlay elements (comment cards, text boxes) are positioned at % of the FULL
-      // canvas (w×h) and are siblings of passageEl in container — they are NOT children
-      // of inner, so they are not affected by the inner scale. This is intentional:
-      // overlays are canvas-level elements that the user places freely, independent of
-      // the passage content area. They remain at their declared canvas positions.
-      requestAnimationFrame(()=>{
-        if(!container.contains(passageEl)) return; // stale render
-
-        // Draw connectors and brackets at natural block dimensions (diagram view only)
-        if(slide.view==='diagram' && _slDiagWrap){
-          const v=slide.visibility;
-          if(v.connectors) slDrawConnectorsIntoClone(_slDiagWrap, slide.rowIds);
-          if(v.brackets)   slDrawBracketsIntoClone(_slDiagWrap, slide.rowIds);
-          // Render free arrows (and future arc/span clones) into diagram slide
-          slDrawAnnotationsIntoClone(_slDiagWrap, slide.rowIds);
-        }
-
-        // Measure natural content size (before any scale)
-        let naturalW=inner.scrollWidth||inner.offsetWidth||400;
-        let naturalH=inner.scrollHeight||inner.offsetHeight||200;
-
-        // For diagram view: bracket SVG labels are position:absolute inside the SVG
-        // and therefore excluded from scrollWidth. Extend naturalW/H via getBBox().
-        if(slide.view==='diagram' && _slDiagWrap){
-          const dsvg=_slDiagWrap.querySelector('#dbrk-svg');
+      // Pass 2: measure natural size + compute scale for every region (reads only).
+      const sized=live.map(pr=>{
+        let naturalW=pr.inner.scrollWidth||pr.inner.offsetWidth||400;
+        let naturalH=pr.inner.scrollHeight||pr.inner.offsetHeight||200;
+        // For diagram view: bracket SVG labels are position:absolute inside the
+        // SVG and therefore excluded from scrollWidth. Extend via getBBox().
+        if(pr.passage.view==='diagram' && pr.diagWrap){
+          const dsvg=pr.diagWrap.querySelector('#dbrk-svg');
           if(dsvg){
             try{
               const bb=dsvg.getBBox();
@@ -10485,97 +10767,42 @@ function slRenderSlideInto(slide, container, w, h, isExport){
             }catch(e){ /* getBBox() unavailable — fall back to scrollWidth */ }
           }
         }
-
-        // Scale to fit the bounding box (passageEl declared size), never scale up.
-        const areaW=parseFloat(passageEl.style.width)  || w;
-        const areaH=parseFloat(passageEl.style.height) || h;
+        const areaW=parseFloat(pr.passageEl.style.width)  || w;
+        const areaH=parseFloat(pr.passageEl.style.height) || h;
         const s=Math.min(areaW/Math.max(naturalW,1), areaH/Math.max(naturalH,1), 1);
+        return {...pr, naturalW, naturalH, s};
+      });
 
-        inner.style.transform=`scale(${s})`;
-        inner.style.transformOrigin='top left';
-        inner.style.width=naturalW+'px';
-        inner.style.height=naturalH+'px';
+      // Pass 3: apply every region's scale (writes only).
+      sized.forEach(pr=>{
+        pr.inner.style.transform=`scale(${pr.s})`;
+        pr.inner.style.transformOrigin='top left';
+        pr.inner.style.width=pr.naturalW+'px';
+        pr.inner.style.height=pr.naturalH+'px';
+      });
 
-        // In export renders, scale the FONT SIZE of overlay elements (comment boxes,
-        // float labels, text boxes) by s so their text stays proportional to the
-        // shrunken passage content.
-        // Positions and dimensions are NOT changed — the box stays exactly where the
-        // user placed it on the canvas. Moving them caused boxes to overlap the passage
-        // blocks; resizing them made them narrower than intended.
-        // The overall CSS transform applied by _slInjectScaled already scales the
-        // entire 960×540 canvas uniformly for the presenter/projector/PDF, so the
-        // declared px positions produce the correct visual layout.
-        if(isExport && s < 1){
-          container.querySelectorAll('.sl-el[data-el-id]').forEach(div=>{
+      // Export-only: scale the FONT SIZE of each overlay element (comment
+      // boxes, float labels, text boxes) by ITS OWNER region's own scale, so
+      // its text stays proportional to that region's shrunken content.
+      // Positions/dimensions are never changed — see the original comment
+      // this replaces, same reasoning, just resolved per-region now.
+      if(isExport){
+        sized.forEach(pr=>{
+          if(pr.s>=1) return;
+          container.querySelectorAll(`.sl-el[data-el-id][data-owner-passage="${pr.passage.id}"]`).forEach(div=>{
             const elId=div.getAttribute('data-el-id');
             const el=slide.elements.find(e=>e.id===elId);
             if(!el) return;
             if(el.type==='textbox'){
               const txInner=div.querySelector('.sl-el-textbox-inner');
-              if(txInner) txInner.style.fontSize=((el.fontSize||18)*s)+'px';
+              if(txInner) txInner.style.fontSize=((el.fontSize||18)*pr.s)+'px';
             } else {
-              div.style.fontSize=(11*s)+'px';
+              div.style.fontSize=(11*pr.s)+'px';
             }
           });
-        }
-      });
-    } else if(EDITOR_VIEW==='slides'){
-      const msg=document.createElement('div');
-      msg.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-family:var(--ui);font-size:11px;color:rgba(0,0,0,.2);font-style:italic;pointer-events:none;text-align:center;padding:20px;';
-      msg.textContent=t('slides.no-rows');
-      passageEl.appendChild(msg);
-    }
-
-    // Drag in editor — passage area is draggable
-    if(EDITOR_VIEW==='slides'){
-      passageEl.style.cursor='move';
-      passageEl.style.touchAction='none';
-      passageEl.addEventListener('pointerdown',ev=>{
-        if(ev.target.closest('.sl-resize-handle')) return;
-        ev.stopPropagation();
-        // Select without re-rendering — slSelectEl handles visual state.
-        // Passage selection is mutually exclusive with the element
-        // multi-selection array (never appears together with it).
-        if(SL_SEL_EL_ID!=='__passage__'){ SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl('__passage__'); }
-        const ca=slide.contentArea;
-        const startX=ev.clientX,startY=ev.clientY;
-        const startCax=ca.x,startCay=ca.y;
-        const oldCA={...ca};
-        const othersForCA=slide.elements||[];
-        const onMove=mv=>{
-          const dx=(mv.clientX-startX)/w*100;
-          const dy=(mv.clientY-startY)/h*100;
-          let x=Math.max(0,Math.min(100-ca.w,startCax+dx));
-          let y=Math.max(0,Math.min(100-ca.h,startCay+dy));
-          const snap=_slCheckSnap(x,y,ca.w,ca.h,w,h,othersForCA);
-          x=snap.x; y=snap.y;
-          _slUpdateSnapGuides(
-            snap.snappedH ? (snap.guideXPct/100*w) : null,
-            snap.snappedV ? (snap.guideYPct/100*h) : null
-          );
-          ca.x=x; ca.y=y;
-          passageEl.style.left=(ca.x/100*w)+'px';
-          passageEl.style.top=(ca.y/100*h)+'px';
-        };
-        const onUp=()=>{
-          document.removeEventListener('pointermove',onMove);
-          document.removeEventListener('pointerup',onUp);
-          _slHideSnapGuides();
-          if(ca.x!==oldCA.x||ca.y!==oldCA.y){
-            _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
-            autoSave();
-          }
-          slRenderThumb(SL_ACTIVE_IDX);
-        };
-        document.addEventListener('pointermove',onMove);
-        document.addEventListener('pointerup',onUp);
-      });
-      passageEl.addEventListener('click',ev=>{ev.stopPropagation(); SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl('__passage__');});
-      // Apply selection state without re-render
-      if(SL_SEL_EL_ID==='__passage__') passageEl.classList.add('selected');
-    }
-
-    container.appendChild(passageEl);
+        });
+      }
+    });
   }
 
   // All overlay elements: textbox, floatlabel, commentbox, shape, image
@@ -10586,11 +10813,15 @@ function slRenderSlideInto(slide, container, w, h, isExport){
     const isShape    = el.type==="shape";
     const isImage    = el.type==="image";
     if(!isTextbox && !isFloatLbl && !isCmtBox && !isShape && !isImage) return;
-    if(isFloatLbl && !slide.visibility.labels) return;
-    if(isCmtBox  && !slide.visibility.comments) return;
+    // Floatlabels/commentboxes are gated by their OWNING region's own
+    // visibility toggle, not a slide-wide one — see slSyncDerivedElements.
+    const ownerPassage=(isFloatLbl||isCmtBox) ? slide.passages.find(p=>p.id===el.sourcePassageId) : null;
+    if(isFloatLbl && (!ownerPassage || !ownerPassage.visibility.labels)) return;
+    if(isCmtBox  && (!ownerPassage || !ownerPassage.visibility.comments)) return;
     const div=document.createElement("div");
     div.className="sl-el "+(isTextbox?"sl-el-textbox":"sl-el-overlay");
     div.setAttribute("data-el-id", el.id);
+    if(ownerPassage) div.setAttribute("data-owner-passage", ownerPassage.id);
     div.style.cssText="left:"+(el.x/100*w)+"px;top:"+(el.y/100*h)+"px;width:"+(el.w/100*w)+"px;height:"+(el.h/100*h)+"px;position:absolute;box-sizing:border-box;";
     if(isTextbox){
       const inner=document.createElement("div");
@@ -10902,7 +11133,7 @@ function _slPositionFloatToolbar(id){
   const textSection=document.getElementById('sl-textfmt-section');
   const shapeVisible = shapeSection && shapeSection.style.display!=='none';
   const textVisible  = textSection && textSection.style.display!=='none';
-  if(!id || id==='__passage__' || (!shapeVisible && !textVisible)){
+  if(!id || _slIsPassageSel(id) || (!shapeVisible && !textVisible)){
     toolbar.style.display='none';
     return;
   }
@@ -10928,15 +11159,16 @@ function _slPositionFloatToolbar(id){
    toolbar, align/fmt setters, resize-handle attachment) — those all
    already null-guard on it, so they go inert automatically whenever 0 or
    2+ elements are selected, with no changes to their own code.
-   '__passage__' selection stays entirely separate — it's never part of
-   SL_SEL_EL_IDS, and selecting it always goes through slSelectEl directly. */
+   A passage selection id ('__passage__:<id>') stays entirely separate —
+   it's never part of SL_SEL_EL_IDS, and selecting a region always goes
+   through slSelectEl directly. */
 function _slSyncSelAlias(){
   SL_SEL_EL_ID = SL_SEL_EL_IDS.length===1 ? SL_SEL_EL_IDS[0] : null;
 }
 
 function slSetSelection(ids){
   const slide=SL_DECK.slides[SL_ACTIVE_IDX];
-  const valid = slide ? ids.filter(id=>id!=='__passage__' && slide.elements.some(e=>e.id===id)) : [];
+  const valid = slide ? ids.filter(id=>!_slIsPassageSel(id) && slide.elements.some(e=>e.id===id)) : [];
   const unique = [...new Set(valid)];
 
   if(unique.length<=1){
@@ -11023,8 +11255,9 @@ function slSelectEl(id){
   if(!id) return; // deselect only
 
   // Find the target element div
-  const target = id==='__passage__'
-    ? cv.querySelector('.sl-el-passage')
+  const selPassageId=_slPassageIdFromSel(id);
+  const target = selPassageId
+    ? cv.querySelector(`.sl-el-passage[data-passage-id="${selPassageId}"]`)
     : cv.querySelector(`.sl-el[data-el-id="${id}"]`);
   if(!target) return;
 
@@ -11034,8 +11267,9 @@ function slSelectEl(id){
   const slide=SL_DECK.slides[SL_ACTIVE_IDX]; if(!slide) return;
   const cw=SL_CANVAS_W, ch=SL_CANVAS_H;
 
-  if(id==='__passage__'){
-    const ca=slide.contentArea;
+  if(selPassageId){
+    const passage=slide.passages.find(p=>p.id===selPassageId); if(!passage) return;
+    const ca=passage.contentArea;
     ['nw','ne','sw','se','n','s','w','e'].forEach(dir=>{
       const rh=document.createElement('div');
       rh.className=`sl-resize-handle sl-rh-${dir}`;
@@ -11060,7 +11294,7 @@ function slSelectEl(id){
         const onUp=()=>{
           document.removeEventListener('pointermove',onMove);
           document.removeEventListener('pointerup',onUp);
-          _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
+          _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'contentArea',oldVal:oldCA,newVal:{...ca}});
           autoSave(); slRenderThumb(SL_ACTIVE_IDX);
         };
         document.addEventListener('pointermove',onMove);
@@ -11170,7 +11404,7 @@ function slStartElDrag(ev, el, div, cw, ch){
   // Snapshot every element NOT in the dragged group once — their geometry
   // doesn't change while this drag is happening.
   const others=(slideNow?.elements||[]).filter(o=>!groupEls.includes(o));
-  if(slideNow?.contentArea) others.push(slideNow.contentArea);
+  (slideNow?.passages||[]).forEach(p=>others.push(p.contentArea));
 
   const onMove=mv=>{
     const dxPct=(mv.clientX-startX)/cw*100;
@@ -11359,6 +11593,10 @@ document.addEventListener('keydown',ev=>{
   if(ev.key==='Delete'||ev.key==='Backspace'){
     if(SL_SEL_EL_IDS.length){
       slDeleteSelection(); ev.preventDefault();
+    } else if(_slIsPassageSel(SL_SEL_EL_ID)){
+      // Was previously a silent no-op here — slDeleteSelection() only ever
+      // reads SL_SEL_EL_IDS, which never contains a passage selection id.
+      slDeleteRegion(_slPassageIdFromSel(SL_SEL_EL_ID)); ev.preventDefault();
     } else if(SL_SEL_EL_ID){
       slCtxAction('delete'); ev.preventDefault();
     } else {
