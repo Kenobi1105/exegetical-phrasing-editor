@@ -11862,28 +11862,38 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
   box-shadow:-4px 0 16px rgba(0,0,0,.15);
   transform:translateX(100%);
   transition:transform .22s cubic-bezier(.4,0,.2,1);
-  overflow-y:auto;padding:18px;box-sizing:border-box;z-index:100;
+  z-index:100;
+  display:flex;flex-direction:column;
   font-family:var(--serif,serif);color:var(--ink,#1F1E1E);
 }
 #sl-proj-bible.open{transform:translateX(0)}
 #sl-proj-bible.pinned{box-shadow:none;transition:none}
+/* Each pane scrolls independently (mirrors .bpane in the main app) —
+   NOT one shared outer scroll — so syncing scroll position in one pane
+   (e.g. top) while split never moves the other. */
+#sl-proj-bible-top, #sl-proj-bible-bottom{
+  flex:1;min-height:0;display:flex;flex-direction:column;
+  padding:18px 18px 0;box-sizing:border-box;
+}
+#sl-proj-bible-bottom{border-top:1px solid rgba(0,0,0,.1);padding-top:18px}
 .sl-proj-bible-label{
+  flex-shrink:0;
   font-family:var(--ui,sans-serif);font-size:12px;font-weight:700;
   color:var(--active,#C8A84B);text-transform:uppercase;letter-spacing:.04em;
   margin-bottom:8px;
 }
-#sl-proj-bible-bottom{margin-top:22px;padding-top:18px;border-top:1px solid rgba(0,0,0,.1)}
+.sl-proj-bible-text{flex:1;min-height:0;overflow-y:auto;padding-bottom:18px}
 </style>
 </head><body>
 <div id="sl-proj-wrap"><div id="sl-proj"></div></div>
 <div id="sl-proj-bible">
   <div id="sl-proj-bible-top">
     <div id="sl-proj-bible-top-label" class="sl-proj-bible-label"></div>
-    <div id="sl-proj-bible-top-text" class="bpane"></div>
+    <div id="sl-proj-bible-top-text" class="bpane sl-proj-bible-text"></div>
   </div>
   <div id="sl-proj-bible-bottom" style="display:none">
     <div id="sl-proj-bible-bottom-label" class="sl-proj-bible-label"></div>
-    <div id="sl-proj-bible-bottom-text" class="bpane"></div>
+    <div id="sl-proj-bible-bottom-text" class="bpane sl-proj-bible-text"></div>
   </div>
 </div>
 <script>
@@ -11904,6 +11914,16 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
     wrap.style.top=Math.round((window.innerHeight-ph*scale)/2)+'px';
   }
 
+  // Scrolls a pane's already-rendered text container so the matching verse
+  // (by data-chapter/data-verse, present on every .bpane-verse — same
+  // markup the main app already uses) sits at the top. No-op if that verse
+  // isn't in the currently-loaded HTML.
+  function _scrollPaneToVerse(textEl, chapter, verse){
+    if(!textEl || chapter==null || verse==null) return;
+    var target=textEl.querySelector('.bpane-verse[data-chapter="'+chapter+'"][data-verse="'+verse+'"]');
+    if(target) target.scrollIntoView({block:'start'});
+  }
+
   window.addEventListener('message',function(ev){
     if(!ev.data) return;
     if(ev.data.type==='sl-slide'){
@@ -11916,18 +11936,25 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
       bp.classList.toggle('open', !!ev.data.open);
       bp.classList.toggle('pinned', !!ev.data.pinned);
       var panes=ev.data.panes||{};
+      var topTextEl=document.getElementById('sl-proj-bible-top-text');
       document.getElementById('sl-proj-bible-top-label').textContent=panes.top?panes.top.label:'';
-      document.getElementById('sl-proj-bible-top-text').innerHTML=panes.top?panes.top.html:'';
+      topTextEl.innerHTML=panes.top?panes.top.html:'';
+      if(panes.top) _scrollPaneToVerse(topTextEl, panes.top.chapter, panes.top.verse);
       var botWrap=document.getElementById('sl-proj-bible-bottom');
+      var botTextEl=document.getElementById('sl-proj-bible-bottom-text');
       if(panes.bottom){
         botWrap.style.display='';
         document.getElementById('sl-proj-bible-bottom-label').textContent=panes.bottom.label;
-        document.getElementById('sl-proj-bible-bottom-text').innerHTML=panes.bottom.html;
+        botTextEl.innerHTML=panes.bottom.html;
+        _scrollPaneToVerse(botTextEl, panes.bottom.chapter, panes.bottom.verse);
       } else {
         botWrap.style.display='none';
       }
       _bibleReservedW=(ev.data.open&&ev.data.pinned)?360:0;
       _applyScale(_lastPw, _lastPh);
+    } else if(ev.data.type==='bible-scroll'){
+      var textEl=document.getElementById('sl-proj-bible-'+ev.data.section+'-text');
+      _scrollPaneToVerse(textEl, ev.data.chapter, ev.data.verse);
     }
   });
 

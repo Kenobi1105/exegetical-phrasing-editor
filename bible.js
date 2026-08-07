@@ -515,6 +515,24 @@ function bScrollTopFor(pane, el){
   return pane.scrollTop + (elRect.top - paneRect.top);
 }
 
+/* Topmost visible verse in a pane, via getBoundingClientRect — shared by
+   _bDoSync (pane-to-pane scroll lock) and _bSyncProjectorBible/
+   _bSyncProjectorScroll (presenter → projector scroll mirroring). */
+function _bTopmostVerseInPane(pane, fallbackChapter){
+  if(!pane) return null;
+  const paneRect=pane.getBoundingClientRect();
+  let verse=1, chapter=fallbackChapter;
+  for(const el of pane.querySelectorAll('.bpane-verse')){
+    const r=el.getBoundingClientRect();
+    if(r.top>=paneRect.top){
+      verse=parseInt(el.dataset.verse)||1;
+      chapter=parseInt(el.dataset.chapter)||fallbackChapter;
+      break;
+    }
+  }
+  return {chapter, verse};
+}
+
 async function _bDoSync(fromSection){
   if(bSyncing||!bScrollLocked||!bSplitOpen)return;
   const toSection=fromSection==='top'?'bottom':'top';
@@ -528,17 +546,8 @@ async function _bDoSync(fromSection){
   const fromCorpus=fromTab.corpus;
   if(toMeta&&toMeta.corpus!=='all'&&toMeta.corpus!==fromCorpus)return;
 
-  // Find topmost visible verse in fromPane using getBoundingClientRect
-  const paneRect=fromPane.getBoundingClientRect();
-  let visibleVerse=1, visibleCh=fromTab.chapter;
-  for(const el of fromPane.querySelectorAll('.bpane-verse')){
-    const r=el.getBoundingClientRect();
-    if(r.top>=paneRect.top){
-      visibleVerse=parseInt(el.dataset.verse)||1;
-      visibleCh=parseInt(el.dataset.chapter)||fromTab.chapter;
-      break;
-    }
-  }
+  // Find topmost visible verse in fromPane
+  const {chapter:visibleCh, verse:visibleVerse}=_bTopmostVerseInPane(fromPane, fromTab.chapter);
 
   bSyncing=true;
   const fromBooks=fromCorpus==='nt'?NT_BOOKS:OT_BOOKS;
@@ -1211,9 +1220,14 @@ function _bSyncProjectorBible(){
   const botEl=document.getElementById('bpane-bottom');
   const topTab=bTabs.top[bActiveTab.top];
   const botTab=bTabs.bottom[bActiveTab.bottom];
+  // Include each pane's current topmost-visible verse so the projector
+  // can scroll freshly-set content to the same anchor the presenter is
+  // looking at, not just leave it at the top.
+  const topAnchor=(topEl&&topTab)?_bTopmostVerseInPane(topEl,topTab.chapter):null;
+  const botAnchor=(bSplitOpen&&botEl&&botTab)?_bTopmostVerseInPane(botEl,botTab.chapter):null;
   const panes={
-    top: topEl ? {label: topTab?topTab.label:'', html: topEl.innerHTML} : null,
-    bottom: (bSplitOpen && botEl) ? {label: botTab?botTab.label:'', html: botEl.innerHTML} : null
+    top: topEl ? {label: topTab?topTab.label:'', html: topEl.innerHTML, chapter: topAnchor?.chapter, verse: topAnchor?.verse} : null,
+    bottom: (bSplitOpen && botEl) ? {label: botTab?botTab.label:'', html: botEl.innerHTML, chapter: botAnchor?.chapter, verse: botAnchor?.verse} : null
   };
   SL_PROJ_WIN.postMessage({type:'bible-state', open:bPanelOpen, pinned:bPinned, panes}, '*');
 }
@@ -1226,6 +1240,25 @@ let _bProjSyncT=null;
 function _bScheduleProjectorSync(){
   clearTimeout(_bProjSyncT);
   _bProjSyncT=setTimeout(_bSyncProjectorBible,150);
+}
+
+/* Lightweight scroll-only sync — doesn't resend pane HTML (that's
+   _bSyncProjectorBible's job, on actual content changes), just tells the
+   projector which verse to scroll its already-rendered pane to. Debounced
+   80ms, matching the existing pane-to-pane _bDoSync scroll-lock timing. */
+function _bSyncProjectorScroll(section){
+  if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
+  const pane=document.getElementById('bpane-'+section);
+  const tab=bTabs[section]?.[bActiveTab[section]];
+  if(!pane||!tab) return;
+  const anchor=_bTopmostVerseInPane(pane, tab.chapter);
+  if(!anchor) return;
+  SL_PROJ_WIN.postMessage({type:'bible-scroll', section, chapter:anchor.chapter, verse:anchor.verse}, '*');
+}
+const _bProjScrollT={top:null, bottom:null};
+function _bScheduleProjectorScroll(section){
+  clearTimeout(_bProjScrollT[section]);
+  _bProjScrollT[section]=setTimeout(()=>_bSyncProjectorScroll(section),80);
 }
 
 function openProjects(){
@@ -1410,6 +1443,13 @@ document.addEventListener('DOMContentLoaded',()=>{
   const _bBotPane=document.getElementById('bpane-bottom');
   if(_bTopPane) new MutationObserver(_bScheduleProjectorSync).observe(_bTopPane,_bObsOpts);
   if(_bBotPane) new MutationObserver(_bScheduleProjectorSync).observe(_bBotPane,_bObsOpts);
+  // Scrolling a pane (without necessarily changing its content) also
+  // mirrors to the projector, so it tracks the presenter scrolling to a
+  // particular verse — separate from the pane-to-pane scroll-lock feature
+  // (bScrollLocked/bRewireScrollSync), always on, cheap no-op via the
+  // SL_PROJ_WIN guard in _bSyncProjectorScroll when no projector is open.
+  if(_bTopPane) _bTopPane.addEventListener('scroll',()=>_bScheduleProjectorScroll('top'),{passive:true});
+  if(_bBotPane) _bBotPane.addEventListener('scroll',()=>_bScheduleProjectorScroll('bottom'),{passive:true});
 
   // Restore pinned state after page refresh — deferred to openEditor
   // (don't call bApplyPin here; #app may be hidden on Screen 1)
