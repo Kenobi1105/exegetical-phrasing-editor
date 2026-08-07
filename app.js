@@ -11850,20 +11850,57 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
   /* transform set by JS based on pw/ph vs viewport */
 }
 #sl-proj{position:relative;overflow:visible;background:#fff;}
+/* Mirrors the presenter's own Bible Module panel — floating overlay by
+   default (does not affect the slide's own size, same as the main app's
+   floating panel never resizes #editor-wrap), or pinned (slide reflows to
+   share the remaining width, via _bibleReservedW below). Read-only: just
+   receives pre-rendered passage HTML over postMessage, same as slides. */
+#sl-proj-bible{
+  position:fixed;top:0;right:0;height:100%;width:360px;
+  background:var(--bg,#fff);
+  border-left:1px solid rgba(0,0,0,.15);
+  box-shadow:-4px 0 16px rgba(0,0,0,.15);
+  transform:translateX(100%);
+  transition:transform .22s cubic-bezier(.4,0,.2,1);
+  overflow-y:auto;padding:18px;box-sizing:border-box;z-index:100;
+  font-family:var(--serif,serif);color:var(--ink,#1F1E1E);
+}
+#sl-proj-bible.open{transform:translateX(0)}
+#sl-proj-bible.pinned{box-shadow:none;transition:none}
+.sl-proj-bible-label{
+  font-family:var(--ui,sans-serif);font-size:12px;font-weight:700;
+  color:var(--active,#C8A84B);text-transform:uppercase;letter-spacing:.04em;
+  margin-bottom:8px;
+}
+#sl-proj-bible-bottom{margin-top:22px;padding-top:18px;border-top:1px solid rgba(0,0,0,.1)}
 </style>
 </head><body>
 <div id="sl-proj-wrap"><div id="sl-proj"></div></div>
+<div id="sl-proj-bible">
+  <div id="sl-proj-bible-top">
+    <div id="sl-proj-bible-top-label" class="sl-proj-bible-label"></div>
+    <div id="sl-proj-bible-top-text" class="bpane"></div>
+  </div>
+  <div id="sl-proj-bible-bottom" style="display:none">
+    <div id="sl-proj-bible-bottom-label" class="sl-proj-bible-label"></div>
+    <div id="sl-proj-bible-bottom-text" class="bpane"></div>
+  </div>
+</div>
 <script>
   var _lastPw=960, _lastPh=540;
+  // Pixels reserved on the right for a PINNED Bible panel — 0 when closed
+  // or floating (floating overlays the slide, doesn't reflow it).
+  var _bibleReservedW=0;
 
   function _applyScale(pw, ph){
-    var scaleX=window.innerWidth/pw, scaleY=window.innerHeight/ph;
+    var availW=window.innerWidth-_bibleReservedW;
+    var scaleX=availW/pw, scaleY=window.innerHeight/ph;
     var scale=Math.min(scaleX,scaleY);
     var wrap=document.getElementById('sl-proj-wrap');
     wrap.style.width=pw+'px';
     wrap.style.height=ph+'px';
     wrap.style.transform='scale('+scale+')';
-    wrap.style.left=Math.round((window.innerWidth-pw*scale)/2)+'px';
+    wrap.style.left=Math.round((availW-pw*scale)/2)+'px';
     wrap.style.top=Math.round((window.innerHeight-ph*scale)/2)+'px';
   }
 
@@ -11873,6 +11910,23 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
       document.getElementById('sl-proj').innerHTML=ev.data.html;
       document.getElementById('sl-proj-wrap').style.background=ev.data.bg||'#fff';
       _lastPw=ev.data.pw||960; _lastPh=ev.data.ph||540;
+      _applyScale(_lastPw, _lastPh);
+    } else if(ev.data.type==='bible-state'){
+      var bp=document.getElementById('sl-proj-bible');
+      bp.classList.toggle('open', !!ev.data.open);
+      bp.classList.toggle('pinned', !!ev.data.pinned);
+      var panes=ev.data.panes||{};
+      document.getElementById('sl-proj-bible-top-label').textContent=panes.top?panes.top.label:'';
+      document.getElementById('sl-proj-bible-top-text').innerHTML=panes.top?panes.top.html:'';
+      var botWrap=document.getElementById('sl-proj-bible-bottom');
+      if(panes.bottom){
+        botWrap.style.display='';
+        document.getElementById('sl-proj-bible-bottom-label').textContent=panes.bottom.label;
+        document.getElementById('sl-proj-bible-bottom-text').innerHTML=panes.bottom.html;
+      } else {
+        botWrap.style.display='none';
+      }
+      _bibleReservedW=(ev.data.open&&ev.data.pinned)?360:0;
       _applyScale(_lastPw, _lastPh);
     }
   });
@@ -11908,10 +11962,17 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
     _projReady=true;
     window.removeEventListener('message',_onProjReady);
     slPresUpdate();
+    // If the Bible Module is already open/pinned before presenting starts,
+    // reflect that on the projector immediately rather than waiting for
+    // the next toggle.
+    if(typeof _bSyncProjectorBible==='function') _bSyncProjectorBible();
   };
   window.addEventListener('message',_onProjReady);
   setTimeout(()=>{
-    if(!_projReady){ _projReady=true; window.removeEventListener('message',_onProjReady); slPresUpdate(); }
+    if(!_projReady){
+      _projReady=true; window.removeEventListener('message',_onProjReady); slPresUpdate();
+      if(typeof _bSyncProjectorBible==='function') _bSyncProjectorBible();
+    }
   }, 3000);
 
   // Arrow key nav

@@ -1021,6 +1021,7 @@ function bToggleSplit_(){
   } else {
     bOpenSplit();
   }
+  _bSyncProjectorBible();
 }
 
 function bOpenSplit(){
@@ -1102,6 +1103,7 @@ function openBible_(){
     if(!bPinned)panel.classList.add('open');
     bUpdateOfflineBar();
     bLoadIndex().then(()=>{bRenderTabBar('top');bUpdatePickerBtn('top');}).catch(()=>{bRenderTabBar('top');});
+    _bSyncProjectorBible();
   }
   // NOTE: Does NOT close Projects — both panels can be open simultaneously
 }
@@ -1111,6 +1113,7 @@ function closeBible(){
   if(panel)panel.classList.remove('open');
   bPanelOpen=false;
   bPickerClose();
+  _bSyncProjectorBible();
 }
 /* ── Bible panel pin ── */
 let bPinned=false;
@@ -1165,6 +1168,7 @@ function bApplyPin(){
       });
     }
     _bRefreshDiagramOverlays();
+    _bSyncProjectorBible();
   } else {
     panel.classList.remove('pinned');
     if(divider)divider.style.display='none';
@@ -1177,6 +1181,7 @@ function bApplyPin(){
     panel.classList.add('open');
     bPanelOpen=true;
     _bRefreshDiagramOverlays();
+    _bSyncProjectorBible();
   }
 }
 
@@ -1191,6 +1196,36 @@ function _bRefreshDiagramOverlays(){
     if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
     if(typeof renderSectionStrips==='function') renderSectionStrips();
   },50);
+}
+
+/* ── Mirror the Bible Module onto the presenter's projector window ──
+   Cheap no-op whenever SL_PROJ_WIN (app.js) isn't an open projector window
+   — i.e. always, outside of Slides presenting. SL_PROJ_WIN is a plain
+   global from app.js; bible.js and app.js share one window scope (both
+   classic scripts), so it's read directly, no message-passing needed
+   between them — only between this window and the separate projector
+   document, which only ever receives pre-rendered HTML, same as slides. */
+function _bSyncProjectorBible(){
+  if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
+  const topEl=document.getElementById('bpane-top');
+  const botEl=document.getElementById('bpane-bottom');
+  const topTab=bTabs.top[bActiveTab.top];
+  const botTab=bTabs.bottom[bActiveTab.bottom];
+  const panes={
+    top: topEl ? {label: topTab?topTab.label:'', html: topEl.innerHTML} : null,
+    bottom: (bSplitOpen && botEl) ? {label: botTab?botTab.label:'', html: botEl.innerHTML} : null
+  };
+  SL_PROJ_WIN.postMessage({type:'bible-state', open:bPanelOpen, pinned:bPinned, panes}, '*');
+}
+// Debounced wrapper for the MutationObserver below — passage content can
+// change from many places (chapter nav, tab switch, picker confirm,
+// infinite-scroll chapter loads); observing the pane DOM directly is
+// correct regardless of which one fired, rather than hunting down every
+// call site individually.
+let _bProjSyncT=null;
+function _bScheduleProjectorSync(){
+  clearTimeout(_bProjSyncT);
+  _bProjSyncT=setTimeout(_bSyncProjectorBible,150);
 }
 
 function openProjects(){
@@ -1364,6 +1399,17 @@ document.addEventListener('DOMContentLoaded',()=>{
   bRenderTabBar('top');bRenderTabBar('bottom');
   bUpdatePickerBtn();
   spUpdateUI();
+
+  // Keep the presenter's projector window's mirrored Bible panel in sync
+  // whenever passage content changes, regardless of which function caused
+  // it (chapter nav, tab switch, picker confirm, infinite-scroll loads) —
+  // see _bSyncProjectorBible/_bScheduleProjectorSync above. Cheap no-op
+  // whenever a projector isn't actually open.
+  const _bObsOpts={childList:true,subtree:true,characterData:true};
+  const _bTopPane=document.getElementById('bpane-top');
+  const _bBotPane=document.getElementById('bpane-bottom');
+  if(_bTopPane) new MutationObserver(_bScheduleProjectorSync).observe(_bTopPane,_bObsOpts);
+  if(_bBotPane) new MutationObserver(_bScheduleProjectorSync).observe(_bBotPane,_bObsOpts);
 
   // Restore pinned state after page refresh — deferred to openEditor
   // (don't call bApplyPin here; #app may be hidden on Screen 1)
