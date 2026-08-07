@@ -1261,6 +1261,24 @@ function _bScheduleProjectorScroll(section){
   _bProjScrollT[section]=setTimeout(()=>_bSyncProjectorScroll(section),80);
 }
 
+/* Mirrors #bible-panel's actual rendered width to the projector, live, in
+   real pixels — not proportional — since line-wrapping only depends on
+   the width/font-size pair, not on how big either window is. A
+   ResizeObserver (wired in DOMContentLoaded below) catches this
+   regardless of what caused it (today: dragging the pinned divider), so
+   nothing needs updating here if another resize path is ever added. */
+function _bSyncProjectorWidth(){
+  if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
+  const panel=document.getElementById('bible-panel');
+  if(!panel) return;
+  SL_PROJ_WIN.postMessage({type:'bible-dims', width:panel.offsetWidth}, '*');
+}
+let _bProjWidthT=null;
+function _bScheduleProjectorWidth(){
+  clearTimeout(_bProjWidthT);
+  _bProjWidthT=setTimeout(_bSyncProjectorWidth,80);
+}
+
 function openProjects(){
   const panel=document.getElementById('proj-panel');
   if(!panel)return;
@@ -1437,8 +1455,12 @@ document.addEventListener('DOMContentLoaded',()=>{
   // whenever passage content changes, regardless of which function caused
   // it (chapter nav, tab switch, picker confirm, infinite-scroll loads) —
   // see _bSyncProjectorBible/_bScheduleProjectorSync above. Cheap no-op
-  // whenever a projector isn't actually open.
-  const _bObsOpts={childList:true,subtree:true,characterData:true};
+  // whenever a projector isn't actually open. attributes/attributeFilter
+  // is required too, not just childList/characterData — bSetFontSize()
+  // changes font-size via a pure style-attribute mutation on the existing
+  // .bpane-content wrapper (no nodes added/removed, no text changed), which
+  // childList+characterData alone would silently miss.
+  const _bObsOpts={childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['style']};
   const _bTopPane=document.getElementById('bpane-top');
   const _bBotPane=document.getElementById('bpane-bottom');
   if(_bTopPane) new MutationObserver(_bScheduleProjectorSync).observe(_bTopPane,_bObsOpts);
@@ -1450,6 +1472,14 @@ document.addEventListener('DOMContentLoaded',()=>{
   // SL_PROJ_WIN guard in _bSyncProjectorScroll when no projector is open.
   if(_bTopPane) _bTopPane.addEventListener('scroll',()=>_bScheduleProjectorScroll('top'),{passive:true});
   if(_bBotPane) _bBotPane.addEventListener('scroll',()=>_bScheduleProjectorScroll('bottom'),{passive:true});
+  // Panel width (e.g. dragging the pinned divider) also mirrors, so the
+  // projector's line-wrapping matches the presenter's. ResizeObserver
+  // rather than hooking the divider drag directly — catches any resize
+  // regardless of cause, same "observe the real DOM" approach as above.
+  const _bPanelEl=document.getElementById('bible-panel');
+  if(_bPanelEl && typeof ResizeObserver==='function'){
+    new ResizeObserver(_bScheduleProjectorWidth).observe(_bPanelEl);
+  }
 
   // Restore pinned state after page refresh — deferred to openEditor
   // (don't call bApplyPin here; #app may be hidden on Screen 1)

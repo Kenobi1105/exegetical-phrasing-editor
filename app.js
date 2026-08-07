@@ -11899,8 +11899,16 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
 <script>
   var _lastPw=960, _lastPh=540;
   // Pixels reserved on the right for a PINNED Bible panel — 0 when closed
-  // or floating (floating overlays the slide, doesn't reflow it).
+  // or floating (floating overlays the slide, doesn't reflow it). Tracked
+  // from the last-known open/pinned/width so the bible-state and
+  // bible-dims messages (which can arrive independently — width changes
+  // don't resend open/pinned, and vice versa) never disagree about the
+  // panel's current size.
   var _bibleReservedW=0;
+  var _bibleOpen=false, _biblePinned=false, _lastBibleWidth=360;
+  function _recalcBibleReservedW(){
+    _bibleReservedW=(_bibleOpen&&_biblePinned)?_lastBibleWidth:0;
+  }
 
   function _applyScale(pw, ph){
     var availW=window.innerWidth-_bibleReservedW;
@@ -11933,8 +11941,9 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
       _applyScale(_lastPw, _lastPh);
     } else if(ev.data.type==='bible-state'){
       var bp=document.getElementById('sl-proj-bible');
-      bp.classList.toggle('open', !!ev.data.open);
-      bp.classList.toggle('pinned', !!ev.data.pinned);
+      _bibleOpen=!!ev.data.open; _biblePinned=!!ev.data.pinned;
+      bp.classList.toggle('open', _bibleOpen);
+      bp.classList.toggle('pinned', _biblePinned);
       var panes=ev.data.panes||{};
       var topTextEl=document.getElementById('sl-proj-bible-top-text');
       document.getElementById('sl-proj-bible-top-label').textContent=panes.top?panes.top.label:'';
@@ -11950,11 +11959,16 @@ html,body{background:#fff;overflow:hidden;width:100vw;height:100vh;}
       } else {
         botWrap.style.display='none';
       }
-      _bibleReservedW=(ev.data.open&&ev.data.pinned)?360:0;
+      _recalcBibleReservedW();
       _applyScale(_lastPw, _lastPh);
     } else if(ev.data.type==='bible-scroll'){
       var textEl=document.getElementById('sl-proj-bible-'+ev.data.section+'-text');
       _scrollPaneToVerse(textEl, ev.data.chapter, ev.data.verse);
+    } else if(ev.data.type==='bible-dims'){
+      _lastBibleWidth=ev.data.width||360;
+      document.getElementById('sl-proj-bible').style.width=_lastBibleWidth+'px';
+      _recalcBibleReservedW();
+      _applyScale(_lastPw, _lastPh);
     }
   });
 
