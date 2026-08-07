@@ -4776,3 +4776,25 @@ body.hide-sections #section-strips{display:none}
   font-size:11px;line-height:1;opacity:.6;
 }
 .sl-passage-tab-del:hover{opacity:1;background:rgba(0,0,0,.15)}
+
+/* ── Slides toolbar: icon-only on touch (pointer:coarse only) ──
+   #sl-toolbar has zero responsive handling otherwise, and its text-labeled
+   buttons (Add Text Box/Region/Rect/Ellipse/Image, Present, Refresh, Export
+   PDF) overflow past the Regions side panel on a tablet-width screen. Six
+   buttons (align/distribute) already go icon-only just by omitting the
+   <span> label — this extends that same .sl-tbtn pattern to the rest, sized
+   to match the app's existing dense-secondary-toolbar convention
+   (#toolbar-panel .tbtn, 36px/16px svg) rather than the primary 44px
+   main-toolbar touch target, since this row packs in many more buttons. */
+@media (pointer: coarse) {
+  #sl-toolbar .sl-tbtn span{ display:none; }
+  #sl-toolbar .sl-tbtn{
+    width:36px; height:36px; padding:0; justify-content:center;
+    flex-shrink:0;
+  }
+  #sl-toolbar .sl-tbtn svg{ width:16px; height:16px; }
+  #sl-toolbar .sl-tsep{ flex-shrink:0; }
+  /* Safety net, not the primary fix: scroll instead of silently clipping
+     if the row ever still doesn't fit (e.g. narrow portrait tablet). */
+  #sl-toolbar{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+}
