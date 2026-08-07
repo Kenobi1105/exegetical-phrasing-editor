@@ -889,6 +889,7 @@ function setDiagramZoom(pct){
     // Re-derive all bracket top/height from fresh DOM rects at the new
     // zoom level so brackets stay locked to their anchor rows after
     // zoom changes.
+    if(typeof refreshBrackets==='function') refreshBrackets();
     refreshDiagramLabels();
   });
 }
@@ -904,6 +905,7 @@ function setDiagramFontSize(sz){
   // Font size changes block dimensions the same way translation-hiding
   // does — same missing-refresh bug, same fix.
   if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
+  if(typeof refreshBrackets==='function') refreshBrackets();
   autoSave();
 }
 function diagramFontInc(){ setDiagramFontSize(DIAGRAM_FONT_SIZE+DIAGRAM_FONT_STEP); }
@@ -1307,7 +1309,7 @@ function renderDiagram(){
   labelsLayer.style.cssText='position:absolute;inset:0;overflow:visible;pointer-events:none;';
   canvas.appendChild(labelsLayer);
 
-  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const rows=_realRows();
   const startByRid={}, endByRid={};
   ANNOTATIONS.filter(a=>a.type==='section').forEach(a=>{
     startByRid[a.startRid]=a;
@@ -3279,7 +3281,7 @@ function onKey(e,col,rid){
   }
   // Arrow Down/Up: navigate to same column in adjacent row
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){
-    const allRows=Array.from(document.querySelectorAll('.xrow'));
+    const allRows=_realRows();
     const idx=allRows.findIndex(r=>r.dataset.rid===String(rid));
     const targetIdx=e.key==='ArrowDown'?idx+1:idx-1;
     if(targetIdx>=0&&targetIdx<allRows.length){
@@ -4252,6 +4254,15 @@ function applyHl(){
   pushRecentColor('highlight', hlColor);
   _renderPaletteRows();
   closeColorPalette();
+  // This mutates ce's DOM directly (Range.surroundContents), not via
+  // document.execCommand, so no real 'input' event fires on its own.
+  // Diagram View's translation block (.dblock-trans) only syncs back to
+  // the real #tc-{rid} .cedit via its own 'input' listener (or a 'blur'
+  // fallback) — without this, a highlight applied there could autoSave
+  // before that sync happens and be lost if the tab closes/reloads first.
+  // Harmless no-op for Phrasing View cells (oninput there is just
+  // cleanEmptyCell).
+  if(ce) ce.dispatchEvent(new Event('input',{bubbles:true}));
   autoSave();
 }
 
@@ -4274,6 +4285,8 @@ function removeHl(){
   const lastOp=ROW_STACK[ROW_STACK.length-1];
   if(lastOp&&lastOp.type==='fmtsnap') lastOp.after=ce.innerHTML;
   closeColorPalette();
+  // See applyHl() above for why this is needed.
+  if(ce) ce.dispatchEvent(new Event('input',{bubbles:true}));
   autoSave();
 }
 
@@ -4902,9 +4915,18 @@ function applySettings(){
 /* ════════════════════════════════════════
    SAVE / LOAD / AUTOSAVE
 ════════════════════════════════════════ */
+/* Real editor rows only — scoped to #rows-body so Slides View's cloned
+   .xrow copies (left behind in #sl-canvas/.sl-thumb-inner after rendering
+   a slide — setEditorView() never clears them when leaving Slides View)
+   never get counted as real rows by code that expects to enumerate the
+   actual project content. */
+function _realRows(){
+  const body=document.getElementById('rows-body');
+  return body ? Array.from(body.querySelectorAll('.xrow')) : [];
+}
 function collectData(){
   const rows=[];
-  document.querySelectorAll('.xrow').forEach(row=>{
+  _realRows().forEach(row=>{
     const rid=row.dataset.rid;
     const vi=row.querySelector('.vin');
     const lid=row.querySelector('.lid');
@@ -5511,7 +5533,7 @@ async function _capturePhrasingPDFBlob(ref){
   }
 
   const FN_LINE_H=13,FN_GAP=5,FN_SEP_H=10;
-  const rowEls=Array.from(document.querySelectorAll('.xrow'));
+  const rowEls=_realRows();
   const totalRows=rowEls.length;
 
   function stripHtml(html){
@@ -6719,7 +6741,7 @@ function exportPDF(){
   async function run(){
     // ── Footnote helpers ──────────────────────
     const FN_LINE_H=13, FN_GAP=5, FN_SEP_H=10;
-    const rowEls=Array.from(document.querySelectorAll('.xrow'));
+    const rowEls=_realRows();
     const totalRows=rowEls.length;
 
     showProgress(0,'Exporting PDF…');
@@ -7894,7 +7916,7 @@ function renderSectionStrips(){
   const sections=ANNOTATIONS.filter(a=>a.type==='section');
   if(!sections.length) return;
 
-  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const rows=_realRows();
   const ridToRow={};
   rows.forEach(r=>{ ridToRow[r.dataset.rid]=r; });
 
@@ -7973,7 +7995,7 @@ function _secStartDrag(ev, annId, which){
   const scroll=document.getElementById('rows-scroll'); if(!scroll) return;
   const oldRid = which==='start' ? ann.startRid : ann.endRid;
 
-  const rows=Array.from(document.querySelectorAll('.xrow'));
+  const rows=_realRows();
   const rids=rows.map(r=>r.dataset.rid);
   const scrollRect=scroll.getBoundingClientRect();
   const scrollTop=scroll.scrollTop||0;
@@ -9299,7 +9321,7 @@ function slMakeBlank(){
     elements:[],notes:''};
 }
 function slMakeContent(){
-  const allRids=Array.from(document.querySelectorAll('.xrow')).map(r=>r.dataset.rid).filter(Boolean);
+  const allRids=_realRows().map(r=>r.dataset.rid).filter(Boolean);
   return {id:'sl-'+(++SL_SLIDE_CTR),type:'content',view:'phrasing',rowIds:allRids,
     visibility:{...SL_VIS_DEFAULT},
     contentArea:{x:3,y:3,w:94,h:55},
@@ -9932,7 +9954,7 @@ function slNotesFmtCmd(cmd){
 function slSelectAllRows(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const old=[...sl.rowIds];
-  sl.rowIds=Array.from(document.querySelectorAll('.xrow')).map(r=>r.dataset.rid).filter(Boolean);
+  sl.rowIds=_realRows().map(r=>r.dataset.rid).filter(Boolean);
   _slPush({type:'sl-slide-prop',idx:SL_ACTIVE_IDX,prop:'rowIds',oldVal:old,newVal:[...sl.rowIds]});
   slUpdateRowList(); autoSave();
   // Live re-render, matching the individual row checkbox this button sits
@@ -9970,7 +9992,7 @@ function slUpdateRowList(){
   const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
   const list=document.getElementById('sl-row-list'); if(!list) return;
   list.innerHTML='';
-  document.querySelectorAll('.xrow').forEach(xrow=>{
+  _realRows().forEach(xrow=>{
     const rid=xrow.dataset.rid; if(!rid) return;
     const lid=xrow.querySelector('.lid')?.textContent||'—';
     const verse=xrow.querySelector('.vin')?.value||'';
