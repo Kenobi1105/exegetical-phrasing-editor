@@ -4798,3 +4798,19 @@ body.hide-sections #section-strips{display:none}
      if the row ever still doesn't fit (e.g. narrow portrait tablet). */
   #sl-toolbar{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
 }
+
+/* ── Slides toolbar: icon-only when the Bible panel is pinned ──
+   Pinning reflows #editor-wrap narrower (see #app:has(#bible-panel.pinned)
+   above), which can squeeze #sl-toolbar into overflow the same way a
+   tablet-width screen does — same fix, same values, just keyed off the
+   pin state (via :has(), already this codebase's established pattern for
+   pin-triggered layout changes) instead of touch-capability. Desktop mouse
+   users only see this when they've actually pinned the panel. */
+#app:has(#bible-panel.pinned) #sl-toolbar .sl-tbtn span{ display:none; }
+#app:has(#bible-panel.pinned) #sl-toolbar .sl-tbtn{
+  width:36px; height:36px; padding:0; justify-content:center;
+  flex-shrink:0;
+}
+#app:has(#bible-panel.pinned) #sl-toolbar .sl-tbtn svg{ width:16px; height:16px; }
+#app:has(#bible-panel.pinned) #sl-toolbar .sl-tsep{ flex-shrink:0; }
+#app:has(#bible-panel.pinned) #sl-toolbar{ overflow-x:auto; -webkit-overflow-scrolling:touch; }

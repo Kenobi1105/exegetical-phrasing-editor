@@ -12175,6 +12175,10 @@ function slPresUpdate(){
       preview.style.width =previewW+'px';
       preview.style.height=previewH+'px';
       _slInjectScaled(preview, html, previewW, previewH, rW, rH, slide.background);
+      // Record the #sl-pres-left size this render was actually computed
+      // from, so _slSchedulePresResize's ResizeObserver callback below can
+      // tell a real resize apart from a no-op notification.
+      _slPresLastLeftW=colW; _slPresLastLeftH=left?.offsetHeight||colH;
     }
     if(SL_PROJ_WIN&&!SL_PROJ_WIN.closed){
       SL_PROJ_WIN.postMessage({type:'sl-slide',html,pw:rW,ph:rH,bg:slide.background||'#ffffff'},'*');
@@ -12192,6 +12196,14 @@ function slPresUpdate(){
 // hidden. A ResizeObserver on #sl-pres-left catches any such resize
 // regardless of cause, same "observe the real DOM" approach used for
 // mirroring the Bible panel's width to the projector.
+//
+// _slPresLastLeftW/H (set by slPresUpdate() above every time it actually
+// renders) let the observer's callback tell a genuine resize apart from a
+// no-op/sub-pixel notification — without this, a render that itself nudges
+// #sl-pres-left's layout by even a fraction of a px could re-trigger this
+// same observer and loop, visibly flashing the preview on every cycle.
+// This is the standard mitigation for ResizeObserver feedback loops.
+let _slPresLastLeftW=-1, _slPresLastLeftH=-1;
 let _slPresResizeT=null;
 function _slSchedulePresResize(){
   clearTimeout(_slPresResizeT);
@@ -12199,6 +12211,10 @@ function _slSchedulePresResize(){
     if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
     const presenter=document.getElementById('sl-presenter');
     if(!presenter || presenter.style.display==='none') return;
+    const left=document.getElementById('sl-pres-left');
+    if(!left) return;
+    const w=left.offsetWidth, h=left.offsetHeight;
+    if(Math.abs(w-_slPresLastLeftW)<2 && Math.abs(h-_slPresLastLeftH)<2) return;
     slPresUpdate();
   },80);
 }
