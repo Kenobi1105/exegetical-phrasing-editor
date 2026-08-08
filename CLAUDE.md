@@ -109,16 +109,27 @@ Defined on `:root`:
 --active  /* active/link color — default #C8A84B */
 ```
 
-### Projects localStorage schema
+### Projects storage schema
 ```js
-// Index key
-'exeg-proj-index'  →  JSON array of {id, name, savedAt, lang, verseRef, cloudAt?}
+// Index key — localStorage (tiny, stays here)
+'exeg-proj-index'    →  JSON array of {id, name, savedAt, lang, verseRef, folderId, cloudAt?}
+'exeg-proj-folders'  →  JSON array of folder objects (local-only, never synced to the cloud)
 
-// Data key per project
-'exeg-proj-{id}'  →  JSON with full editor state (PROJ_DATA_KEY = id => 'exeg-proj-'+id)
+// Full per-project session JSON — IndexedDB (exeg-proj-v1 / projdata store),
+// keyed by id, value is the JSON.stringify'd editor state (a string, not a
+// raw object — see pIdbGet/pIdbSet in app.js for why). PROJ_DATA_KEY(id) =>
+// 'exeg-proj-'+id is now only the LEGACY localStorage key name, kept around
+// as a fallback lookup in projLoad() and cleared on projSave()/projDelete()
+// for any not-yet-migrated id.
 ```
 `cloudAt` is optional and only present once cloud sync has synced that project at least
 once — see "Cloud sync" below. Older entries simply lack it and render as local-only.
+
+One-time migration (`projMigrateToIdbOnce()`, app.js) sweeps any leftover `exeg-proj-{id}`
+localStorage keys into IndexedDB on first boot after this feature shipped, gated by the
+`exeg-proj-idb-migrated-v1` flag — verify-then-delete per key, so a failed/corrupt entry
+is left untouched in localStorage rather than lost, and the whole routine safely retries
+on the next load if anything didn't fully succeed.
 
 ### Row DOM structure
 ```html
@@ -418,7 +429,7 @@ Key CSS variables (set on `:root`):
    - `hebrew` — RTL, two columns (Original Hebrew + Translation)
    - `custom` — LTR, single column (any language)
 
-9. **Projects are stored in localStorage** (not IndexedDB). Key prefix: `exeg-proj-`. Max storage depends on browser (~5MB). Optional cloud sync (see below) mirrors project JSON to Supabase — localStorage remains the primary, authoritative store either way.
+9. **Projects are stored in IndexedDB** (database `exeg-proj-v1`, object store `projdata`) — migrated from localStorage to lift the old ~5MB per-site ceiling. The small index/folders metadata (`exeg-proj-index`, `exeg-proj-folders`) stays in localStorage, unchanged. A separate DB from the Bible text cache (`exeg-bible-v3`, bible.js) so cache-clearing code there can never touch project data. Optional cloud sync (see below) mirrors project JSON to Supabase — IndexedDB remains the primary, authoritative local store either way.
 
 10. **Color theme** persists in localStorage key `exeg-colors`. On load, `applySettings()` reads it and sets CSS custom properties.
 

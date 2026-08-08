@@ -186,16 +186,22 @@ async function acctSyncNow(){
 }
 
 /* ── Migration + pull ── */
-function acctListLocalProjects(){
+// async: project blobs live in IndexedDB (pIdbGet), not localStorage — a
+// plain .map() can't await per-element, so this uses Promise.all instead.
+// Safe for the external migrateLocalProjectsOnce({listLocalProjects})
+// contract below, whose own JSDoc already types listLocalProjects as
+// () => Array<object>|Promise<Array<object>> and awaits it.
+async function acctListLocalProjects(){
   if(typeof projIndex!=='function') return [];
-  return projIndex().map(e=>{
+  const results=await Promise.all(projIndex().map(async e=>{
     let data=null;
-    try{ data=JSON.parse(localStorage.getItem(PROJ_DATA_KEY(e.id))||'null'); }catch(_e){}
+    try{ data=JSON.parse((typeof pIdbGet==='function'?await pIdbGet(e.id):null)||'null'); }catch(_e){}
     if(!data) return null;
     const payload=acctCloudPayload(data, e);
     if(JSON.stringify(payload).length>ACCT_MAX_PAYLOAD_BYTES) return null; // skip oversize, don't fail the whole batch
     return { projectId: e.id, projectData: payload };
-  }).filter(Boolean);
+  }));
+  return results.filter(Boolean);
 }
 
 async function acctMigrateThenPull(){
@@ -259,7 +265,7 @@ async function acctPull(){
     const cloudTime=row.updated_at?Date.parse(row.updated_at):0;
     if(entry && cloudTime<=(entry.savedAt||0)) continue; // local is same-or-newer
 
-    try{ localStorage.setItem(PROJ_DATA_KEY(id), JSON.stringify(row.payload)); }
+    try{ await pIdbSet(id, JSON.stringify(row.payload)); }
     catch(_e){ toast(typeof t==='function'?t('toast.storage-full'):'Storage full — please export and clear some projects'); break; }
 
     const lang=(row.payload && row.payload.langLabel) || row.language_mode || 'Other';
@@ -300,7 +306,8 @@ async function acctPull(){
       openDeletedRemotely=true;
       continue;
     }
-    try{ localStorage.removeItem(PROJ_DATA_KEY(id)); }catch(_e){}
+    try{ await pIdbDelete(id); }catch(_e){}
+    localStorage.removeItem(PROJ_DATA_KEY(id)); // also clear any un-migrated legacy copy
     const i=idx.findIndex(e=>e.id===id);
     if(i!==-1) idx.splice(i,1);
     prunedNames.push(entry.name||id);
@@ -368,7 +375,7 @@ async function acctFlushDirty(){
       let cached=ACCT.pushCache[id]||{};
       let data=cached.data, name=cached.name;
       if(!data){
-        const raw=localStorage.getItem(PROJ_DATA_KEY(id));
+        const raw=typeof pIdbGet==='function'?await pIdbGet(id):null;
         if(!raw){ ACCT.dirty.delete(id); continue; } // deleted locally in the meantime
         data=JSON.parse(raw);
       }

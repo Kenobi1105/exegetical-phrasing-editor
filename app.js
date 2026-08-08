@@ -5168,6 +5168,91 @@ function projFolders(){
 function projSaveFolders(folders){
   try{ localStorage.setItem(PROJ_FOLDERS_KEY,JSON.stringify(folders)); }catch(_){}
 }
+
+/* ── Project data storage: IndexedDB ──
+   Only the full per-project session blobs (PROJ_DATA_KEY(id)) live here —
+   the index/folders above are tiny and stay in localStorage untouched.
+   A separate DB from bible.js's exeg-bible-v3 (not a new store on that DB)
+   so the Bible cache's own clear-cache code can never accidentally touch
+   project data — different DB makes that structurally impossible, not
+   just "currently doesn't happen". Values are stored as JSON STRINGS (a
+   deliberate deviation from bible.js's bIdbGet/bIdbSet, which store raw
+   objects via structured clone) — every existing read/write path already
+   stringifies/parses at the localStorage boundary, so matching that keeps
+   identical serialization semantics and makes _exportAllJSON's
+   zip.file(fname, raw) stay byte-preserving with no re-serialization. */
+let projIdb=null;
+async function pOpenIDB(){
+  return new Promise((res,rej)=>{
+    const r=indexedDB.open('exeg-proj-v1',1);
+    r.onupgradeneeded=e=>e.target.result.createObjectStore('projdata');
+    r.onsuccess=e=>res(e.target.result);
+    r.onerror=()=>rej(r.error);
+  });
+}
+async function pIdbGet(id){
+  if(!projIdb) projIdb=await pOpenIDB();
+  return new Promise((res,rej)=>{
+    const r=projIdb.transaction('projdata','readonly').objectStore('projdata').get(id);
+    r.onsuccess=e=>res(e.target.result); r.onerror=()=>rej(r.error);
+  });
+}
+async function pIdbSet(id,val){
+  if(!projIdb) projIdb=await pOpenIDB();
+  return new Promise((res,rej)=>{
+    const r=projIdb.transaction('projdata','readwrite').objectStore('projdata').put(val,id);
+    r.onsuccess=()=>res(); r.onerror=()=>rej(r.error);
+  });
+}
+async function pIdbDelete(id){
+  if(!projIdb) projIdb=await pOpenIDB();
+  return new Promise((res,rej)=>{
+    const r=projIdb.transaction('projdata','readwrite').objectStore('projdata').delete(id);
+    r.onsuccess=()=>res(); r.onerror=()=>rej(r.error);
+  });
+}
+// Cursor-walk for the storage indicator — IndexedDB has no synchronous
+// "sum all values" API, mirrors bClearCache's cursor pattern (bible.js).
+async function pIdbUsedBytes(){
+  if(!projIdb) projIdb=await pOpenIDB();
+  return new Promise((res,rej)=>{
+    const store=projIdb.transaction('projdata','readonly').objectStore('projdata');
+    let total=0; const req=store.openCursor();
+    req.onsuccess=e=>{ const c=e.target.result; if(c){ total+=(String(c.value||'').length)*2; c.continue(); } else res(total); };
+    req.onerror=()=>rej(req.error);
+  });
+}
+
+/* ── One-time migration: exeg-proj-{id} blobs, localStorage → IndexedDB ──
+   Sweeps localStorage directly (not via projIndex(), which could miss an
+   orphaned blob with no index entry) rather than trusting the index alone.
+   Per key: validate JSON, write to IDB, read back and compare, ONLY THEN
+   remove the localStorage source — a failed/unverified write always
+   leaves the original untouched. The flag is only set once every key
+   succeeds, so a partial run safely retries next load: already-migrated
+   ids are already gone from localStorage, so the sweep just finds less
+   to do — never a state where data exists in neither store. */
+async function projMigrateToIdbOnce(){
+  if(localStorage.getItem('exeg-proj-idb-migrated-v1')==='1') return;
+  let allOk=true;
+  const keys=[];
+  for(let i=0;i<localStorage.length;i++){
+    const k=localStorage.key(i);
+    if(k && k.indexOf('exeg-proj-')===0 && k!==PROJ_INDEX_KEY && k!==PROJ_FOLDERS_KEY) keys.push(k);
+  }
+  for(const key of keys){
+    const id=key.slice('exeg-proj-'.length);
+    const raw=localStorage.getItem(key);
+    if(raw==null) continue;
+    try{ JSON.parse(raw); }catch(_e){ allOk=false; continue; }
+    try{
+      await pIdbSet(id, raw);
+      if((await pIdbGet(id))!==raw){ allOk=false; continue; }
+      localStorage.removeItem(key);
+    }catch(_e){ allOk=false; }
+  }
+  if(allOk) localStorage.setItem('exeg-proj-idb-migrated-v1','1');
+}
 async function projSave(showPanel){
   if(document.getElementById('app').style.display==='none') return;
   // Ensure a name exists
@@ -5195,7 +5280,7 @@ async function projSave(showPanel){
   const data=collectData();
   const now=Date.now();
   // Update data store
-  try{ localStorage.setItem(PROJ_DATA_KEY(id),JSON.stringify(data)); }
+  try{ await pIdbSet(id,JSON.stringify(data)); }
   catch(e){
     if(e && e.name==='QuotaExceededError') toast(typeof t==='function'?t('toast.storage-full-quota'):'Storage is full. Use Export All to back up your projects, then delete some to free space.');
     else toast(typeof t==='function'?t('toast.storage-full'):'Storage full — please export and clear some projects');
@@ -5223,9 +5308,16 @@ async function projSave(showPanel){
   if(typeof acctQueuePush==='function') acctQueuePush(id,data,name,true);
 }
 
-function projLoad(id){
+async function projLoad(id){
   try{
-    const raw=localStorage.getItem(PROJ_DATA_KEY(id));
+    // IndexedDB is the primary store; fall back to legacy localStorage if
+    // a specific id somehow wasn't migrated (or IDB is unreachable) —
+    // costs nothing in the normal case, real safety net for "my project
+    // won't open" otherwise. Existing onclick="projLoad(...)" call sites
+    // need no changes — an async function works fine as an event handler.
+    let raw=null;
+    try{ raw=await pIdbGet(id); }catch(_e){}
+    if(!raw) raw=localStorage.getItem(PROJ_DATA_KEY(id));
     if(!raw) return;
     const data=JSON.parse(raw);
     // Restore session language
@@ -5268,10 +5360,11 @@ function projLoad(id){
   }catch(_){ toast(typeof t==='function'?t('toast.proj-error'):'Could not open project'); }
 }
 
-function projDelete(id,e){
+async function projDelete(id,e){
   e.stopPropagation();
   if(!confirm(typeof t==='function'?t('confirm.delete-proj'):'Delete this project from the app?\n\nThis cannot be undone.')) return;
-  localStorage.removeItem(PROJ_DATA_KEY(id));
+  try{ await pIdbDelete(id); }catch(_e){}
+  localStorage.removeItem(PROJ_DATA_KEY(id)); // also clear any un-migrated legacy copy
   const idx=projIndex().filter(e=>e.id!==id);
   localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx));
   if(CURRENT_PROJECT_ID===id) CURRENT_PROJECT_ID=null;
@@ -5369,7 +5462,7 @@ async function _exportAllDiagPDF(idx){
     const entry=idx[i];
     showProgress(Math.round((i/total)*88),'Diagram PDF '+(i+1)+' of '+total+': '+(entry.name||'Untitled'));
     try{
-      const raw=localStorage.getItem('exeg-proj-'+entry.id);
+      const raw=await pIdbGet(entry.id);
       if(!raw) continue;
       const data=JSON.parse(raw);
 
@@ -5424,7 +5517,7 @@ async function _exportAllJSON(idx){
   let count=0;
   for(const entry of idx){
     try{
-      const raw=localStorage.getItem('exeg-proj-'+entry.id);
+      const raw=await pIdbGet(entry.id);
       if(!raw) continue;
       // Sanitise filename
       const fname=_safeName(entry.name||'Untitled')+'.json';
@@ -5462,7 +5555,7 @@ async function _exportAllPDF(idx){
     const entry=idx[i];
     showProgress(Math.round((i/total)*88),'PDF '+(i+1)+' of '+total+': '+(entry.name||'Untitled'));
     try{
-      const raw=localStorage.getItem('exeg-proj-'+entry.id);
+      const raw=await pIdbGet(entry.id);
       if(!raw) continue;
       const data=JSON.parse(raw);
       // Load project into live session (phrasing view required for exportPDF)
@@ -5897,6 +5990,12 @@ function closeProjects(){if(typeof window.spClose==='function')window.spClose();
    listener is delegated once on the stable parent rather than re-attached
    per card. */
 function projStartCardDrag(ev, projId, cardEl){
+  // Without this, the pointer crossing sibling card titles mid-drag
+  // triggers the browser's native text-selection, same as every other
+  // pointer-drag entry point in this codebase (startBlockDrag, column
+  // resize, the bracket serif drag, the Bible pinned-divider resize) —
+  // all call preventDefault() as the first thing in their drag-start fn.
+  ev.preventDefault();
   const list=document.getElementById('proj-list'); if(!list) return;
   let dragStarted=false;
   const startX=ev.clientX, startY=ev.clientY;
@@ -6056,33 +6155,44 @@ function projShowFolderMenu(folderId, ev){
 // estimate() (when available) is only a supplementary tooltip figure.
 let PROJ_STORAGE_WARNED_80=false, PROJ_STORAGE_WARNED_95=false;
 let PROJ_AUTOSAVE_QUOTA_WARNED=false;
-const PROJ_STORAGE_ASSUMED_QUOTA=5*1024*1024;
+// Project data now lives in IndexedDB (see pIdbSet/pOpenIDB above), which
+// has no fixed ~5MB-style ceiling the way localStorage did — the old
+// "% of a hardcoded 5MB" framing no longer means anything. Two separate
+// numbers instead: a precise "MB used by your projects" figure (cursor-
+// walked from the projdata store, same UTF-16 char-length×2 heuristic the
+// old number used, just correctly scoped), and a browser-storage
+// percentage bar driven by navigator.storage.estimate() — deliberately
+// labeled separately, since estimate() is origin-wide (includes the Bible
+// text cache, service worker cache), not just this app's saved projects.
 async function projUpdateStorageIndicator(){
   const el=document.getElementById('proj-storage-indicator'); if(!el) return;
   let usedBytes=0;
-  for(let i=0;i<localStorage.length;i++){
-    const k=localStorage.key(i);
-    usedBytes += (k.length+(localStorage.getItem(k)||'').length)*2; // UTF-16 ≈ 2 bytes/char
-  }
-  const pct=Math.min(100,Math.round(usedBytes/PROJ_STORAGE_ASSUMED_QUOTA*100));
-  let estimateTip='';
+  try{ usedBytes=await pIdbUsedBytes(); }catch(_e){}
+  let pct=null, estimateTip='';
   if(navigator.storage && navigator.storage.estimate){
     try{
       const est=await navigator.storage.estimate();
-      if(est.quota) estimateTip=' · browser quota: '+(est.usage/1024/1024).toFixed(1)+' / '+(est.quota/1024/1024).toFixed(0)+' MB';
+      if(est.quota){
+        pct=Math.min(100,Math.round((est.usage/est.quota)*100));
+        estimateTip=' · browser storage: '+(est.usage/1024/1024).toFixed(1)+' / '+(est.quota/1024/1024).toFixed(0)+' MB';
+      }
     }catch(_){}
   }
-  el.innerHTML='<span>'+(usedBytes/1024/1024).toFixed(1)+' MB used ('+pct+'%)</span>'
-    +'<div class="proj-storage-bar"><div class="proj-storage-bar-fill" style="width:'+pct+'%"></div></div>';
-  el.title='App storage — used against the ~5MB per-site limit most browsers give localStorage.'+estimateTip;
-  el.classList.toggle('proj-storage-warn', pct>=80 && pct<95);
-  el.classList.toggle('proj-storage-critical', pct>=95);
-  if(pct>=95 && !PROJ_STORAGE_WARNED_95){
-    PROJ_STORAGE_WARNED_95=true;
-    toast(typeof t==='function'?t('toast.storage-full-quota'):'Storage nearly full — export projects now to avoid losing new work');
-  } else if(pct>=80 && !PROJ_STORAGE_WARNED_80){
-    PROJ_STORAGE_WARNED_80=true;
-    toast(typeof t==='function'?t('toast.storage-warn'):'Storage is getting full — consider using Export All to back up and free space');
+  el.innerHTML='<span>'+(usedBytes/1024/1024).toFixed(1)+' MB used by your projects</span>'
+    +(pct!=null?'<div class="proj-storage-bar"><div class="proj-storage-bar-fill" style="width:'+pct+'%"></div></div>':'');
+  el.title='Your saved projects.'+estimateTip;
+  if(pct!=null){
+    el.classList.toggle('proj-storage-warn', pct>=80 && pct<95);
+    el.classList.toggle('proj-storage-critical', pct>=95);
+    if(pct>=95 && !PROJ_STORAGE_WARNED_95){
+      PROJ_STORAGE_WARNED_95=true;
+      toast(typeof t==='function'?t('toast.storage-full-quota'):'Storage nearly full — export projects now to avoid losing new work');
+    } else if(pct>=80 && !PROJ_STORAGE_WARNED_80){
+      PROJ_STORAGE_WARNED_80=true;
+      toast(typeof t==='function'?t('toast.storage-warn'):'Storage is getting full — consider using Export All to back up and free space');
+    }
+  } else {
+    el.classList.remove('proj-storage-warn','proj-storage-critical');
   }
 }
 
@@ -6121,7 +6231,7 @@ function autoSave(){
     if(ed) SL_CMT_CACHE[cid]=ed.innerHTML;
   });
   clearTimeout(asT);
-  asT=setTimeout(()=>{
+  asT=setTimeout(async()=>{
     // Session autosave (crash recovery)
     try{ localStorage.setItem(storeKey(),JSON.stringify(collectData())); }catch(_){}
     // Project autosave — only if a project is already open
@@ -6130,7 +6240,7 @@ function autoSave(){
       const name=ref||'Untitled';
       const data=collectData();
       const now=Date.now();
-      try{ localStorage.setItem(PROJ_DATA_KEY(CURRENT_PROJECT_ID),JSON.stringify(data)); PROJ_AUTOSAVE_QUOTA_WARNED=false; }
+      try{ await pIdbSet(CURRENT_PROJECT_ID,JSON.stringify(data)); PROJ_AUTOSAVE_QUOTA_WARNED=false; }
       catch(e){
         // Was fully silent before — now surfaces QuotaExceededError specifically,
         // gated to once per occurrence so continuous typing doesn't spam a toast
@@ -13079,7 +13189,12 @@ function _splitInlineVerses(html,currentVerse){
   });
 }
 
-document.addEventListener('DOMContentLoaded',()=>{
+document.addEventListener('DOMContentLoaded',async()=>{
+  // Runs once, blocking, before anything below touches project data (in
+  // particular renderS1Recent() further down) — see projMigrateToIdbOnce
+  // for why this is safe to await here (idempotent, resumable, leaves
+  // localStorage untouched on any failure).
+  try{ await projMigrateToIdbOnce(); }catch(_e){}
   // Restore saved colors
   try{
     const saved=JSON.parse(localStorage.getItem('exeg-colors')||'{}');
