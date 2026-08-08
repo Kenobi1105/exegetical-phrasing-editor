@@ -2991,7 +2991,7 @@ function _makePaletteSwatchBtn(color){
 // rather than the 4 soft highlight tones (PALETTE_PRESETS_HL) — solid
 // foreground/border colors read better from a wider spread than the soft
 // highlight tones do.
-const PALETTE_TEXT_LIKE_TOOLS=['textColor','slTextColor','slShapeFill','slShapeStroke'];
+const PALETTE_TEXT_LIKE_TOOLS=['textColor','slTextColor','slShapeFill','slShapeStroke','slTextOutline'];
 
 function _renderPaletteRows(){
   const presetRow=document.getElementById('cpp-preset-row');
@@ -3079,6 +3079,9 @@ function applyPaletteColor(color){
   } else if(PALETTE_ACTIVE_TOOL==='slShapeStroke'){
     slShapeSetStroke(color);
     const btn=document.getElementById('sl-shape-stroke-btn'); if(btn){ btn.style.background=color; btn.classList.remove('sl-swatch-none'); }
+  } else if(PALETTE_ACTIVE_TOOL==='slTextOutline'){
+    slFmtOutlineColor(color);
+    const btn=document.getElementById('sl-fmt-outline-btn'); if(btn) btn.style.background=color;
   } else if(PALETTE_ACTIVE_TOOL==='slSlideBackground'){
     slSetBackground(color);
     const btn=document.getElementById('sl-bg-btn'); if(btn) btn.style.background=color;
@@ -9690,6 +9693,22 @@ function slFmtColor(hex){
   document.execCommand('foreColor',false,hex);
 }
 
+function slFmtColorClear(){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  slFmtRestoreRange();
+  // execCommand('foreColor') normally emits legacy <font color> markup —
+  // its old HTML4 color-attribute parser doesn't understand 'transparent'
+  // or rgba() and silently mangles them into a nonsense opaque color
+  // instead (confirmed by direct testing). styleWithCSS makes it emit a
+  // real <span style="color:..."> instead, which parses 'transparent'
+  // correctly; toggled back off right after so every other formatting
+  // command (bold/italic/font/highlight) keeps producing its normal,
+  // already-working markup.
+  document.execCommand('styleWithCSS',false,true);
+  document.execCommand('foreColor',false,'transparent');
+  document.execCommand('styleWithCSS',false,false);
+}
+
 function slFmtHighlight(hex){
   if(!SL_FMT_ACTIVE_INNER) return;
   slFmtRestoreRange();
@@ -9783,6 +9802,77 @@ function slFmtFontSize(delta){
   const input=document.getElementById('sl-fmt-size');
   const cur=parseInt(input?.value)||18;
   slFmtFontSizeAbs(cur+delta);
+}
+
+// Wraps the current/saved selection in a <span> carrying one custom inline
+// style, using the same Range-wrap technique slFmtFontSizeAbs above already
+// established for properties execCommand has no native command for (there's
+// no execCommand equivalent for text-stroke either). Shared by the outline
+// color/width setters below so color and width stay independent controls,
+// exactly like Size and Text Color are independent of each other today.
+function _slFmtWrapSelection(applyStyleFn){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  if(document.activeElement!==SL_FMT_ACTIVE_INNER) SL_FMT_ACTIVE_INNER.focus();
+  const sel=window.getSelection();
+  let range=null;
+  if(sel && sel.rangeCount>0 && SL_FMT_ACTIVE_INNER.contains(sel.getRangeAt(0).commonAncestorContainer)){
+    range=sel.getRangeAt(0);
+  } else if(SL_FMT_SAVED_RANGE){
+    range=SL_FMT_SAVED_RANGE;
+  }
+  if(!range) return;
+  const span=document.createElement('span');
+  applyStyleFn(span.style);
+  if(range.collapsed){
+    span.appendChild(document.createTextNode('​'));
+    range.insertNode(span);
+    const newRange=document.createRange();
+    newRange.setStart(span.firstChild,1);
+    newRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    SL_FMT_SAVED_RANGE=null;
+  } else {
+    try{
+      range.surroundContents(span);
+    }catch(_){
+      const contents=range.extractContents();
+      span.appendChild(contents);
+      range.insertNode(span);
+    }
+    const newRange=document.createRange();
+    newRange.selectNodeContents(span);
+    sel.removeAllRanges();
+    sel.addRange(newRange);
+    SL_FMT_SAVED_RANGE=newRange.cloneRange();
+  }
+}
+
+function slFmtOutlineColor(hex){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  slFmtRestoreRange();
+  _slFmtWrapSelection(style=>{ style.webkitTextStrokeColor=hex; });
+}
+
+function slFmtOutlineWidthAbs(px){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  px=Math.max(0,Math.min(20,parseInt(px)||0));
+  const input=document.getElementById('sl-fmt-outline-width');
+  if(input) input.value=px;
+  slFmtRestoreRange();
+  _slFmtWrapSelection(style=>{ style.webkitTextStrokeWidth=px+'px'; });
+}
+function slFmtOutlineWidth(delta){
+  if(!SL_FMT_ACTIVE_INNER) return;
+  const input=document.getElementById('sl-fmt-outline-width');
+  const cur=parseInt(input?.value)||0;
+  slFmtOutlineWidthAbs(cur+delta);
+}
+// Width 0 already renders as no visible stroke — same reasoning as
+// slShapeClearStroke below — so Clear just zeroes the weight rather than
+// needing to hunt down and unwrap every stroke span in the selection.
+function slFmtOutlineClear(){
+  slFmtOutlineWidthAbs(0);
 }
 
 function slUpdateFmtToolbarState(){

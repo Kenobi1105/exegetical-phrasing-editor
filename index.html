@@ -6,7 +6,7 @@
 <title>Exegetical Phrasing Editor</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Gentium+Plus:ital,wght@0,400;0,700;1,400;1,700&family=Playfair+Display:wght@400;700&family=Cormorant+Garamond:wght@400;700&family=Montserrat:wght@400;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="app.css"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
@@ -633,6 +633,12 @@
                   <option value="Arial, Helvetica, sans-serif">Arial</option>
                   <option value="'Courier New', Courier, monospace">Courier New</option>
                   <option value="'Brush Script MT', cursive">Brush Script</option>
+                  <option value="Verdana, Geneva, sans-serif">Verdana</option>
+                  <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
+                  <option value="Palatino, 'Palatino Linotype', 'Book Antiqua', serif">Palatino</option>
+                  <option value="'Playfair Display', Georgia, serif">Playfair Display</option>
+                  <option value="'Cormorant Garamond', Georgia, serif">Cormorant Garamond</option>
+                  <option value="'Montserrat', Arial, sans-serif">Montserrat</option>
                 </select>
                 <div class="sl-float-sep"></div>
                 <span class="sl-fmt-sub-label" data-i18n="slides.fmt.size">Size</span>
@@ -642,9 +648,18 @@
                 <div class="sl-float-sep"></div>
                 <span class="sl-fmt-sub-label" data-i18n="slides.fmt.color">Text color</span>
                 <button type="button" class="sl-swatch-btn" id="sl-fmt-color-btn" style="background:#1F1E1E" title="Text color" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slTextColor', this, '#1F1E1E')"></button>
+                <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtColorClear()" data-i18n="slides.fmt.none">None</button>
                 <span class="sl-fmt-sub-label" data-i18n="slides.fmt.highlight">Highlight</span>
                 <button type="button" class="sl-swatch-btn" id="sl-fmt-hl-btn" style="background:#F0D08F" title="Highlight" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slHighlight', this, '#F0D08F')"></button>
                 <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtHighlightClear()" data-i18n="slides.fmt.no-highlight">None</button>
+              </div>
+              <div class="sl-fmt-row">
+                <span class="sl-fmt-sub-label" data-i18n="slides.fmt.outline">Outline</span>
+                <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtOutlineWidth(-1)">−</button>
+                <input type="number" class="sl-fmt-size-input" id="sl-fmt-outline-width" value="0" min="0" max="20" onpointerdown="event.stopPropagation()" onchange="slFmtOutlineWidthAbs(this.value)"/>
+                <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtOutlineWidth(1)">+</button>
+                <button type="button" class="sl-swatch-btn" id="sl-fmt-outline-btn" style="background:#000000" data-i18n-title="slides.fmt.outline-color" title="Outline color" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slTextOutline', this, '#000000')"></button>
+                <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtOutlineClear()" data-i18n="slides.fmt.none">None</button>
               </div>
             </div>
           </div>
