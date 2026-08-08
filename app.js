@@ -10817,8 +10817,10 @@ function _slRenderOnePassage(passage, slide, container, w, h, isExport){
       document.addEventListener('pointerup',onUp);
     });
     passageEl.addEventListener('click',ev=>{ev.stopPropagation(); SL_SEL_EL_IDS=[]; _slUpdateAlignToolbarState(); slSelectEl(selId); slUpdatePropsPanel();});
-    // Apply selection state without re-render
-    if(SL_SEL_EL_ID===selId) passageEl.classList.add('selected');
+    // Apply selection state without re-render — never during export/presenter
+    // renders, where selection is a builder-only concept that shouldn't
+    // leak into the projector or a PDF.
+    if(!isExport && SL_SEL_EL_ID===selId) passageEl.classList.add('selected');
   }
 
   container.appendChild(passageEl);
@@ -11028,7 +11030,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
           enterEditMode(ev.clientX, ev.clientY);
         });
         div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
+        if(!isExport && SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     } else if(isShape){
       const sw=el.strokeWidth??2;
@@ -11041,7 +11043,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         div.style.touchAction="none";
         div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); _slHandleElPointerdown(ev,el,div,w,h); });
         div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
+        if(!isExport && SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     } else if(isImage){
       const img=document.createElement("img");
@@ -11067,7 +11069,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         div.style.touchAction="none";
         div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); _slHandleElPointerdown(ev,el,div,w,h); });
         div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
+        if(!isExport && SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     } else {
       div.style.background = isCmtBox ? "rgba(247,243,233,.95)" : "rgba(73,53,72,.06)";
@@ -11089,7 +11091,7 @@ function slRenderSlideInto(slide, container, w, h, isExport){
         div.style.touchAction="none";
         div.addEventListener("pointerdown",ev=>{ ev.stopPropagation(); _slHandleElPointerdown(ev,el,div,w,h); });
         div.addEventListener("contextmenu",ev=>{ev.preventDefault();ev.stopPropagation();_slShowElCtxMenu(el.id,ev.clientX,ev.clientY);});
-        if(SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
+        if(!isExport && SL_SEL_EL_IDS.includes(el.id)) div.classList.add("selected");
       }
     }
     container.appendChild(div);
@@ -12180,6 +12182,27 @@ function slPresUpdate(){
   });
 }
 
+// #sl-pres-preview's size is baked into inline px on every slPresUpdate()
+// call, not CSS-driven — see the "JS controls preview size" comment on
+// #sl-pres-preview in app.css. That's normally fine since slPresUpdate()
+// already reruns on presentation start/slide nav, but nothing re-measures
+// #sl-pres-left when its width changes for an UNRELATED reason (e.g. the
+// Bible panel gets pinned/unpinned/resized mid-presentation) — the stale,
+// now-too-large preview then gets clipped by #sl-pres-left's overflow:
+// hidden. A ResizeObserver on #sl-pres-left catches any such resize
+// regardless of cause, same "observe the real DOM" approach used for
+// mirroring the Bible panel's width to the projector.
+let _slPresResizeT=null;
+function _slSchedulePresResize(){
+  clearTimeout(_slPresResizeT);
+  _slPresResizeT=setTimeout(()=>{
+    if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
+    const presenter=document.getElementById('sl-presenter');
+    if(!presenter || presenter.style.display==='none') return;
+    slPresUpdate();
+  },80);
+}
+
 /* ── Shared slide render at canonical 960×540 ─────────────────────────────
    All presentation surfaces (slide editor, presenter preview, projector)
    render at this fixed size so block layout, connector paths, and SVG
@@ -13070,6 +13093,10 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(blk) blk.classList.remove('cmt-linked');
   });
   window.addEventListener('resize',()=>{ drawConns(); refreshBrackets(); refreshDiagramConnectors(); if(typeof renderSectionStrips==='function') renderSectionStrips(); });
+  const _slPresLeftEl=document.getElementById('sl-pres-left');
+  if(_slPresLeftEl && typeof ResizeObserver==='function'){
+    new ResizeObserver(_slSchedulePresResize).observe(_slPresLeftEl);
+  }
   // Rich paste handler for Screen 2
   const pasteTA=document.getElementById('paste-ta');
   if(pasteTA) pasteTA.addEventListener('paste', ev=>{
