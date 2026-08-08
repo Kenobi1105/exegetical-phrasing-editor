@@ -4560,9 +4560,9 @@ body.hide-sections #section-strips{display:none}
   box-shadow:0 6px 20px rgba(0,0,0,.2);
   pointer-events:auto;
 }
-.sl-float-section{ padding:6px 8px; border-bottom:none; }
-.sl-float-section .sl-fmt-row{ margin-bottom:0; flex-wrap:nowrap; }
-.sl-float-sep{ width:1px; align-self:stretch; background:rgba(73,53,72,.15); margin:0 2px; }
+.sl-float-section{ padding:9px 11px; border-bottom:none; }
+.sl-float-section .sl-fmt-row{ flex-wrap:nowrap; gap:9px; }
+.sl-float-sep{ width:1px; align-self:stretch; background:rgba(73,53,72,.15); margin:0 4px; }
 .sl-fmt-select-sm{ width:auto; max-width:110px; margin-bottom:0; }
 
 /* ── Slides snap guides ──
