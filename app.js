@@ -15,6 +15,17 @@ const FSZ_MIN=8, FSZ_MAX=40, FSZ_STEP=1;
 // Do not redeclare it here with let/var — that would throw a SyntaxError
 // when both scripts are loaded in the same non-module scope.
 let hlColor='#F0D08F';
+
+// Converts a #rrggbb hex color to an rgba() string at the given alpha —
+// used to make highlight marks genuinely translucent (ink-over-text look)
+// instead of an opaque color block. Shared by the main editor's applyHl()
+// and the Slides text-box highlighter so both tools match.
+function _hlToRgba(hex, alpha){
+  const m=/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex||'');
+  if(!m) return hex;
+  const r=parseInt(m[1],16), g=parseInt(m[2],16), b=parseInt(m[3],16);
+  return 'rgba('+r+','+g+','+b+','+alpha+')';
+}
 let activeEl=null, savedRange=null;
 let RC=0, CC=0;
 let asT=null;
@@ -4246,7 +4257,7 @@ function applyHl(){
     const freshRange=freshSel&&freshSel.rangeCount?freshSel.getRangeAt(0):range;
     const span=document.createElement('span');
     span.className='hl';
-    span.style.backgroundColor=hlColor;
+    span.style.backgroundColor=_hlToRgba(hlColor,0.55);
     try{freshRange.surroundContents(span);}
     catch(e){const f=freshRange.extractContents();span.appendChild(f);freshRange.insertNode(span);}
   }
@@ -9709,21 +9720,24 @@ function slFmtColorClear(){
   document.execCommand('styleWithCSS',false,false);
 }
 
+// Uses the same custom Range-wrapping technique as the outline functions
+// below (execCommand's hiliteColor/backColor can only set a flat
+// background-color — no way to also carry the irregular border-radius/
+// padding that makes this read as a real highlighter mark, and to match
+// the main editor's .hl styling exactly), rather than execCommand.
 function slFmtHighlight(hex){
   if(!SL_FMT_ACTIVE_INNER) return;
   slFmtRestoreRange();
-  // hiliteColor has a history of unreliable support in Safari/WebKit —
-  // and per the zoom investigation earlier in this project, this app's
-  // iPad testing runs on WebKit regardless of which "browser" app is
-  // used. backColor is the more consistently-supported fallback.
-  const ok=document.execCommand('hiliteColor',false,hex);
-  if(!ok) document.execCommand('backColor',false,hex);
+  _slFmtWrapSelection(style=>{
+    style.backgroundColor=_hlToRgba(hex,0.55);
+    style.borderRadius='3px 6px 4px 7px';
+    style.padding='1px 2px';
+  });
 }
 function slFmtHighlightClear(){
   if(!SL_FMT_ACTIVE_INNER) return;
   slFmtRestoreRange();
-  const ok=document.execCommand('hiliteColor',false,'transparent');
-  if(!ok) document.execCommand('backColor',false,'transparent');
+  _slFmtWrapSelection(style=>{ style.backgroundColor='transparent'; });
 }
 
 // Browsers only expose execCommand fontSize as legacy HTML <font

@@ -429,7 +429,7 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   width:0%;transition:width 0.15s ease;
 }
 
-.hl{border-radius:2px;padding:0 1px}
+.hl{border-radius:3px 6px 4px 7px;padding:1px 2px}
 
 /* ── BIBLE MODULE PANEL ── */
 #bible-panel{
