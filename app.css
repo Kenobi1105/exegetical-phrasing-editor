@@ -4830,3 +4830,22 @@ body.hide-sections #section-strips{display:none}
     drop-shadow(0 0 3px rgba(200,168,75,.85))
     drop-shadow(0 0 7px rgba(200,168,75,.5));
 }
+
+/* ── Diagram View connectors: dedicated hit-testing overlay ──
+   .dblock-text has an explicit z-index:1 (intentional — see its own CSS
+   comment, keeps text readable over a passing S-curve via its halo). That
+   correctly keeps the VISIBLE .dconn-line behind text, but the invisible
+   .dconn-hit paths used to live in the same #dconns/#dconns-back layers
+   and inherited that same z-index disadvantage — silently losing every
+   click to the text wherever a connector crossed over it. #dconns-hit
+   (app.js, renderDiagramConnectors) holds ONLY the hit-paths, always kept
+   as #dcanvas's last child and given a z-index comfortably above anything
+   in-canvas (.dblock-text:1, .dblock.dragging:2) — so it never affects
+   what's visually painted, only what actually catches the click. */
+#dconns-hit{
+  position:absolute;top:0;left:0;
+  width:100%;height:100%;
+  pointer-events:none;
+  overflow:visible;
+  z-index:5;
+}

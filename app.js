@@ -1864,7 +1864,7 @@ function _makeHitPath(d, cnxId){
    • Nearly horizontal:         use block fracY as-is (original behaviour)
    For word-level endpoints, the actual path endpoint is placed just outside
    the word edge (with WORD_ARROW_CLEARANCE) so the arrowhead sits clear of the text. */
-function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
+function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg, hitSvg){
   // Pass 1: get preliminary midpoint positions so we can determine direction
   const raw1=_connectorPoint(fromEl, cnx.fromX??0.5, cnx.fromY??0.5, canvasRect, cnx.fromWordIdx??null);
   const raw2=_connectorPoint(toEl,   cnx.toX  ??0.5, cnx.toY  ??0.5, canvasRect, cnx.toWordIdx  ??null);
@@ -1930,8 +1930,8 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg){
   path.setAttribute('fill','none');
   _applyLineVisuals(path, cnx, svg);
 
-  g.appendChild(_makeHitPath(d, cnx.id));
   g.appendChild(path);
+  if(hitSvg) hitSvg.appendChild(_makeHitPath(d, cnx.id));
   return g;
 }
 
@@ -1947,7 +1947,7 @@ function _connectorPathDTight(p1,p2,fromY,toY){
    midpoint to left/right-edge midpoint. Rendered into the BACK svg layer
    (behind block content), otherwise structurally identical to a curve
    connector (same hit path, same style system). */
-function _makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, svg, trunkX){
+function _makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, svg, trunkX, hitSvg){
   const p1=_connectorPoint(fromEl, cnx.fromX??0, cnx.fromY??0.5, canvasRect);
   const p2=_connectorPoint(toEl, cnx.toX??0, cnx.toY??0.5, canvasRect);
   const d=_rightAnglePathD(p1,p2,trunkX);
@@ -1964,8 +1964,8 @@ function _makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, svg, trunkX){
   path.setAttribute('fill','none');
   _applyLineVisuals(path, cnx, svg);
 
-  g.appendChild(_makeHitPath(d, cnx.id));
   g.appendChild(path);
+  if(hitSvg) hitSvg.appendChild(_makeHitPath(d, cnx.id));
   return g;
 }
 
@@ -1990,6 +1990,20 @@ function renderDiagramConnectors(){
   // keeps text above the connector lines. #dconns-back stays first (right-angle
   // connectors remain behind blocks as structural lines).
   canvas.appendChild(svg);
+  // .dblock-text's z-index:1 is intentional for the VISIBLE line (text stays
+  // readable via its halo, see .dblock-text's own CSS comment) — but the
+  // invisible .dconn-hit paths lived in the same layer and inherited that
+  // same disadvantage, silently losing every click to the text wherever a
+  // connector crosses over it. #dconns-hit is a dedicated, always-topmost
+  // (z-index:5, app.css) overlay used purely for hit-testing, kept
+  // completely separate from the visual painting order above.
+  let hitSvg=document.getElementById('dconns-hit');
+  if(!hitSvg){
+    hitSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+    hitSvg.id='dconns-hit';
+    hitSvg.setAttribute('preserveAspectRatio','none');
+  }
+  canvas.appendChild(hitSvg);
   const canvasRect=canvas.getBoundingClientRect();
   svg.setAttribute('width', canvas.scrollWidth);
   svg.setAttribute('height', canvas.scrollHeight);
@@ -1997,6 +2011,9 @@ function renderDiagramConnectors(){
   backSvg.setAttribute('width', canvas.scrollWidth);
   backSvg.setAttribute('height', canvas.scrollHeight);
   backSvg.innerHTML='';
+  hitSvg.setAttribute('width', canvas.scrollWidth);
+  hitSvg.setAttribute('height', canvas.scrollHeight);
+  hitSvg.innerHTML='';
   const trunkX=_rightAngleTrunkX(canvas, canvasRect);
 
   // Safety net: if the selected connector no longer exists (e.g. an undo
@@ -2022,9 +2039,9 @@ function renderDiagramConnectors(){
       return;
     }
     if(cnx.kind==='rightangle'){
-      backSvg.appendChild(_makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, backSvg, trunkX));
+      backSvg.appendChild(_makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, backSvg, trunkX, hitSvg));
     } else {
-      svg.appendChild(_makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg));
+      svg.appendChild(_makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg, hitSvg));
     }
   });
 }
