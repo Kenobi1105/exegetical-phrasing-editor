@@ -4717,6 +4717,13 @@ body.hide-sections #section-strips{display:none}
   width:22px;flex-shrink:0;
   display:flex;align-items:center;justify-content:center;
   pointer-events:auto;
+  /* Always paint/hit-test above a block-to-block connector (#dconns,
+     #dconns-hit) that happens to cross this column — a functional control,
+     unlike .dblock-text, so there's no need to let the line show through;
+     it should simply always win. z-index:10 matches .ccard's own "floats
+     above the diagram canvas" convention. */
+  position:relative;
+  z-index:10;
 }
 .dcmt-badge{
   width:20px;height:20px;padding:0;border:none;background:none;
