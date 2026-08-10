@@ -4457,8 +4457,22 @@ function drawConns(){
     const x2=cr.left-mr.left;
     const y2=cr.top+20-mr.top+cmScrollTop;
     const cx1=x1+(x2-x1)*.55,cx2=x2-(x2-x1)*.25;
+    const lineD=`M${x1},${y1} C${cx1},${y1} ${cx2},${y2} ${x2},${y2}`;
     const p=document.createElementNS('http://www.w3.org/2000/svg','path');
-    p.setAttribute('class','cline');p.setAttribute('d',`M${x1},${y1} C${cx1},${y1} ${cx2},${y2} ${x2},${y2}`);svg.appendChild(p);
+    p.setAttribute('class','cline');p.setAttribute('d',lineD);
+    // Wide invisible hit-path + hover-group, same technique already used
+    // for the block-to-block connector system's .dconn-hit (the visible
+    // line stays too thin to reliably click on its own) — click jumps to
+    // the same comment card the badge icon already does.
+    const cid=card.dataset.cid;
+    const group=document.createElementNS('http://www.w3.org/2000/svg','g');
+    group.setAttribute('class','cline-group');
+    const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
+    hit.setAttribute('class','cline-hit');hit.setAttribute('d',lineD);
+    hit.addEventListener('pointerdown',ev=>{ev.stopPropagation();});
+    hit.addEventListener('click',ev=>{ev.stopPropagation();if(cid)jumpToCmt(cid);});
+    group.appendChild(hit);group.appendChild(p);
+    svg.appendChild(group);
     const d=document.createElementNS('http://www.w3.org/2000/svg','circle');
     d.setAttribute('cx',x1);d.setAttribute('cy',y1);d.setAttribute('r','3');
     d.setAttribute('fill','var(--sig)');d.setAttribute('opacity','.45');svg.appendChild(d);
@@ -9567,9 +9581,8 @@ function slMakeBlank(){
     elements:[],notes:''};
 }
 function slMakeContent(){
-  const allRids=_realRows().map(r=>r.dataset.rid).filter(Boolean);
   return {id:'sl-'+(++SL_SLIDE_CTR),type:'content',
-    passages:[slMakePassage(allRids)],
+    passages:[slMakePassage([])],
     background:'#ffffff',
     elements:[],notes:''};
 }
@@ -10128,6 +10141,28 @@ function slPasteClipboard(){
     // perfectly stacking — same offset whether pasting onto the same
     // slide or a different one (clipboard is independent of SL_ACTIVE_IDX,
     // so cross-slide paste needs no special-casing at all).
+    const copy={...JSON.parse(JSON.stringify(srcEl)), id:'el-'+(++SL_EL_CTR)};
+    copy.x=Math.min(100-copy.w, srcEl.x+3);
+    copy.y=Math.min(100-copy.h, srcEl.y+3);
+    sl.elements.push(copy);
+    newIds.push(copy.id);
+    return {kind:'add', el:{...copy}};
+  });
+  _slPush({type:'sl-el-batch',slideIdx:SL_ACTIVE_IDX,ops});
+  slSetSelection(newIds);
+  autoSave(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
+}
+
+// Ctrl+D on a selected element — deliberately NOT slCopySelection()+
+// slPasteClipboard() in sequence, which would silently clobber whatever
+// the user last copied to SL_CLIPBOARD. Same id-regen/offset/undo shape
+// as slPasteClipboard above, just sourced from the live selection instead.
+function slDuplicateSelection(){
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const srcEls=SL_SEL_EL_IDS.map(id=>sl.elements.find(e=>e.id===id)).filter(Boolean);
+  if(!srcEls.length) return;
+  const newIds=[];
+  const ops=srcEls.map(srcEl=>{
     const copy={...JSON.parse(JSON.stringify(srcEl)), id:'el-'+(++SL_EL_CTR)};
     copy.x=Math.min(100-copy.w, srcEl.x+3);
     copy.y=Math.min(100-copy.h, srcEl.y+3);
@@ -11845,6 +11880,20 @@ document.addEventListener('keydown',ev=>{
   if((ev.ctrlKey||ev.metaKey) && !ev.altKey){
     if(ev.key==='c'||ev.key==='C'){ slCopySelection(); ev.preventDefault(); }
     else if(ev.key==='v'||ev.key==='V'){ slPasteClipboard(); ev.preventDefault(); }
+    else if(ev.key==='a'||ev.key==='A'){
+      const sl=SL_DECK.slides[SL_ACTIVE_IDX];
+      if(sl) slSetSelection(sl.elements.map(e=>e.id));
+      ev.preventDefault();
+    }
+    else if(ev.key==='d'||ev.key==='D'){
+      // No independent "thumbnail has focus" concept exists — an element
+      // being selected vs. not is the only signal available, same as the
+      // Delete-key fallback above (no element selected -> act on the
+      // active slide instead).
+      if(SL_SEL_EL_IDS.length || SL_SEL_EL_ID){ slDuplicateSelection(); }
+      else { slDuplicateSlide(SL_ACTIVE_IDX); }
+      ev.preventDefault();
+    }
   }
 });
 

@@ -4814,3 +4814,19 @@ body.hide-sections #section-strips{display:none}
 #app:has(#bible-panel.pinned) #sl-toolbar .sl-tbtn svg{ width:16px; height:16px; }
 #app:has(#bible-panel.pinned) #sl-toolbar .sl-tsep{ flex-shrink:0; }
 #app:has(#bible-panel.pinned) #sl-toolbar{ overflow-x:auto; -webkit-overflow-scrolling:touch; }
+
+/* ── Diagram View comment-line: wider click target + hover glow ──
+   Mirrors the block-to-block connector system's .dconn-hit/.dconn-line
+   split exactly (app.css, .dconn-line/.dconn-hit/.dconn-group.selected
+   above) — a child's own explicit pointer-events overrides the ancestor
+   #svgl{pointer-events:none}, so the thin dashed .cline stays purely
+   visual while the wide, invisible .cline-hit sibling actually catches
+   clicks/hover. No .selected concept for comment-lines, so the glow
+   triggers on :hover instead of a toggled class. */
+.cline{pointer-events:none}
+.cline-hit{pointer-events:stroke;cursor:pointer;stroke:transparent;stroke-width:14;fill:none}
+.cline-group:hover .cline{
+  filter:
+    drop-shadow(0 0 3px rgba(200,168,75,.85))
+    drop-shadow(0 0 7px rgba(200,168,75,.5));
+}
