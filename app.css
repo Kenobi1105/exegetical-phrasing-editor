@@ -2095,6 +2095,16 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   flex-shrink: 0;
   transition: background .15s, color .15s, border-color .15s;
 }
+/* Mirrors the main toolbar's .tsep between its settings icon and EN pill —
+   ink-based rather than .tsep's hardcoded translucent white, since this
+   cluster sits on var(--surface) (light in 4 themes) rather than the
+   toolbar's always-dark --sig. */
+#lang-toggle-s12 .s12-sep {
+  width: 1px;
+  height: 20px;
+  background: rgba(var(--ink-rgb), .15);
+  flex-shrink: 0;
+}
 #lang-toggle-s12 .lang-pill:hover,
 #lang-toggle-s12 .s12-gear-btn:hover {
   background: var(--sig, #493548);
