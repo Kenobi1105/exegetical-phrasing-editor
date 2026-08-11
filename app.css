@@ -4858,7 +4858,7 @@ body.hide-sections #section-strips{display:none}
 }
 
 /* ── Settings: Themes gallery ── */
-.tg{
+.thm-grid{
   display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;
   margin-bottom:24px;
 }
