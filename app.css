@@ -2060,24 +2060,43 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   text-align: center;
 }
 
-/* ── S1/S2 floating lang pill ── */
+/* ── S1/S2 floating lang pill + settings gear ──
+   Mirrors the main toolbar's own gear+EN cluster (top-right), since the
+   real toolbar buttons sit behind the S1/S2 full-screen scrim and can't
+   be clicked through it — same reason the lang pill itself is a separate
+   clone rather than trying to poke a hole through to the real one. */
 #lang-toggle-s12 {
   position: fixed;
   top: 11px;
   right: 14px;
   z-index: 9999;
-  display: none; /* shown via JS on S1/S2 */
+  display: none; /* shown as flex via JS on S1/S2 */
+  align-items: center;
+  gap: 6px;
 }
 /* Card surface + guaranteed-contrast ink text — same pairing as
    .mcard/.ccard/.dblock, rather than --bg+--sig (which both go dark
    together under Midnight, since --bg is no longer guaranteed light). */
-#lang-toggle-s12 .lang-pill {
+#lang-toggle-s12 .lang-pill,
+#lang-toggle-s12 .s12-gear-btn {
   border: 1.5px solid rgba(var(--ink-rgb),.28);
   background: var(--surface, #fff);
   color: var(--ink, #1F1E1E);
   box-shadow: 0 1px 6px rgba(0,0,0,.09);
 }
-#lang-toggle-s12 .lang-pill:hover {
+#lang-toggle-s12 .s12-gear-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background .15s, color .15s, border-color .15s;
+}
+#lang-toggle-s12 .lang-pill:hover,
+#lang-toggle-s12 .s12-gear-btn:hover {
   background: var(--sig, #493548);
   color: var(--label, #F7F3E9);
   border-color: var(--sig, #493548);

@@ -369,7 +369,7 @@ bPicker = {
 | `Enter` | Split row at caret |
 | `↑/↓` | Navigate rows |
 
-**Screen 1 only:** `Ctrl+O` and `Alt+P` work. All others are blocked.
+**Screen 1 only:** `Ctrl+O`, `Ctrl+,`, and `Alt+P` work. All others are blocked.
 
 ---
 

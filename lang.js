@@ -1218,7 +1218,7 @@ function _updateS12Pill() {
   if (!pill) return;
   const app = document.getElementById('app');
   const inEditor = app && (app.style.display === 'flex' || app.style.display === 'block');
-  pill.style.display = inEditor ? 'none' : 'block';
+  pill.style.display = inEditor ? 'none' : 'flex';
 }
 
 /* ── Toggle language ── */

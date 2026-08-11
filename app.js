@@ -4748,10 +4748,11 @@ function startCR(e,col){
 ════════════════════════════════════════ */
 document.addEventListener('keydown',e=>{
   if(!(e.ctrlKey||e.metaKey))return;
-  // In Screen 1: only allow Ctrl+O and Ctrl+Shift+1
+  // In Screen 1: only allow Ctrl+O, Ctrl+, and Ctrl+Shift+1
   const inS1=!document.getElementById('s1').classList.contains('hidden');
   if(inS1){
     if((e.key==='o'||e.key==='O')&&!e.shiftKey&&!e.altKey){e.preventDefault();document.getElementById('s1-load-file')?.click();return;}
+    if(e.key===','){e.preventDefault();openSettings();return;}
     return;
   }
   // Projects/Bible handled in separate listener below
