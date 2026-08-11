@@ -40,7 +40,7 @@ let SOURCE_CITATION='';
 // Tracks user-adjusted column widths (null = use flex/default)
 const COL_WIDTHS={v:null, o:null, t:null};
 
-const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',crit:'#1E6AFE'};
+const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',crit:'#1E6AFE',surface:'#FFFFFF'};
 
 // Named color presets for the Settings > Themes gallery. 'default' reuses
 // DCOLORS directly (not a copy) so the two never drift out of sync. Every
@@ -48,12 +48,19 @@ const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'
 // the handful of spots elsewhere that hardcode white text against those
 // two variables (the Present/Add-Content buttons, toolbar hover overlays) —
 // Midnight is the one deliberate light-ink-on-dark-bg exception.
+// `surface` (card/panel/diagram-block background — .dblock, .ccard, modals,
+// side panels) stays white for every light-bg theme, matching :root's own
+// hardcoded fallback. Midnight is the one theme where it must move too:
+// --ink there is light (for legibility against the dark --bg), so leaving
+// --surface white would put light ink text on white cards — unreadable.
+// Giving Midnight its own dark, slightly-elevated --surface keeps the
+// existing ink/surface pairing coherent instead of only patching --ink.
 const THEMES={
   default:{name:'Default',colors:DCOLORS},
-  midnight:{name:'Midnight',colors:{bg:'#1B1A20',accent:'#E8C97A',ink:'#EDE7DD',sig:'#2C2438',label:'#EDE7DD',active:'#C9A64E',crit:'#6FA8FF'}},
-  papyrus:{name:'Papyrus',colors:{bg:'#EFE0BF',accent:'#D9A55C',ink:'#3B2A1A',sig:'#5C3A2E',label:'#F3E8D0',active:'#B8763A',crit:'#A13A2A'}},
-  scriptorium:{name:'Scriptorium',colors:{bg:'#EEF1F3',accent:'#9FC1D9',ink:'#1E2530',sig:'#2E4057',label:'#EEF1F3',active:'#4A7A9E',crit:'#C2542D'}},
-  olive:{name:'Olive',colors:{bg:'#EFEEDD',accent:'#B9C98B',ink:'#26301F',sig:'#3A4A2C',label:'#F3F2E4',active:'#748C4A',crit:'#B0542E'}},
+  midnight:{name:'Midnight',colors:{bg:'#1B1A20',accent:'#E8C97A',ink:'#EDE7DD',sig:'#2C2438',label:'#EDE7DD',active:'#C9A64E',crit:'#6FA8FF',surface:'#252030'}},
+  papyrus:{name:'Papyrus',colors:{bg:'#EFE0BF',accent:'#D9A55C',ink:'#3B2A1A',sig:'#5C3A2E',label:'#F3E8D0',active:'#B8763A',crit:'#A13A2A',surface:'#FFFFFF'}},
+  scriptorium:{name:'Scriptorium',colors:{bg:'#EEF1F3',accent:'#9FC1D9',ink:'#1E2530',sig:'#2E4057',label:'#EEF1F3',active:'#4A7A9E',crit:'#C2542D',surface:'#FFFFFF'}},
+  olive:{name:'Olive',colors:{bg:'#EFEEDD',accent:'#B9C98B',ink:'#26301F',sig:'#3A4A2C',label:'#F3F2E4',active:'#748C4A',crit:'#B0542E',surface:'#FFFFFF'}},
 };
 const THEME_KEY='exeg-theme';
 
@@ -4965,7 +4972,9 @@ function openSettings(){
   // Close sidebars so they don't overlap the modal
   if(typeof closeProjects==='function')closeProjects();
   if(typeof closeBible==='function')closeBible();
-  // Snapshot current values (+ active theme id) for change detection
+  // Snapshot current values (+ active theme id) for change detection.
+  // `surface` has no Customize swatch of its own (see THEMES comment above)
+  // so it's read from the live computed style rather than an sc- input.
   window._settingsSnapshot={
     theme:_currentThemeId(),
     bg:document.getElementById('sc-bg')?.value,
@@ -4975,6 +4984,7 @@ function openSettings(){
     label:document.getElementById('sc-label')?.value,
     active:document.getElementById('sc-active')?.value,
     crit:document.getElementById('sc-crit')?.value,
+    surface:getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(),
   };
   showThemeGallery(); // always reopen on the gallery, not wherever Customize was left last time
   // Click outside to close (with change detection)
@@ -5004,7 +5014,7 @@ function settingsEscOrClickOutside(){
     const snap=window._settingsSnapshot;
     if(snap){
       const colors={};
-      ['bg','accent','ink','sig','label','active','crit'].forEach(k=>{ if(snap[k]) colors[k]=snap[k]; });
+      ['bg','accent','ink','sig','label','active','crit','surface'].forEach(k=>{ if(snap[k]) colors[k]=snap[k]; });
       _applyColorSet(colors);
       try{ localStorage.setItem('exeg-colors', JSON.stringify(colors)); }catch(_){}
       try{ localStorage.setItem(THEME_KEY, snap.theme); }catch(_){}
@@ -5042,6 +5052,10 @@ function applySettings(){
       const el=document.getElementById('sc-'+k);
       if(el) colors[k]=el.value;
     });
+    // No Customize swatch controls --surface (see THEMES comment) — carry
+    // forward whatever's currently live so a custom edit on top of e.g.
+    // Midnight doesn't silently drop back to a white surface on reload.
+    colors.surface=getComputedStyle(document.documentElement).getPropertyValue('--surface').trim();
     _applyColorSet(colors);
     try{localStorage.setItem('exeg-colors',JSON.stringify(colors));}catch(_){}
     try{localStorage.setItem(THEME_KEY,'custom');}catch(_){}
