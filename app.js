@@ -42,6 +42,37 @@ const COL_WIDTHS={v:null, o:null, t:null};
 
 const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',crit:'#1E6AFE'};
 
+// Named color presets for the Settings > Themes gallery. 'default' reuses
+// DCOLORS directly (not a copy) so the two never drift out of sync. Every
+// preset keeps --sig/--active dark-to-mid tone and --label light, matching
+// the handful of spots elsewhere that hardcode white text against those
+// two variables (the Present/Add-Content buttons, toolbar hover overlays) —
+// Midnight is the one deliberate light-ink-on-dark-bg exception.
+const THEMES={
+  default:{name:'Default',colors:DCOLORS},
+  midnight:{name:'Midnight',colors:{bg:'#1B1A20',accent:'#E8C97A',ink:'#EDE7DD',sig:'#2C2438',label:'#EDE7DD',active:'#C9A64E',crit:'#6FA8FF'}},
+  papyrus:{name:'Papyrus',colors:{bg:'#EFE0BF',accent:'#D9A55C',ink:'#3B2A1A',sig:'#5C3A2E',label:'#F3E8D0',active:'#B8763A',crit:'#A13A2A'}},
+  scriptorium:{name:'Scriptorium',colors:{bg:'#EEF1F3',accent:'#9FC1D9',ink:'#1E2530',sig:'#2E4057',label:'#EEF1F3',active:'#4A7A9E',crit:'#C2542D'}},
+  olive:{name:'Olive',colors:{bg:'#EFEEDD',accent:'#B9C98B',ink:'#26301F',sig:'#3A4A2C',label:'#F3F2E4',active:'#748C4A',crit:'#B0542E'}},
+};
+const THEME_KEY='exeg-theme';
+
+// Applies a {bg,accent,ink,sig,label,active,crit} color set as CSS custom
+// properties on <html>, and keeps the (still-present, now Customize-only)
+// swatch <input>s in sync — the single shared implementation used by boot
+// restore, applySettings(), resetColors(), and selectTheme() below, so
+// there's exactly one place that knows how to apply a color set instead of
+// several near-duplicate copies.
+function _applyColorSet(colors){
+  const R=document.documentElement;
+  Object.entries(colors).forEach(([k,v])=>{
+    if(!v) return;
+    R.style.setProperty('--'+k,v);
+    const inp=document.getElementById('sc-'+k);
+    if(inp) inp.value=v;
+  });
+}
+
 /* ── Diagram View state ──
    EDITOR_VIEW: 'phrasing' | 'diagram' — which canvas is currently shown.
    DIAGRAM_DATA: connectors + labels, saved alongside rows in
@@ -4875,14 +4906,68 @@ function helpSwitchTab(tab){
   if(scPane)scPane.style.display=tab==='shortcuts'?'block':'none';
 }
 
+function _currentThemeId(){
+  try{ return localStorage.getItem(THEME_KEY) || 'default'; }catch(_){ return 'default'; }
+}
+function renderThemeGallery(){
+  const el=document.getElementById('theme-gallery');
+  if(!el) return;
+  const activeId=_currentThemeId();
+  el.innerHTML = Object.entries(THEMES).map(([id,th])=>{
+    const c=th.colors;
+    const name=typeof t==='function'?t('theme.'+id+'.name'):th.name;
+    return `<button type="button" class="theme-tile${id===activeId?' active':''}" onclick="selectTheme('${id}')">
+      <span class="theme-swatch-row">
+        <span class="theme-swatch" style="background:${c.bg}"></span>
+        <span class="theme-swatch" style="background:${c.sig}"></span>
+        <span class="theme-swatch" style="background:${c.accent}"></span>
+        <span class="theme-swatch" style="background:${c.active}"></span>
+      </span>
+      <span class="theme-tile-name">${name}</span>
+    </button>`;
+  }).join('') + `
+    <button type="button" class="theme-tile theme-tile-customize" onclick="showCustomize()">
+      <span class="theme-tile-customize-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/><circle cx="6.5" cy="11.5" r="1.5"/><circle cx="9.5" cy="7.5" r="1.5"/><circle cx="14.5" cy="7.5" r="1.5"/><circle cx="17.5" cy="11.5" r="1.5"/></svg>
+      </span>
+      <span class="theme-tile-name">${typeof t==='function'?t('settings.customize'):'Customize'}</span>
+    </button>`;
+}
+// Instant apply+persist — a real live preview, unlike the gated Customize
+// flow below (matches conventional theme-picker behavior: pick a finished
+// look and see it immediately, vs. deliberately mixing your own and
+// confirming via Apply). Safe to "try on" freely: the Cancel/click-outside
+// discard path (settingsEscOrClickOutside) reverts both the live vars and
+// localStorage back to whatever was active when Settings was opened.
+function selectTheme(id){
+  const th=THEMES[id]; if(!th) return;
+  _applyColorSet(th.colors);
+  try{ localStorage.setItem('exeg-colors', JSON.stringify(th.colors)); }catch(_){}
+  try{ localStorage.setItem(THEME_KEY, id); }catch(_){}
+  renderThemeGallery();
+}
+function showCustomize(){
+  document.getElementById('theme-gallery')?.classList.add('hidden');
+  document.getElementById('theme-customize')?.classList.remove('hidden');
+  document.getElementById('theme-back-btn')?.classList.remove('hidden');
+  document.getElementById('theme-reset-btn')?.classList.remove('hidden');
+}
+function showThemeGallery(){
+  document.getElementById('theme-customize')?.classList.add('hidden');
+  document.getElementById('theme-gallery')?.classList.remove('hidden');
+  document.getElementById('theme-back-btn')?.classList.add('hidden');
+  document.getElementById('theme-reset-btn')?.classList.add('hidden');
+  renderThemeGallery();
+}
 function openSettings(){
   const m=document.getElementById('set-modal');
   if(m){m.classList.remove('hidden');}
   // Close sidebars so they don't overlap the modal
   if(typeof closeProjects==='function')closeProjects();
   if(typeof closeBible==='function')closeBible();
-  // Snapshot current values for change detection
+  // Snapshot current values (+ active theme id) for change detection
   window._settingsSnapshot={
+    theme:_currentThemeId(),
     bg:document.getElementById('sc-bg')?.value,
     accent:document.getElementById('sc-accent')?.value,
     ink:document.getElementById('sc-ink')?.value,
@@ -4891,6 +4976,7 @@ function openSettings(){
     active:document.getElementById('sc-active')?.value,
     crit:document.getElementById('sc-crit')?.value,
   };
+  showThemeGallery(); // always reopen on the gallery, not wherever Customize was left last time
   // Click outside to close (with change detection)
   setTimeout(()=>{
     const handler=e=>{
@@ -4904,6 +4990,7 @@ function openSettings(){
 function settingsHasChanges(){
   const snap=window._settingsSnapshot;
   if(!snap)return false;
+  if(_currentThemeId()!==snap.theme) return true;
   return ['bg','accent','ink','sig','label','active','crit'].some(k=>{
     const el=document.getElementById('sc-'+k);
     return el&&el.value!==snap[k];
@@ -4912,13 +4999,15 @@ function settingsHasChanges(){
 function settingsEscOrClickOutside(){
   if(settingsHasChanges()){
     if(!confirm(typeof t==='function'?t('confirm.discard-colors'):'You have unsaved color changes. Discard them?'))return;
-    // Restore snapshot values
+    // Restore snapshot values — both the live vars AND localStorage, since
+    // selectTheme() may have already persisted a different theme mid-session.
     const snap=window._settingsSnapshot;
     if(snap){
-      ['bg','accent','ink','sig','label','active','crit'].forEach(k=>{
-        const el=document.getElementById('sc-'+k);
-        if(el&&snap[k])el.value=snap[k];
-      });
+      const colors={};
+      ['bg','accent','ink','sig','label','active','crit'].forEach(k=>{ if(snap[k]) colors[k]=snap[k]; });
+      _applyColorSet(colors);
+      try{ localStorage.setItem('exeg-colors', JSON.stringify(colors)); }catch(_){}
+      try{ localStorage.setItem(THEME_KEY, snap.theme); }catch(_){}
     }
   }
   closeSettings();
@@ -4932,8 +5021,7 @@ function closeSettings(){
   }
 }
 function resetColors(){
-  const R=document.documentElement;
-  Object.entries(DCOLORS).forEach(([k,v])=>{R.style.setProperty('--'+k,v);document.getElementById('sc-'+k).value=v;});
+  _applyColorSet(DCOLORS);
   toast(typeof t==='function'?t('toast.cleared-short'):'Colors reset');
 }
 function cssHex(css){
@@ -4942,17 +5030,22 @@ function cssHex(css){
   const m=css.match(/\d+/g);if(!m)return'#000000';
   return'#'+m.slice(0,3).map(x=>(+x).toString(16).padStart(2,'0')).join('');
 }
+// Persists whatever's currently live as the new baseline and closes. If the
+// user was in Customize, read+apply+persist the swatch values (marking the
+// theme 'custom'); if they only picked a gallery tile, selectTheme() above
+// already applied+persisted it — Apply is then just a formal confirm+close.
 function applySettings(){
-  const R=document.documentElement;
-  const map={bg:'--bg',accent:'--accent',ink:'--ink',sig:'--sig',label:'--label',active:'--active',crit:'--crit'};
-  Object.entries(map).forEach(([k,cssVar])=>{
-    const el=document.getElementById('sc-'+k);
-    if(el)R.style.setProperty(cssVar,el.value);
-  });
-  // Persist
-  const colors={};
-  Object.keys(map).forEach(k=>{const el=document.getElementById('sc-'+k);if(el)colors[k]=el.value;});
-  try{localStorage.setItem('exeg-colors',JSON.stringify(colors));}catch(_){}
+  const inCustomize=!document.getElementById('theme-customize')?.classList.contains('hidden');
+  if(inCustomize){
+    const colors={};
+    ['bg','accent','ink','sig','label','active','crit'].forEach(k=>{
+      const el=document.getElementById('sc-'+k);
+      if(el) colors[k]=el.value;
+    });
+    _applyColorSet(colors);
+    try{localStorage.setItem('exeg-colors',JSON.stringify(colors));}catch(_){}
+    try{localStorage.setItem(THEME_KEY,'custom');}catch(_){}
+  }
   closeSettings();
   toast(typeof t==='function'?t('toast.saved'):' Settings applied');
 }
@@ -4989,12 +5082,10 @@ function collectData(){
     cmts.push({cid:card.dataset.cid,rid:card.dataset.rid,html:ed?ed.innerHTML:'',
       top:card.style.top,left:card.style.left,width:card.style.width,height:card.style.height,hidden:card.style.display==='none'});
   });
-  const R=getComputedStyle(document.documentElement);
-  const colors={};['bg','accent','ink','sig','label','active','crit'].forEach(k=>{colors[k]=R.getPropertyValue('--'+k).trim();});
   return{lang:SESS,langLabel:LANG,isRTL:IS_RTL,isSingle:IS_SINGLE,
     verseRef:document.getElementById('refin').value,
     versionLabel:sessionVersionLabel||document.getElementById('version-sub-input')?.value.trim()||'',
-    rows,cmts,RC,CC,colors,
+    rows,cmts,RC,CC,
     colWidths:{...COL_WIDTHS},
     editorView:EDITOR_VIEW,CNX,LBL,
     diagramEditMode:DIAGRAM_EDIT_MODE,
@@ -5040,7 +5131,10 @@ function loadData(data){
   document.getElementById('rows-body').innerHTML='';
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
   RC=data.RC||0;CC=data.CC||0;CNX=data.CNX||0;LBL=data.LBL||0;
-  if(data.colors){const R=document.documentElement;Object.entries(data.colors).forEach(([k,v])=>{if(v)R.style.setProperty('--'+k,v);});}
+  // data.colors (per-project color snapshot) is deliberately no longer read
+  // — the global theme (Settings) is now the single source of truth for
+  // color, so an old project's saved palette doesn't override it. Any
+  // colors field in old saved JSON is simply inert/unused going forward.
   // Restore column widths
   if(data.colWidths){
     Object.assign(COL_WIDTHS, data.colWidths);
@@ -13261,14 +13355,13 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // for why this is safe to await here (idempotent, resumable, leaves
   // localStorage untouched on any failure).
   try{ await projMigrateToIdbOnce(); }catch(_e){}
-  // Restore saved colors
+  // Restore saved colors — the global theme, not any per-project snapshot
+  // (see loadData()/collectData()); routes through the same _applyColorSet
+  // that applySettings()/resetColors()/selectTheme() use, instead of a
+  // second copy of the same logic.
   try{
     const saved=JSON.parse(localStorage.getItem('exeg-colors')||'{}');
-    const R=document.documentElement;
-    Object.entries(saved).forEach(([k,v])=>{if(v){
-      R.style.setProperty('--'+k,v);
-      const el=document.getElementById('sc-'+k);if(el)el.value=v;
-    }});
+    _applyColorSet(saved);
   }catch(_){}
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
   document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);

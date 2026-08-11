@@ -173,6 +173,13 @@ const LANGS = {
     'settings.clear-cache':'Clear Bible Cache',
     'settings.cancel':     'Cancel',
     'settings.apply':      'Apply',
+    'settings.customize':  'Customize',
+    'settings.back':       '← Back to Themes',
+    'theme.default.name':      'Default',
+    'theme.midnight.name':     'Midnight',
+    'theme.papyrus.name':      'Papyrus',
+    'theme.scriptorium.name':  'Scriptorium',
+    'theme.olive.name':        'Olive',
 
     /* ── Toolbar / editor ── */
     'toolbar.undo':        'Undo (Ctrl+Z)',
@@ -700,6 +707,13 @@ const LANGS = {
     'settings.clear-cache':'清除圣经缓存',
     'settings.cancel':     '取消',
     'settings.apply':      '应用',
+    'settings.customize':  '自定义',
+    'settings.back':       '← 返回主题',
+    'theme.default.name':      '默认',
+    'theme.midnight.name':     '午夜',
+    'theme.papyrus.name':      '莎草纸',
+    'theme.scriptorium.name':  '书斋',
+    'theme.olive.name':        '橄榄',
 
     /* ── Toolbar / editor ── */
     'toolbar.undo':        '撤销 (Ctrl+Z)',
@@ -1112,6 +1126,13 @@ function applyLang() {
   // Update dynamically-rendered project empty state
   const projEmpty = document.getElementById('proj-list-empty');
   if (projEmpty) projEmpty.innerHTML = t('proj.empty');
+
+  // Theme tile names are interpolated at render time (t('theme.'+id+'.name')),
+  // not tagged with data-i18n, so a re-render is needed if Settings happens
+  // to already be open when the language is toggled.
+  if (typeof renderThemeGallery === 'function' && document.getElementById('theme-gallery')) {
+    renderThemeGallery();
+  }
 
   // Update Bible panel empty panes
   document.querySelectorAll('.bpane-empty').forEach(el => {

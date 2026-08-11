@@ -4856,3 +4856,27 @@ body.hide-sections #section-strips{display:none}
   overflow:visible;
   z-index:5;
 }
+
+/* ── Settings: Themes gallery ── */
+.tg{
+  display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;
+  margin-bottom:24px;
+}
+.theme-tile{
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+  padding:12px 8px;border-radius:var(--r);
+  border:1.5px solid rgba(0,0,0,.12);background:var(--surface,#fff);
+  cursor:pointer;transition:border-color .12s,box-shadow .12s;
+  font-family:var(--ui);
+}
+.theme-tile:hover{border-color:var(--sig)}
+.theme-tile.active{border-color:var(--active);box-shadow:0 0 0 2px rgba(200,168,75,.3)}
+.theme-swatch-row{display:flex;border-radius:6px;overflow:hidden;width:100%;height:28px;box-shadow:0 1px 3px rgba(0,0,0,.15)}
+.theme-swatch{flex:1;height:100%}
+.theme-tile-name{font-size:11px;font-weight:600;color:var(--ink)}
+.theme-tile-customize{justify-content:center}
+.theme-tile-customize-icon{
+  width:28px;height:28px;display:flex;align-items:center;justify-content:center;
+  color:var(--muted);
+}
+.theme-tile-customize-icon svg{width:20px;height:20px}

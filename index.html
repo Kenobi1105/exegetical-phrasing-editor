@@ -232,7 +232,18 @@
   <div class="mcard" style="padding:40px 44px;width:500px;text-align:left">
     <h2 data-i18n="settings.title">Settings</h2>
     <p class="sm-sub" data-i18n="settings.subtitle">Customize the editor palette.</p>
-    <div class="sg">
+
+    <!-- Primary view: a gallery of named presets, populated by
+         renderThemeGallery() (app.js) — Default plus 4 curated themes,
+         plus a trailing "Customize" tile that switches to the manual
+         swatch editor below. Clicking a tile applies + persists
+         immediately (selectTheme()), unlike Customize's Apply-gated flow. -->
+    <div id="theme-gallery" class="tg"></div>
+
+    <!-- Manual per-swatch editor — UNCHANGED from before this feature,
+         just wrapped and hidden until "Customize" is picked from the
+         gallery above. -->
+    <div class="sg hidden" id="theme-customize">
       <div class="sr"><label data-i18n="settings.bg">Background</label><div class="sd" data-i18n="settings.bg.desc">Page and canvas background.</div><input type="color" id="sc-bg" value="#F7F3E9"/></div>
       <div class="sr"><label data-i18n="settings.accent">Accent</label><div class="sd" data-i18n="settings.accent.desc">Highlights and active indicators.</div><input type="color" id="sc-accent" value="#F0D08F"/></div>
       <div class="sr"><label data-i18n="settings.ink">Ink</label><div class="sd" data-i18n="settings.ink.desc">Primary body text color.</div><input type="color" id="sc-ink" value="#1F1E1E"/></div>
@@ -241,8 +252,10 @@
       <div class="sr"><label data-i18n="settings.active">Active State</label><div class="sd" data-i18n="settings.active.desc">Line IDs and interactive emphasis.</div><input type="color" id="sc-active" value="#C8A84B"/></div>
       <div class="sr"><label data-i18n="settings.crit">Critical Marks</label><div class="sd" data-i18n="settings.crit.desc">NA28 apparatus signs in imported text.</div><input type="color" id="sc-crit" value="#1E6AFE"/></div>
     </div>
+
     <div class="sf">
-      <button class="smb rst" onclick="resetColors()" data-i18n="settings.reset">Reset to default</button>
+      <button class="smb rst hidden" id="theme-back-btn" onclick="showThemeGallery()" data-i18n="settings.back">← Back to Themes</button>
+      <button class="smb rst hidden" id="theme-reset-btn" onclick="resetColors()" data-i18n="settings.reset">Reset to default</button>
       <button class="smb rst" onclick="bClearCache()" style="background:rgba(180,40,40,.1);color:#b42828;border-color:rgba(180,40,40,.2)" data-i18n="settings.clear-cache">Clear Bible Cache</button>
       <button class="smb can" onclick="closeSettings()" data-i18n="settings.cancel">Cancel</button>
       <button class="smb apl" onclick="applySettings()" data-i18n="settings.apply">Apply</button>
