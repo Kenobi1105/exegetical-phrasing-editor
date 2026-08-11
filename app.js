@@ -4445,7 +4445,7 @@ function _buildCmtCard(cid,rid,lid,top,left,width,html){
   card.style.cssText=`top:${top}px;left:${left}px;width:${width}px;`;
   card.innerHTML=`
     <div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))">
-      <span class="chdr-l">Comment</span><span class="chdr-i">${lid&&lid!=='—'?lid:''}</span>
+      <span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid&&lid!=='—'?lid:''}</span>
       <button class="ccl" onclick="closeCmt('${cid}')">✕</button>
     </div>
     <div class="cbody">

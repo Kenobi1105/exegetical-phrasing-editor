@@ -109,9 +109,10 @@ body{font-family:var(--ui);font-size:12px;color:var(--ink);display:flex;flex-dir
 .sd{font-size:10px;color:var(--muted);line-height:1.45;margin-bottom:3px}
 .sr input[type=color]{width:100%;height:34px;border-radius:var(--rs);
   border:1.5px solid rgba(0,0,0,.12);cursor:pointer;padding:2px 4px}
-.sf{display:flex;gap:8px;justify-content:flex-end}
+.sf{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .smb{height:34px;padding:0 18px;border-radius:99px;font-family:var(--ui);
-  font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:all .15s}
+  font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:all .15s;
+  white-space:nowrap}
 .smb.rst{background:transparent;border-color:rgba(0,0,0,.15);color:var(--ink)}
 .smb.rst:hover{border-color:var(--sig);color:var(--sig)}
 .smb.can{background:transparent;border-color:rgba(0,0,0,.12);color:var(--muted)}
@@ -286,7 +287,7 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   display:flex;align-items:center;justify-content:center;opacity:.35;transition:opacity .15s}
 .crh:hover{opacity:.8}
 .crh svg{width:12px;height:12px}
-.cline{stroke:var(--sig);stroke-width:1.5;stroke-dasharray:4 3;fill:none;opacity:.4}
+.cline{stroke:var(--ink);stroke-width:1.5;stroke-dasharray:4 3;fill:none;opacity:.4}
 
 /* ── BOTTOM BAR ── */
 #bbar{height:50px;background:var(--surface);border-top:1px solid rgba(0,0,0,.07);
