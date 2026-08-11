@@ -5025,8 +5025,15 @@ function settingsEscOrClickOutside(){
     // selectTheme() may have already persisted a different theme mid-session.
     const snap=window._settingsSnapshot;
     if(snap){
-      const colors={};
-      ['bg','accent','ink','sig','label','active','crit','surface'].forEach(k=>{ if(snap[k]) colors[k]=snap[k]; });
+      // Prefer THEMES[snap.theme].colors (canonical, all 10 keys) over
+      // hand-rebuilding from the 8 snapshotted swatch fields — otherwise
+      // previewing another theme's tile (which sets alt/bg-rgb/ink-rgb via
+      // selectTheme()) and then cancelling would revert bg/ink/etc. but
+      // leave those three stuck on the previewed theme. 'custom' has no
+      // canonical entry, so it keeps the original snapshot-rebuild path.
+      const th=THEMES[snap.theme];
+      const colors=th?th.colors:{};
+      if(!th) ['bg','accent','ink','sig','label','active','crit','surface'].forEach(k=>{ if(snap[k]) colors[k]=snap[k]; });
       _applyColorSet(colors);
       try{ localStorage.setItem('exeg-colors', JSON.stringify(colors)); }catch(_){}
       try{ localStorage.setItem(THEME_KEY, snap.theme); }catch(_){}
@@ -13385,9 +13392,21 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // (see loadData()/collectData()); routes through the same _applyColorSet
   // that applySettings()/resetColors()/selectTheme() use, instead of a
   // second copy of the same logic.
+  // Prefer the CURRENT, canonical THEMES[id].colors over the raw stored
+  // 'exeg-colors' object when the id names a real theme — new theme-var
+  // keys have been added to THEMES a few times since this app shipped
+  // (surface, then bg-rgb/ink-rgb, then alt), and a browser that persisted
+  // 'exeg-colors' before one of those additions would otherwise keep
+  // replaying that now-incomplete snapshot forever (_applyColorSet only
+  // sets keys present on the object it's given, never clears absent ones).
+  // 'custom' has no canonical THEMES entry, so it still falls back to
+  // whatever was actually stored.
   try{
-    const saved=JSON.parse(localStorage.getItem('exeg-colors')||'{}');
+    const themeId=_currentThemeId();
+    const th=THEMES[themeId];
+    const saved=th?th.colors:JSON.parse(localStorage.getItem('exeg-colors')||'{}');
     _applyColorSet(saved);
+    if(th){ try{ localStorage.setItem('exeg-colors', JSON.stringify(th.colors)); }catch(_){} }
   }catch(_){}
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
   document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);

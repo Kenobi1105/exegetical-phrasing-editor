@@ -49,8 +49,8 @@ body{font-family:var(--ui);font-size:12px;color:var(--ink);display:flex;flex-dir
 .sbtn.gk{background:var(--sig);color:var(--label);border-color:var(--sig)}
 .sbtn.gk .sbi{background:rgba(255,255,255,.15)}
 .sbtn.gk:hover{background:#5c4460}
-.sbtn.hb{background:transparent;color:var(--sig);border-color:var(--sig)}
-.sbtn.hb .sbi{background:rgba(73,53,72,.1)}
+.sbtn.hb{background:transparent;color:var(--ink);border-color:var(--ink)}
+.sbtn.hb .sbi{background:rgba(var(--ink-rgb),.1)}
 .sbtn.hb:hover{background:var(--sig);color:var(--label)}
 .sbtn.cu{background:transparent;color:var(--ink);border-color:rgba(0,0,0,.14)}
 .sbtn.cu .sbi{background:rgba(0,0,0,.06)}
@@ -342,7 +342,7 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   margin-bottom:3px;padding-right:28px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .proj-card-meta{font-family:var(--ui);font-size:10px;color:var(--muted);
   display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.proj-lang-badge{background:rgba(73,53,72,.1);color:var(--sig);
+.proj-lang-badge{background:rgba(var(--ink-rgb),.1);color:var(--ink);
   padding:1px 6px;border-radius:99px;font-size:9px;font-weight:700;
   letter-spacing:.06em;text-transform:uppercase}
 .proj-del,.proj-rename{position:absolute;top:10px;width:22px;height:22px;
@@ -2067,11 +2067,13 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   z-index: 9999;
   display: none; /* shown via JS on S1/S2 */
 }
-/* S1/S2: on light --bg surface */
+/* Card surface + guaranteed-contrast ink text — same pairing as
+   .mcard/.ccard/.dblock, rather than --bg+--sig (which both go dark
+   together under Midnight, since --bg is no longer guaranteed light). */
 #lang-toggle-s12 .lang-pill {
-  border: 1.5px solid rgba(73,53,72,.28);
-  background: var(--bg, #F7F3E9);
-  color: var(--sig, #493548);
+  border: 1.5px solid rgba(var(--ink-rgb),.28);
+  background: var(--surface, #fff);
+  color: var(--ink, #1F1E1E);
   box-shadow: 0 1px 6px rgba(0,0,0,.09);
 }
 #lang-toggle-s12 .lang-pill:hover {
