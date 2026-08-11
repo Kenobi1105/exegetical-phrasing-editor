@@ -9,6 +9,8 @@
   --muted:   #A89F90;
   --surface: #FFFFFF;
   --alt:     #EEE8DC;
+  --bg-rgb:  247,243,233;
+  --ink-rgb: 31,30,30;
   --ind:     32px;
   --r:       8px;
   --rs:      5px;
@@ -254,7 +256,7 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 /* ── COMMENTS MARGIN ── */
 #cmargin{width:320px;flex-shrink:0;
   position:relative;overflow-x:visible;overflow-y:auto;border-left:1px solid rgba(0,0,0,.07);
-  background:rgba(247,243,233,.35)}
+  background:rgba(var(--bg-rgb),.35)}
 /* Keep width:320px when hidden so #dzone never resizes (that would shift label %s) */
 #cmargin.pane-hidden{visibility:hidden;pointer-events:none;border-left-color:transparent;}
 #svgl{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:0}
@@ -4880,3 +4882,12 @@ body.hide-sections #section-strips{display:none}
   color:var(--muted);
 }
 .theme-tile-customize-icon svg{width:20px;height:20px}
+
+/* ── Comment pane scrollbar — thin, minimal, themed off --ink so it stays
+   readable whether the theme is light-bg/dark-ink or (Midnight) the
+   reverse, with no per-theme special-casing needed ── */
+#cmargin{scrollbar-width:thin;scrollbar-color:rgba(var(--ink-rgb),.25) transparent}
+#cmargin::-webkit-scrollbar{width:6px}
+#cmargin::-webkit-scrollbar-track{background:transparent}
+#cmargin::-webkit-scrollbar-thumb{background:rgba(var(--ink-rgb),.18);border-radius:3px}
+#cmargin::-webkit-scrollbar-thumb:hover{background:rgba(var(--ink-rgb),.32)}
