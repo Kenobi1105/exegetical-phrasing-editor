@@ -387,7 +387,7 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 
 /* ── TOAST ── */
 #toast{position:fixed;bottom:66px;left:50%;transform:translateX(-50%) translateY(10px);
-  background:var(--ink);color:var(--label);font-family:var(--ui);font-size:12px;
+  background:var(--sig);color:var(--label);font-family:var(--ui);font-size:12px;
   padding:9px 20px;border-radius:99px;opacity:0;pointer-events:none;
   white-space:nowrap;transition:opacity .2s,transform .2s;z-index:9500}
 #toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -3423,9 +3423,9 @@ body.brk-locked .dbrk-pip:hover {
   width: 100%;
   padding: 6px 8px;
   border-radius: 6px;
-  border: 1.5px dashed rgba(73,53,72,.25);
+  border: 1.5px dashed rgba(var(--ink-rgb),.25);
   background: transparent;
-  color: var(--sig);
+  color: var(--ink);
   font-family: var(--ui);
   font-size: 10px;
   font-weight: 600;
@@ -3485,7 +3485,7 @@ body.brk-locked .dbrk-pip:hover {
   justify-content: center;
   overflow: hidden;
   padding: 24px;
-  background: #e8e4dc;
+  background: var(--bg);
 }
 #sl-canvas {
   position: relative;

@@ -9718,16 +9718,27 @@ function slMakePassage(rowIds){
     visibility:{...SL_VIS_DEFAULT},
     contentArea:{x:3,y:3,w:94,h:55}};
 }
+// New slides default to the current theme's --surface rather than a
+// hardcoded white, so a freshly-added slide's canvas matches the rest of
+// the UI (e.g. dark under Midnight) instead of always starting as a
+// jarring off-white rectangle. This is baked into the slide's own data at
+// creation time, same as any other background choice — switching themes
+// later doesn't retroactively repaint already-created slides, only new
+// ones, exactly like picking a background color manually would behave.
+function _slDefaultBg(){
+  try{ return getComputedStyle(document.documentElement).getPropertyValue('--surface').trim()||'#ffffff'; }
+  catch(_){ return '#ffffff'; }
+}
 function slMakeBlank(){
   return {id:'sl-'+(++SL_SLIDE_CTR),type:'blank',
     passages:[],
-    background:'#ffffff',
+    background:_slDefaultBg(),
     elements:[],notes:''};
 }
 function slMakeContent(){
   return {id:'sl-'+(++SL_SLIDE_CTR),type:'content',
     passages:[slMakePassage([])],
-    background:'#ffffff',
+    background:_slDefaultBg(),
     elements:[],notes:''};
 }
 
@@ -11121,7 +11132,13 @@ function slRenderSlideInto(slide, container, w, h, isExport){
   container.style.width=w+'px';
   container.style.height=h+'px';
   container.style.position='relative';
-  container.style.background=slide.background||'#fff';
+  // A slide with no explicit background chosen (slide.background unset) is
+  // exported/presented as white by design — a predictable default for
+  // output regardless of the editor's own theme. In the live editor
+  // (!isExport) it instead falls back to the current theme's --surface, so
+  // a fresh slide's on-screen canvas matches the rest of the UI (e.g. dark
+  // under Midnight) rather than staying a jarring off-white rectangle.
+  container.style.background=slide.background || (isExport ? '#fff' : (getComputedStyle(document.documentElement).getPropertyValue('--surface').trim()||'#fff'));
   container.style.overflow='hidden';
 
   // Build every region's DOM up front, then batch ALL of their
