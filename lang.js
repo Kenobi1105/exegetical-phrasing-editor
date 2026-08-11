@@ -1136,6 +1136,16 @@ function applyLang() {
     renderThemeGallery();
   }
 
+  // Comment card headers ("Comment") are interpolated at render time
+  // (t('comment.label')) rather than tagged with data-i18n, since they're
+  // built via innerHTML= in _buildCmtCard — same reason as the theme tile
+  // names above. Re-stamp every already-open card's label so it flips
+  // immediately instead of staying frozen at whatever language was active
+  // when that particular card was created.
+  document.querySelectorAll('.chdr-l').forEach(el => {
+    el.textContent = t('comment.label');
+  });
+
   // Update Bible panel empty panes
   document.querySelectorAll('.bpane-empty').forEach(el => {
     el.innerHTML = t('bible.no-passage');
