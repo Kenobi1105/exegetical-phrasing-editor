@@ -2312,6 +2312,16 @@ function _mergeGluedWordSpans(textEl, wordClass){
     // would otherwise only ever merge a+b and never notice c).
     i--;
   }
+  // extractContents() above clones any ancestor that's only PARTIALLY
+  // inside the range (e.g. a .hl highlight span whose entire text
+  // content happens to be the glued word being merged) into the
+  // extracted fragment, but leaves the original ancestor behind in the
+  // tree, now empty — invisible for a plain formatting span, but .hl has
+  // real padding (see its CSS), so an empty one renders as a small stray
+  // highlighted box sitting right where the word used to be. Nothing
+  // legitimate is ever a genuinely empty .hl, so it's always safe to
+  // prune.
+  textEl.querySelectorAll('.hl').forEach(hl=>{ if(!hl.hasChildNodes()) hl.remove(); });
 }
 
 /* True if there's no whitespace anywhere between the end of `a` and the
