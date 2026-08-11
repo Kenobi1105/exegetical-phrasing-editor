@@ -9014,7 +9014,11 @@ function _demTokenize(blockEl){
         // For the group model, we insert the marker before ch.
         const marker=document.createElement('span');
         marker.className='dedit-sp'; marker.dataset.idx=String(groupIdx++);
-        marker.style.cssText='display:none;font-size:0;line-height:0;pointer-events:none;';
+        // Not display:none — that would make the marker's rect all-zeros,
+        // which _demWireWordHover needs to be real (via getBoundingClientRect)
+        // to position the absolutely-positioned split-indicator. width:0
+        // keeps its own footprint at zero, same as display:none would.
+        marker.style.cssText='display:inline-block;width:0;overflow:hidden;font-size:0;line-height:0;pointer-events:none;';
         // Find the true group start: walk BACKWARD from ch to find the last .dedit-word
         // or start of parent, then insert the marker at the first node of this group's prefix.
         // A crit-mark may be wrapped inside a color/formatting span (RTF-imported
@@ -9248,6 +9252,8 @@ function _demWireWordHover(wordEl){
 
   wordEl.addEventListener('mouseenter', ()=>{
     if(!DIAGRAM_EDIT_MODE) return;
+    const textEl=wordEl.closest('.dblock-text');
+    if(!textEl) return;
     // Remove any existing slash
     document.getElementById('dem-slash')?.remove();
     // Create the slash element
@@ -9260,9 +9266,21 @@ function _demWireWordHover(wordEl){
     // already-correct invisible split marker rather than naively
     // landing right before the word span, which would ignore anything
     // sitting between it and the previous word.
+    //
+    // The slash is absolutely positioned (see #dem-slash CSS) rather than
+    // inserted into the flow, so it never shifts the word/highlight it's
+    // pointing at. Its coordinates come from measuring the split marker's
+    // (or, in the rare case none was found, the word's) real rendered
+    // position — the marker is a real (width:0) element so its rect is
+    // already correctly resolved for RTL/LTR by the browser's own layout;
+    // we just freeze that point into absolute left/top.
     const marker=_demFindSplitMarkerFor(wordEl);
-    if(marker) marker.parentNode.insertBefore(slash, marker);
-    else wordEl.parentNode.insertBefore(slash, wordEl);
+    const anchorRect=marker?marker.getBoundingClientRect():wordEl.getBoundingClientRect();
+    const anchorX=marker?anchorRect.left:(IS_RTL?anchorRect.right:anchorRect.left);
+    const textRect=textEl.getBoundingClientRect();
+    slash.style.left=(anchorX-textRect.left-1)+'px';
+    slash.style.top=(anchorRect.top-textRect.top)+'px';
+    textEl.appendChild(slash);
   });
 
   wordEl.addEventListener('mouseleave', ()=>{

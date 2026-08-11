@@ -4316,18 +4316,17 @@ body.brk-locked .dbrk-pip:hover {
   background: rgba(200,168,75,.35);
 }
 
-/* Red slash — inserted as a sibling just before the hovered .dedit-word.
-   Inline-block so it sits in the text flow at the exact split point. */
+/* Red slash — a pure visual overlay at the hovered word's split point,
+   positioned absolutely (via left/top set in JS from the split marker's
+   measured rect) rather than sitting in the text flow — an in-flow
+   element here would physically push the word over on every hover. */
 #dem-slash {
-  display: inline-block;
+  display: block;
+  position: absolute;
   width: 2px;
   height: 1.1em;
   background: #cc2222;
   border-radius: 1px;
-  vertical-align: middle;
-  margin-right: 1px;
-  position: relative;
-  top: -0.05em;
   pointer-events: none;
   animation: dem-slash-in .08s ease;
 }
