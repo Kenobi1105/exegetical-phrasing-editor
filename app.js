@@ -52,7 +52,7 @@ let SOURCE_CITATION='';
 // Tracks user-adjusted column widths (null = use flex/default)
 const COL_WIDTHS={v:null, o:null, t:null};
 
-const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',crit:'#1E6AFE',surface:'#FFFFFF','bg-rgb':'247,243,233','ink-rgb':'31,30,30'};
+const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',crit:'#1E6AFE',surface:'#FFFFFF',alt:'#EEE8DC','bg-rgb':'247,243,233','ink-rgb':'31,30,30'};
 
 // Named color presets for the Settings > Themes gallery. 'default' reuses
 // DCOLORS directly (not a copy) so the two never drift out of sync. Every
@@ -69,10 +69,10 @@ const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'
 // existing ink/surface pairing coherent instead of only patching --ink.
 const THEMES={
   default:{name:'Default',colors:DCOLORS},
-  midnight:{name:'Midnight',colors:{bg:'#1B1A20',accent:'#E8C97A',ink:'#EDE7DD',sig:'#2C2438',label:'#EDE7DD',active:'#C9A64E',crit:'#6FA8FF',surface:'#252030','bg-rgb':'27,26,32','ink-rgb':'237,231,221'}},
-  papyrus:{name:'Papyrus',colors:{bg:'#EFE0BF',accent:'#D9A55C',ink:'#3B2A1A',sig:'#5C3A2E',label:'#F3E8D0',active:'#B8763A',crit:'#A13A2A',surface:'#FFFFFF','bg-rgb':'239,224,191','ink-rgb':'59,42,26'}},
-  scriptorium:{name:'Scriptorium',colors:{bg:'#EEF1F3',accent:'#9FC1D9',ink:'#1E2530',sig:'#2E4057',label:'#EEF1F3',active:'#4A7A9E',crit:'#C2542D',surface:'#FFFFFF','bg-rgb':'238,241,243','ink-rgb':'30,37,48'}},
-  olive:{name:'Olive',colors:{bg:'#EFEEDD',accent:'#B9C98B',ink:'#26301F',sig:'#3A4A2C',label:'#F3F2E4',active:'#748C4A',crit:'#B0542E',surface:'#FFFFFF','bg-rgb':'239,238,221','ink-rgb':'38,48,31'}},
+  midnight:{name:'Midnight',colors:{bg:'#1B1A20',accent:'#E8C97A',ink:'#EDE7DD',sig:'#2C2438',label:'#EDE7DD',active:'#C9A64E',crit:'#6FA8FF',surface:'#252030',alt:'#211F29','bg-rgb':'27,26,32','ink-rgb':'237,231,221'}},
+  papyrus:{name:'Papyrus',colors:{bg:'#EFE0BF',accent:'#D9A55C',ink:'#3B2A1A',sig:'#5C3A2E',label:'#F3E8D0',active:'#B8763A',crit:'#A13A2A',surface:'#FFFFFF',alt:'#E6D5B2','bg-rgb':'239,224,191','ink-rgb':'59,42,26'}},
+  scriptorium:{name:'Scriptorium',colors:{bg:'#EEF1F3',accent:'#9FC1D9',ink:'#1E2530',sig:'#2E4057',label:'#EEF1F3',active:'#4A7A9E',crit:'#C2542D',surface:'#FFFFFF',alt:'#E5E6E6','bg-rgb':'238,241,243','ink-rgb':'30,37,48'}},
+  olive:{name:'Olive',colors:{bg:'#EFEEDD',accent:'#B9C98B',ink:'#26301F',sig:'#3A4A2C',label:'#F3F2E4',active:'#748C4A',crit:'#B0542E',surface:'#FFFFFF',alt:'#E6E3D0','bg-rgb':'239,238,221','ink-rgb':'38,48,31'}},
 };
 const THEME_KEY='exeg-theme';
 
