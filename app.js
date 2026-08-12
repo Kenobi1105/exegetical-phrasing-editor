@@ -11,6 +11,14 @@ let SESS='', LANG='', IS_RTL=false, IS_SINGLE=false;
 let CEDIT_O_SIZE=14, CEDIT_T_SIZE=14;
 let DEFAULT_O_SIZE=14, DEFAULT_T_SIZE=14; // this session's reset targets
 const FSZ_MIN=8, FSZ_MAX=40, FSZ_STEP=1;
+// Comment pane text size — a live UI preference (like Bible panel's
+// bFontSize), not per-project content data, so it's persisted to
+// localStorage rather than going through undo/redo or collectData().
+// Applied via a CSS custom property (--cmt-font-size, .cedit-c's own font-
+// size rule) rather than looping every .cedit-c element, so it covers
+// cards that don't exist yet too.
+let CMT_FONT_SIZE=12;
+const CMT_FONT_MIN=9, CMT_FONT_MAX=20, CMT_FONT_STEP=1;
 // NOTE: sessionVersionLabel is declared in bible.js as a shared global.
 // Do not redeclare it here with let/var — that would throw a SyntaxError
 // when both scripts are loaded in the same non-module scope.
@@ -4549,11 +4557,6 @@ function _buildCmtCard(cid,rid,lid,top,left,width,html){
       <span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid&&lid!=='—'?lid:''}</span>
       <button class="ccl" onclick="closeCmt('${cid}')">✕</button>
     </div>
-    <div class="ccard-fmt-row">
-      <button onpointerdown="event.preventDefault()" onclick="fmtCmd('bold')" title="Bold"><b>B</b></button>
-      <button onpointerdown="event.preventDefault()" onclick="fmtCmd('italic')" title="Italic"><i>I</i></button>
-      <button onpointerdown="event.preventDefault()" onclick="fmtCmd('underline')" title="Underline"><u>U</u></button>
-    </div>
     <div class="cbody">
       <div class="cedit-c" contenteditable="true" spellcheck="false"
         onfocus="_cmtFocusSnap(this,${cid})" onblur="_cmtBlurSnap(this,${cid});autoSave()"
@@ -4610,6 +4613,16 @@ function _textBlurSnap(el,rid,col){
     rowPush({type:'text-edit',rid,col,before,after});
   }
   _textBefore[key]=after;
+}
+
+function cmtFontInc(){ _setCmtFontSize(CMT_FONT_SIZE+CMT_FONT_STEP); }
+function cmtFontDec(){ _setCmtFontSize(CMT_FONT_SIZE-CMT_FONT_STEP); }
+function _setCmtFontSize(px){
+  CMT_FONT_SIZE=Math.max(CMT_FONT_MIN,Math.min(CMT_FONT_MAX,px));
+  document.documentElement.style.setProperty('--cmt-font-size',CMT_FONT_SIZE+'px');
+  const lbl=document.getElementById('cmt-font-size-txt');
+  if(lbl) lbl.textContent=CMT_FONT_SIZE+'px';
+  try{ localStorage.setItem('exeg-cmt-fontsize',CMT_FONT_SIZE); }catch(_){}
 }
 
 function closeCmt(cid){
@@ -5351,7 +5364,7 @@ function loadData(data){
     const lid=row?(row.querySelector('.lid')?.textContent||''):'';
     const card=document.createElement('div');card.className='ccard';card.dataset.cid=c.cid;card.dataset.rid=c.rid;
     card.style.cssText=`top:${c.top||'8px'};left:${c.left||'18px'};width:${c.width||'226px'};${c.height?'height:'+c.height+';':''}${c.hidden?'display:none;':''}`;
-    card.innerHTML=`<div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))"><span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid!=='—'?lid:''}</span><button class="ccl" onclick="closeCmt('${c.cid}')">✕</button></div><div class="ccard-fmt-row"><button onpointerdown="event.preventDefault()" onclick="fmtCmd('bold')" title="Bold"><b>B</b></button><button onpointerdown="event.preventDefault()" onclick="fmtCmd('italic')" title="Italic"><i>I</i></button><button onpointerdown="event.preventDefault()" onclick="fmtCmd('underline')" title="Underline"><u>U</u></button></div><div class="cbody"><div class="cedit-c" contenteditable="true" spellcheck="false" onfocus="activeEl=this" onblur="autoSave()" onkeydown="if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);}setTimeout(()=>{saveRange();updateTb();},0)"></div></div><div class="crh" onmousedown="startCR2(event,this.closest('.ccard'))"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/><line x1="6" y1="10" x2="10" y2="6"/></svg></div>`;
+    card.innerHTML=`<div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))"><span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid!=='—'?lid:''}</span><button class="ccl" onclick="closeCmt('${c.cid}')">✕</button></div><div class="cbody"><div class="cedit-c" contenteditable="true" spellcheck="false" onfocus="activeEl=this" onblur="autoSave()" onkeydown="if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);}setTimeout(()=>{saveRange();updateTb();},0)"></div></div><div class="crh" onmousedown="startCR2(event,this.closest('.ccard'))"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/><line x1="6" y1="10" x2="10" y2="6"/></svg></div>`;
     const ed=card.querySelector('.cedit-c');if(ed&&c.html)ed.innerHTML=c.html;
     // Cache comment HTML for use when pane is hidden (slides view)
     if(c.cid) SL_CMT_CACHE[c.cid]=c.html||'';
@@ -13581,6 +13594,10 @@ document.addEventListener('DOMContentLoaded',async()=>{
     const saved=th?th.colors:JSON.parse(localStorage.getItem('exeg-colors')||'{}');
     _applyColorSet(saved);
     if(th){ try{ localStorage.setItem('exeg-colors', JSON.stringify(th.colors)); }catch(_){} }
+  }catch(_){}
+  try{
+    const savedCmtFs=parseInt(localStorage.getItem('exeg-cmt-fontsize'));
+    _setCmtFontSize(isNaN(savedCmtFs)?CMT_FONT_SIZE:savedCmtFs);
   }catch(_){}
   document.getElementById('rows-scroll').addEventListener('scroll', drawConns);
   document.getElementById('dcanvas-scroll')?.addEventListener('scroll', drawConns);

@@ -771,6 +771,15 @@
         <button class="sl-ctx-item sl-ctx-del" onclick="slCtxAction('delete')" data-i18n="slides.delete-el">Delete</button>
       </div>
       <div id="cmargin">
+        <div id="cmargin-hdr">
+          <button onpointerdown="event.preventDefault()" onclick="fmtCmd('bold')" title="Bold"><b>B</b></button>
+          <button onpointerdown="event.preventDefault()" onclick="fmtCmd('italic')" title="Italic"><i>I</i></button>
+          <button onpointerdown="event.preventDefault()" onclick="fmtCmd('underline')" title="Underline"><u>U</u></button>
+          <div class="cmargin-hdr-sep"></div>
+          <button onclick="cmtFontDec()" title="Decrease comment font size" style="font-weight:700">−</button>
+          <span id="cmt-font-size-txt" title="Comment font size">12px</span>
+          <button onclick="cmtFontInc()" title="Increase comment font size" style="font-weight:700">+</button>
+        </div>
         <div id="mrsz" onmousedown="startMR(event)"></div>
         <svg id="svgl" preserveAspectRatio="none"></svg>
       </div>

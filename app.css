@@ -263,6 +263,31 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 #svgl{position:absolute;inset:0;pointer-events:none;overflow:visible;z-index:0}
 #mrsz{display:none}
 
+/* Shared toolbar for every comment card in the pane, not per-card — sticky
+   so it stays visible while scrolling past cards (#cmargin itself is the
+   scrolling element; sticky positions relative to it, not the viewport).
+   Solid --surface background (unlike #cmargin's own translucent wash) so
+   cards scrolling underneath don't show through it. z-index above .ccard
+   (10) so it always paints on top. */
+#cmargin-hdr{
+  position:sticky;top:0;z-index:20;
+  display:flex;align-items:center;gap:6px;
+  padding:8px 10px;
+  background:var(--surface);
+  border-bottom:1px solid rgba(var(--ink-rgb),.1);
+}
+#cmargin-hdr button{
+  width:26px;height:26px;border-radius:5px;
+  border:1.5px solid rgba(var(--ink-rgb),.2);background:transparent;color:var(--ink);
+  font-family:var(--ui);font-size:13px;cursor:pointer;transition:all .12s;
+  display:flex;align-items:center;justify-content:center;flex-shrink:0;
+}
+.cmargin-hdr-sep{width:1px;height:18px;background:rgba(var(--ink-rgb),.15);flex-shrink:0}
+#cmt-font-size-txt{
+  font-family:var(--ui);font-size:11px;color:var(--muted);
+  min-width:28px;text-align:center;user-select:none;
+}
+
 
 /* ── COMMENT CARD ── */
 .ccard{position:absolute;width:228px;min-height:100px;background:var(--surface);
@@ -279,19 +304,8 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   color:rgba(247,243,233,.65);cursor:pointer;display:flex;align-items:center;
   justify-content:center;font-size:12px;line-height:1;transition:background .13s;flex-shrink:0}
 .ccl:hover{background:rgba(255,255,255,.22);color:#fff}
-/* Mirrors Slides View's Speaker Notes B/I/U row (.sl-fmt-btn) — same
-   look, no active/pressed state, calls the app's generic fmtCmd()
-   (already works on .cedit-c via Ctrl+B/Ctrl+I) rather than a
-   hardcoded-single-field helper, since there are many comment cards. */
-.ccard-fmt-row{display:flex;align-items:center;gap:6px;padding:6px 10px 0;flex-shrink:0}
-.ccard-fmt-row button{
-  width:28px;height:26px;border-radius:5px;
-  border:1.5px solid rgba(var(--ink-rgb),.2);background:transparent;color:var(--ink);
-  font-family:var(--ui);font-size:13px;cursor:pointer;transition:all .12s;
-  display:flex;align-items:center;justify-content:center;
-}
 .cbody{flex:1;padding:8px 10px;overflow-y:auto}
-.cedit-c{outline:none;font-family:var(--serif);font-size:12px;line-height:1.65;
+.cedit-c{outline:none;font-family:var(--serif);font-size:var(--cmt-font-size,12px);line-height:1.65;
   color:var(--ink);min-height:56px;width:100%;word-break:break-word;caret-color:var(--sig)}
 .cedit-c:empty::before{content:'Add a note…';color:var(--muted);font-style:italic;font-size:11px;pointer-events:none}
 .crh{position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:se-resize;z-index:5;
