@@ -202,7 +202,7 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
 /* cells */
 .xcell{padding:5px 8px;display:flex;align-items:flex-start;flex-shrink:0}
 .xcell.mid{align-items:center;justify-content:center}
-.xcell.grow{flex:1;min-width:80px;padding:4px 6px}
+.xcell.grow{flex:1;min-width:80px;padding:4px 6px;align-items:center}
 .vdiv{width:1px;background:rgba(0,0,0,.07);flex-shrink:0;align-self:stretch;margin:4px 0}
 
 .vin{width:100%;text-align:center;background:transparent;border:none;outline:none;

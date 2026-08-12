@@ -1149,6 +1149,14 @@ function makeDiagramRowEl(row){
     // edit (matches how the Original-text block already works, and
     // mirrors the existing Phrasing View Translation cell's own behavior).
     transEl.addEventListener('input', ()=>{
+      // Same normalization Phrasing View's cells get via cleanEmptyCell()
+      // (app.js) — contenteditable elements routinely leave a stray <br>
+      // behind after a select-all-and-delete, which defeats the CSS
+      // :empty selector the placeholder depends on even though the box
+      // looks blank. Only the trim-and-clear core applies here (unlike
+      // cleanEmptyCell itself, which also does Phrasing-toolbar-specific
+      // cleanup that doesn't apply to this Diagram View field).
+      if(transEl.innerText.trim()==='') transEl.innerHTML='';
       const liveTc=document.querySelector(`#tc-${rid} .cedit`);
       if(liveTc) liveTc.innerHTML=transEl.innerHTML;
       autoSave();
@@ -1158,6 +1166,7 @@ function makeDiagramRowEl(row){
     // flows) — matches the onblur="autoSave()" pattern Phrasing View cells
     // already use.
     transEl.addEventListener('blur', ()=>{
+      if(transEl.innerText.trim()==='') transEl.innerHTML='';
       const liveTc=document.querySelector(`#tc-${rid} .cedit`);
       if(liveTc) liveTc.innerHTML=transEl.innerHTML;
       autoSave();
