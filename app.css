@@ -2984,6 +2984,7 @@ sup.bfn:hover { opacity: .7; }
   outline:none;
   transition:border-color .12s,background .12s;
   position:relative;z-index:1;
+  direction:ltr;
 }
 .dblock-trans:hover{border-color:rgba(73,53,72,.18)}
 .dblock-trans:focus{
@@ -2991,7 +2992,10 @@ sup.bfn:hover { opacity: .7; }
   background:rgba(255,255,255,.6);
   color:var(--ink);
 }
-.dblock-trans.rtl{direction:rtl;text-align:right}
+/* Alignment only — the translation is always English (direction:ltr,
+   set above), it just anchors to whichever side the original-language
+   block above it is anchored to, so it visually sits under the right edge. */
+.dblock-trans.rtl{text-align:right}
 .dblock-trans:empty::before{content:attr(data-empty-ph);color:var(--muted);opacity:.55;font-style:italic}
 
 /* ════════════════════════════════════════
@@ -4317,14 +4321,17 @@ body.brk-locked .dbrk-pip:hover {
 }
 
 /* Red slash — a pure visual overlay at the hovered word's split point,
-   positioned absolutely (via left/top set in JS from the split marker's
-   measured rect) rather than sitting in the text flow — an in-flow
-   element here would physically push the word over on every hover. */
+   positioned absolutely (via left/top/height set in JS from the hovered
+   word's own measured rect) rather than sitting in the text flow — an
+   in-flow element here would physically push the word over on every
+   hover. No fixed height here — it's set inline per-hover to match the
+   actual word's rendered height (which varies with neighboring
+   superscripts/cantillation-sized spans), so the bar always spans
+   exactly that word regardless of what's next to it. */
 #dem-slash {
   display: block;
   position: absolute;
   width: 2px;
-  height: 1.1em;
   background: #cc2222;
   border-radius: 1px;
   pointer-events: none;
@@ -4757,6 +4764,17 @@ body.hide-sections #section-strips{display:none}
      above the diagram canvas" convention. */
   position:relative;
   z-index:10;
+  /* A right-angle connector's vertical trunk is computed purely from
+     block geometry (max/min block edge + a fixed margin — see
+     _rightAngleTrunkX), with no awareness of this cell's position, so in
+     RTL it lands right at this column's edge (.dlane has zero gap before
+     this cell, and RTL blocks hug that same boundary). The z-index above
+     only wins click/paint priority for the badge itself against the
+     connector's hit-layer — it doesn't move the visible line. This gap
+     does: it clears the trunk's own margin plus stroke/glow width, and
+     since the trunk math never reads this cell's position, it can't
+     "follow" the badge to close the gap back up. */
+  margin-left:18px;
 }
 .dcmt-badge{
   width:20px;height:20px;padding:0;border:none;background:none;

@@ -1902,9 +1902,33 @@ function _makeHitPath(d, cnxId){
   hitPath.setAttribute('fill','none');
   hitPath.setAttribute('stroke','transparent');
   hitPath.setAttribute('stroke-width','14');
+  hitPath.dataset.cnxId=cnxId;
   hitPath.addEventListener('pointerdown', ev=>{ ev.stopPropagation(); });
-  hitPath.addEventListener('click', ev=>{ ev.stopPropagation(); selectConnector(cnxId, ev); });
+  hitPath.addEventListener('click', ev=>{
+    ev.stopPropagation();
+    selectConnector(_pickOverlappingConnector(ev, cnxId), ev);
+  });
   return hitPath;
+}
+
+// When two or more connectors' hit-paths overlap (e.g. sharing a source
+// block, running parallel for part of their path), native hit-testing
+// only ever reaches whichever one paints on top — every #dconns-hit path
+// shares the same z-index, so DOM/creation order decides, and the click
+// listener closed over the topmost one's own id always fires. This lets
+// repeated clicks in the overlapping region cycle through every connector
+// at that exact point instead of always landing on the same one: if the
+// currently-selected connector is among the candidates here, advance to
+// the next one (wrapping around); otherwise (a fresh click, nothing of
+// ours selected yet) just take the topmost — same as before this existed.
+function _pickOverlappingConnector(ev, topmostId){
+  const candidates=document.elementsFromPoint(ev.clientX, ev.clientY)
+    .filter(el=>el.classList && el.classList.contains('dconn-hit'))
+    .map(el=>el.dataset.cnxId);
+  if(candidates.length<=1) return topmostId;
+  const curIdx=candidates.indexOf(SELECTED_CNX_ID);
+  if(curIdx===-1) return topmostId;
+  return candidates[(curIdx+1)%candidates.length];
 }
 
 /* Build one CURVE connector with direction-aware endpoint placement.
@@ -9270,26 +9294,31 @@ function _demWireWordHover(wordEl){
     const slash=document.createElement('span');
     slash.id='dem-slash';
     slash.setAttribute('aria-hidden','true');
-    // Position at this word's true group boundary — before any critical-
-    // apparatus mark or plain superscript (e.g. an "a" apparatus-note
-    // reference letter) that belongs with this word, matching the
-    // already-correct invisible split marker rather than naively
-    // landing right before the word span, which would ignore anything
-    // sitting between it and the previous word.
+    // Horizontal position: this word's true group boundary — before any
+    // critical-apparatus mark or plain superscript (e.g. an "a" apparatus-
+    // note reference letter) that belongs with this word, matching the
+    // already-correct invisible split marker rather than naively landing
+    // right before the word span, which would ignore anything sitting
+    // between it and the previous word. The marker is a real (width:0)
+    // element so its rect's X is already correctly resolved for RTL/LTR
+    // by the browser's own layout; we just freeze that point.
     //
-    // The slash is absolutely positioned (see #dem-slash CSS) rather than
-    // inserted into the flow, so it never shifts the word/highlight it's
-    // pointing at. Its coordinates come from measuring the split marker's
-    // (or, in the rare case none was found, the word's) real rendered
-    // position — the marker is a real (width:0) element so its rect is
-    // already correctly resolved for RTL/LTR by the browser's own layout;
-    // we just freeze that point into absolute left/top.
+    // Vertical position/height: NOT from the marker — its font-size:0
+    // means its rect sits exactly at vertical-align:baseline, which
+    // isn't a fixed offset from the line's top (it shifts depending on
+    // whatever superscript/cantillation-sized spans happen to be in that
+    // specific line box). The word's OWN rect reflects its real rendered
+    // glyph box, so using it for both top and height guarantees the bar
+    // always spans exactly the word it's marking, regardless of what's
+    // next to it.
     const marker=_demFindSplitMarkerFor(wordEl);
-    const anchorRect=marker?marker.getBoundingClientRect():wordEl.getBoundingClientRect();
-    const anchorX=marker?anchorRect.left:(IS_RTL?anchorRect.right:anchorRect.left);
+    const markerRect=marker?marker.getBoundingClientRect():null;
+    const wordRect=wordEl.getBoundingClientRect();
+    const anchorX=marker?markerRect.left:(IS_RTL?wordRect.right:wordRect.left);
     const textRect=textEl.getBoundingClientRect();
     slash.style.left=(anchorX-textRect.left-1)+'px';
-    slash.style.top=(anchorRect.top-textRect.top)+'px';
+    slash.style.top=(wordRect.top-textRect.top)+'px';
+    slash.style.height=wordRect.height+'px';
     textEl.appendChild(slash);
   });
 
