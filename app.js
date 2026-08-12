@@ -654,7 +654,7 @@ function makeRowEl(rid,verse,origHTML,transHTML,cmtId){
     <div class="xcell grow" id="tc-${rid}" style="${tcStyle}">
       <div class="cedit" contenteditable="true" spellcheck="false"
         data-ph="Translation…"
-        onfocus="trackFocus(this,${rid})" onblur="autoSave()"
+        onfocus="trackFocus(this,${rid});_textFocusSnap(this,${rid},'t')" onblur="autoSave();_textBlurSnap(this,${rid},'t')"
         oninput="cleanEmptyCell(this)"
         onkeydown="onKey(event,'t',${rid})"></div>
     </div>`;
@@ -676,7 +676,7 @@ function makeRowEl(rid,verse,origHTML,transHTML,cmtId){
     <div class="xcell grow" id="oc-${rid}" style="${ocStyle}">
       <div class="cedit${rtl}" contenteditable="true" spellcheck="false"
         data-ph="${origPH}"
-        onfocus="trackFocus(this,${rid})" onblur="autoSave()"
+        onfocus="trackFocus(this,${rid});_textFocusSnap(this,${rid},'o')" onblur="autoSave();_textBlurSnap(this,${rid},'o')"
         oninput="cleanEmptyCell(this)"
         onkeydown="onKey(event,'o',${rid})"></div>
     </div>
@@ -1169,9 +1169,14 @@ function makeDiagramRowEl(row){
       if(transEl.innerText.trim()==='') transEl.innerHTML='';
       const liveTc=document.querySelector(`#tc-${rid} .cedit`);
       if(liveTc) liveTc.innerHTML=transEl.innerHTML;
+      // Shares the 't' key with #tc-{rid} .cedit's own snap (see
+      // _textFocusSnap/_textBlurSnap) — this box just mirrors that same
+      // underlying cell, so an edit made here lands in the same
+      // undoable slot as one made directly in Phrasing View.
+      _textBlurSnap(transEl,rid,'t');
       autoSave();
     });
-    transEl.addEventListener('focus', ()=>{ trackFocus(transEl, rid); });
+    transEl.addEventListener('focus', ()=>{ trackFocus(transEl, rid); _textFocusSnap(transEl,rid,'t'); });
     // Prevent Shift+drag-to-connect / plain-drag-to-indent from triggering
     // when interacting with the translation text itself — it's a normal
     // editable text field, not a draggable block.
@@ -2068,6 +2073,15 @@ function renderDiagramConnectors(){
   const backSvg=document.getElementById('dconns-back');
   const canvas=document.getElementById('dcanvas');
   if(!svg||!backSvg||!canvas) return;
+  // Guarantee every block has .ann-word wrapping before any word-anchored
+  // connector's endpoint gets computed — a block rebuilt by any OTHER
+  // trigger (switching views, editing a row, etc.) loses that wrapping,
+  // and _connectorPoint's word-level branch can only find the word's true
+  // center via a real .ann-word rect; without it, it silently falls back
+  // to a block-level edge point instead. Idempotent (no-ops on blocks
+  // already wrapped), so this is a no-op in the common case and only
+  // does real work exactly where the gap used to bite.
+  canvas.querySelectorAll('.dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
   // Place #dconns as the LAST child of #dcanvas so it paints ABOVE the block
   // ::before backgrounds. .dblock-text has position:relative; z-index:1 which
   // keeps text above the connector lines. #dconns-back stays first (right-angle
@@ -2355,6 +2369,28 @@ function _mergeGluedWordSpans(textEl, wordClass){
   // legitimate is ever a genuinely empty .hl, so it's always safe to
   // prune.
   textEl.querySelectorAll('.hl').forEach(hl=>{ if(!hl.hasChildNodes()) hl.remove(); });
+  // A .hl that wraps SEVERAL whitespace-separated words (not just one
+  // word glued to trailing punctuation, the case above) can be left
+  // TRUNCATED rather than emptied by the same extractContents() partial-
+  // ancestor-clone mechanism, when the glued sub-run being merged sits at
+  // its edge: the range only partially spans .hl, so a clone wraps the
+  // merged piece while the original .hl — still non-empty, holding
+  // whatever else it wrapped — stays behind right next to it. Two
+  // adjacent .hl boxes, each carrying its own CSS padding, create a
+  // visible seam even though neither is empty. Same style + genuinely
+  // adjacent (nothing between them) is conclusive proof they were one
+  // highlight before the merge, so rejoining them is always correct.
+  let hls=[...textEl.querySelectorAll('.hl')];
+  for(let i=0;i<hls.length-1;i++){
+    const a=hls[i], b=hls[i+1];
+    if(!a.isConnected||!b.isConnected) continue;
+    if(a.nextSibling!==b) continue;
+    if(a.getAttribute('style')!==b.getAttribute('style')) continue;
+    while(b.firstChild) a.appendChild(b.firstChild);
+    b.remove();
+    hls=[...textEl.querySelectorAll('.hl')];
+    i--;
+  }
 }
 
 /* True if there's no whitespace anywhere between the end of `a` and the
@@ -3838,6 +3874,17 @@ function applyRowUndo(op){
     if(ed){ed.innerHTML=op.before;_cmtTextBefore[op.cid]=op.before;}
     return;
   }
+  if(op.type==='text-edit'){
+    const ed=document.querySelector(`#${op.col==='o'?'oc':'tc'}-${op.rid} .cedit`);
+    if(ed) ed.innerHTML=op.before;
+    if(op.col==='t'){
+      const trans=document.querySelector(`.dblock[data-rid="${op.rid}"] .dblock-trans`);
+      if(trans) trans.innerHTML=op.before;
+    }
+    _textBefore[op.rid+':'+op.col]=op.before;
+    autoSave();
+    return;
+  }
   if(op.type==='lblsnap'){
     const lb=DIAGRAM_DATA.labels.find(l=>l.id===op.id);
     if(lb){
@@ -4012,6 +4059,17 @@ function applyRowRedo(op){
     const card=document.querySelector(`.ccard[data-cid="${op.cid}"]`);
     const ed=card?card.querySelector('.cedit-c'):null;
     if(ed){ed.innerHTML=op.after;_cmtTextBefore[op.cid]=op.after;}
+    return;
+  }
+  if(op.type==='text-edit'){
+    const ed=document.querySelector(`#${op.col==='o'?'oc':'tc'}-${op.rid} .cedit`);
+    if(ed) ed.innerHTML=op.after;
+    if(op.col==='t'){
+      const trans=document.querySelector(`.dblock[data-rid="${op.rid}"] .dblock-trans`);
+      if(trans) trans.innerHTML=op.after;
+    }
+    _textBefore[op.rid+':'+op.col]=op.after;
+    autoSave();
     return;
   }
   if(op.type==='lblsnap'){
@@ -4491,6 +4549,11 @@ function _buildCmtCard(cid,rid,lid,top,left,width,html){
       <span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid&&lid!=='—'?lid:''}</span>
       <button class="ccl" onclick="closeCmt('${cid}')">✕</button>
     </div>
+    <div class="ccard-fmt-row">
+      <button onpointerdown="event.preventDefault()" onclick="fmtCmd('bold')" title="Bold"><b>B</b></button>
+      <button onpointerdown="event.preventDefault()" onclick="fmtCmd('italic')" title="Italic"><i>I</i></button>
+      <button onpointerdown="event.preventDefault()" onclick="fmtCmd('underline')" title="Underline"><u>U</u></button>
+    </div>
     <div class="cbody">
       <div class="cedit-c" contenteditable="true" spellcheck="false"
         onfocus="_cmtFocusSnap(this,${cid})" onblur="_cmtBlurSnap(this,${cid});autoSave()"
@@ -4520,6 +4583,33 @@ function _cmtBlurSnap(el,cid){
     rowPush({type:'cmt-text',cid,before,after});
   }
   _cmtTextBefore[cid]=after;
+}
+
+/* Same focus/blur snap-and-coalesce pattern as _cmtFocusSnap/_cmtBlurSnap
+   above, for the original-language and translation cells (#oc-{rid}/
+   #tc-{rid} .cedit) — plain typing there never used to push anything
+   onto ROW_STACK, so Ctrl+Z had nothing of its own to undo and instead
+   silently undid whatever unrelated structural op happened to already be
+   on top of the shared stack. col is 'o'|'t'; .dblock-trans (Diagram
+   View's translation box) shares the 't' key since it mirrors straight
+   into the same #tc-{rid} .cedit cell — editing from either side lands
+   in the same undoable slot. */
+const _textBefore={};
+function _textFocusSnap(el,rid,col){
+  _textBefore[rid+':'+col]=el.innerHTML;
+}
+function _textBlurSnap(el,rid,col){
+  const key=rid+':'+col;
+  const before=_textBefore[key]??'';
+  const after=el.innerHTML;
+  if(after===before) return;
+  const lastOp=ROW_STACK[ROW_STACK.length-1];
+  if(lastOp&&lastOp.type==='text-edit'&&lastOp.rid===rid&&lastOp.col===col){
+    lastOp.after=after;
+  } else {
+    rowPush({type:'text-edit',rid,col,before,after});
+  }
+  _textBefore[key]=after;
 }
 
 function closeCmt(cid){
@@ -5230,10 +5320,10 @@ function loadData(data){
   (data.rows||[]).forEach(rd=>{
     const rid=rd.rid||++RC;const rtl=isRTL?' rtl':'';
     const origPH=isRTL?'טקסט עברי…':isSingle?(data.langLabel||'Text')+'…':(data.langLabel||'Original')+' text…';
-    const transCell=isSingle?'':`<div class="vdiv"></div><div class="xcell grow" id="tc-${rid}"><div class="cedit" contenteditable="true" spellcheck="false" data-ph="Translation…" onfocus="trackFocus(this,${rid})" onblur="autoSave()" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'t',${rid})"></div></div>`;
+    const transCell=isSingle?'':`<div class="vdiv"></div><div class="xcell grow" id="tc-${rid}"><div class="cedit" contenteditable="true" spellcheck="false" data-ph="Translation…" onfocus="trackFocus(this,${rid});_textFocusSnap(this,${rid},'t')" onblur="autoSave();_textBlurSnap(this,${rid},'t')" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'t',${rid})"></div></div>`;
     const row=document.createElement('div');
     row.className='xrow'+(rd.cid?' has-cmt':'');row.dataset.rid=rid;if(rd.cid)row.dataset.cid=rd.cid;
-    row.innerHTML=`<div class="xcell mid" style="width:60px;min-width:60px"><input class="vin" type="text" maxlength="8" placeholder="v" spellcheck="false" value="${escH(rd.verse||'')}" oninput="recomputeIds();autoSave()" onkeydown="onVerseKey(event,${rid})"/></div><div class="xcell mid" style="width:52px;min-width:52px"><div class="lid">—</div></div><div class="vdiv"></div><div class="xcell grow" id="oc-${rid}"><div class="cedit${rtl}" contenteditable="true" spellcheck="false" data-ph="${origPH}" onfocus="trackFocus(this,${rid})" onblur="autoSave()" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'o',${rid})"></div></div>${transCell}<div class="xcell mid" style="width:40px;min-width:40px"><button class="cmtbtn${rd.cid?' on':''}" title="Comment" onclick="toggleCmt(this,${rid})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button></div>`;
+    row.innerHTML=`<div class="xcell mid" style="width:60px;min-width:60px"><input class="vin" type="text" maxlength="8" placeholder="v" spellcheck="false" value="${escH(rd.verse||'')}" oninput="recomputeIds();autoSave()" onkeydown="onVerseKey(event,${rid})"/></div><div class="xcell mid" style="width:52px;min-width:52px"><div class="lid">—</div></div><div class="vdiv"></div><div class="xcell grow" id="oc-${rid}"><div class="cedit${rtl}" contenteditable="true" spellcheck="false" data-ph="${origPH}" onfocus="trackFocus(this,${rid});_textFocusSnap(this,${rid},'o')" onblur="autoSave();_textBlurSnap(this,${rid},'o')" oninput="cleanEmptyCell(this)" onkeydown="onKey(event,'o',${rid})"></div></div>${transCell}<div class="xcell mid" style="width:40px;min-width:40px"><button class="cmtbtn${rd.cid?' on':''}" title="Comment" onclick="toggleCmt(this,${rid})"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button></div>`;
     const oc=row.querySelector(`#oc-${rid} .cedit`);
     if(oc&&rd.origHTML)oc.innerHTML=_stripBgFromHTML(rd.origHTML);
     if(oc&&rd.origIndent){oc.dataset.indent=rd.origIndent;}
@@ -5261,7 +5351,7 @@ function loadData(data){
     const lid=row?(row.querySelector('.lid')?.textContent||''):'';
     const card=document.createElement('div');card.className='ccard';card.dataset.cid=c.cid;card.dataset.rid=c.rid;
     card.style.cssText=`top:${c.top||'8px'};left:${c.left||'18px'};width:${c.width||'226px'};${c.height?'height:'+c.height+';':''}${c.hidden?'display:none;':''}`;
-    card.innerHTML=`<div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))"><span class="chdr-l">Comment</span><span class="chdr-i">${lid!=='—'?lid:''}</span><button class="ccl" onclick="closeCmt('${c.cid}')">✕</button></div><div class="cbody"><div class="cedit-c" contenteditable="true" spellcheck="false" onfocus="activeEl=this" onblur="autoSave()" onkeydown="if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);}setTimeout(()=>{saveRange();updateTb();},0)"></div></div><div class="crh" onmousedown="startCR2(event,this.closest('.ccard'))"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/><line x1="6" y1="10" x2="10" y2="6"/></svg></div>`;
+    card.innerHTML=`<div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))"><span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid!=='—'?lid:''}</span><button class="ccl" onclick="closeCmt('${c.cid}')">✕</button></div><div class="ccard-fmt-row"><button onpointerdown="event.preventDefault()" onclick="fmtCmd('bold')" title="Bold"><b>B</b></button><button onpointerdown="event.preventDefault()" onclick="fmtCmd('italic')" title="Italic"><i>I</i></button><button onpointerdown="event.preventDefault()" onclick="fmtCmd('underline')" title="Underline"><u>U</u></button></div><div class="cbody"><div class="cedit-c" contenteditable="true" spellcheck="false" onfocus="activeEl=this" onblur="autoSave()" onkeydown="if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);}setTimeout(()=>{saveRange();updateTb();},0)"></div></div><div class="crh" onmousedown="startCR2(event,this.closest('.ccard'))"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/><line x1="6" y1="10" x2="10" y2="6"/></svg></div>`;
     const ed=card.querySelector('.cedit-c');if(ed&&c.html)ed.innerHTML=c.html;
     // Cache comment HTML for use when pane is hidden (slides view)
     if(c.cid) SL_CMT_CACHE[c.cid]=c.html||'';
