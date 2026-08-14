@@ -3699,6 +3699,36 @@ body.brk-locked .dbrk-pip:hover {
 .sl-row-check input { cursor: pointer; accent-color: var(--sig); }
 .sl-row-check .sl-row-lbl { font-weight: 600; color: var(--active); min-width: 28px; }
 
+.sl-row-verse-hdr {
+  display: flex;
+  align-items: center;
+  font-family: var(--ui);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 5px 0 2px;
+  margin-top: 2px;
+  border-top: 1px solid var(--border, rgba(0,0,0,0.1));
+  user-select: none;
+}
+.sl-row-verse-hdr:first-child { margin-top: 0; border-top: none; padding-top: 0; }
+.sl-row-verse-hdr:hover { color: var(--active); }
+
+.sl-sublist {
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 2px 0 4px 20px;
+}
+.sl-sublist:empty { display: none; margin: 0; }
+.sl-sublist .sl-row-check { font-size: 10.5px; padding: 1px 0; }
+.sl-sublist .sl-row-check .sl-row-lbl { min-width: 20px; }
+
 .sl-vis-row {
   display: flex;
   align-items: center;

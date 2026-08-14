@@ -9611,13 +9611,13 @@ function _slActivePassage(){
 
 /* ── Default visibility ── */
 const SL_VIS_DEFAULT = {
-  indentation:false, translation:false, verseNums:true,
+  indentation:false, translation:false, verseNums:false,
   comments:false, connectors:false, brackets:false, labels:false,
   dividers:true, annotations:true
 };
 
 /* ── Serialise / restore ── */
-function slCollectDeck(){ return { slides: SL_DECK.slides.map(s=>({...s, elements:s.elements.map(e=>({...e})), passages:s.passages.map(p=>({...p, rowIds:[...p.rowIds], visibility:{...p.visibility}, contentArea:{...p.contentArea}}))})) }; }
+function slCollectDeck(){ return { slides: SL_DECK.slides.map(s=>({...s, elements:s.elements.map(e=>({...e})), passages:s.passages.map(p=>({...p, rowIds:[...p.rowIds], visibility:{...p.visibility}, contentArea:{...p.contentArea}, hiddenCommentIds:[...(p.hiddenCommentIds||[])], hiddenLabelIds:[...(p.hiddenLabelIds||[])]}))})) }; }
 // Upgrade a pre-multi-region slide (singular view/rowIds/visibility/
 // contentArea fields) into the current passages[] shape. Done eagerly here
 // (not lazily per call site) so every other Slides function can assume
@@ -9629,7 +9629,8 @@ function _slMigrateSlide(s){
       view: s.view || 'phrasing',
       rowIds: [...(s.rowIds||[])],
       visibility: {...SL_VIS_DEFAULT, ...(s.visibility||{})},
-      contentArea: {...(s.contentArea||{x:3,y:3,w:94,h:55})}
+      contentArea: {...(s.contentArea||{x:3,y:3,w:94,h:55})},
+      hiddenCommentIds: [...(s.hiddenCommentIds||[])], hiddenLabelIds: [...(s.hiddenLabelIds||[])]
     }];
     delete s.view; delete s.rowIds; delete s.visibility; delete s.contentArea;
   } else {
@@ -9638,6 +9639,8 @@ function _slMigrateSlide(s){
       p.rowIds=p.rowIds||[];
       p.visibility={...SL_VIS_DEFAULT, ...(p.visibility||{})};
       p.contentArea=p.contentArea||{x:3,y:3,w:94,h:55};
+      p.hiddenCommentIds=p.hiddenCommentIds||[];
+      p.hiddenLabelIds=p.hiddenLabelIds||[];
     });
   }
   return s;
@@ -9886,7 +9889,12 @@ const _slOrigApplyUndo=applyRowUndo;
 function slMakePassage(rowIds){
   return {id:'pg-'+(++SL_PASSAGE_CTR), view:'phrasing', rowIds:rowIds||[],
     visibility:{...SL_VIS_DEFAULT},
-    contentArea:{x:3,y:3,w:94,h:55}};
+    contentArea:{x:3,y:3,w:94,h:55},
+    // Per-item exclusion lists, layered on top of visibility.comments/labels
+    // (the master on/off) — a comment/label cid/id in here is hidden even
+    // when the master toggle is on. Absent on old saved projects, which
+    // behaves identically to an empty array (nothing excluded).
+    hiddenCommentIds:[], hiddenLabelIds:[]};
 }
 // New slides default to the current theme's --surface rather than a
 // hardcoded white, so a freshly-added slide's canvas matches the rest of
@@ -9971,6 +9979,31 @@ function slSelectSlide(idx){
   document.querySelectorAll('.sl-thumb').forEach((t,i)=>t.classList.toggle('active',i===idx));
 }
 
+/* ── Measure a floatlabel/commentbox's natural box size for its HTML content ──
+   Offscreen probe matching the exact font/padding/line-height/word-break the
+   real rendered overlay div uses (see the isCmtBox/floatlabel branch in
+   slRenderSlideInto), capped at maxWPct of the slide width so long text wraps
+   instead of growing unbounded. Returns {w,h} already converted to the same
+   percentage-of-canvas space el.w/el.h are stored in. */
+function _slMeasureOverlayBox(html, maxWPct){
+  const probe=document.createElement('div');
+  const resolvedUiFont=getComputedStyle(document.documentElement).getPropertyValue('--ui').trim()||'sans-serif';
+  const maxWPx=(maxWPct/100)*SL_CANVAS_W;
+  probe.style.cssText='position:absolute;visibility:hidden;left:-9999px;top:-9999px;'+
+    'box-sizing:border-box;padding:4px 7px;border:1px solid transparent;'+
+    'line-height:1.4;word-break:break-word;font-size:11px;width:max-content;';
+  probe.style.fontFamily=resolvedUiFont;
+  probe.style.maxWidth=maxWPx+'px';
+  probe.innerHTML=html||'';
+  document.body.appendChild(probe);
+  const rect=probe.getBoundingClientRect();
+  probe.remove();
+  return {
+    w: Math.max(6, Math.min(maxWPct, rect.width/SL_CANVAS_W*100)),
+    h: Math.max(4, rect.height/SL_CANVAS_H*100)
+  };
+}
+
 /* ── Sync derived elements (floatlabels + commentboxes) from live data ──
    Called on every Refresh. Keeps positions of existing elements,
    adds new ones at defaults, removes stale ones. */
@@ -9996,13 +10029,18 @@ function slSyncDerivedElements(){
         // Update text from live data; keep user-moved position
         existing.html=lb.text||'';
         existing.sourcePassageId=diagramPassage.id;
+        if(!existing.userSized){
+          const m=_slMeasureOverlayBox(existing.html,25);
+          existing.w=m.w; existing.h=m.h;
+        }
         newLabels.push(existing);
       } else {
-        // New label — add at its diagram position
+        // New label — add at its diagram position, sized to fit its text
+        const m=_slMeasureOverlayBox(lb.text||'',25);
         newLabels.push({
           id:'el-'+(++SL_EL_CTR), type:'floatlabel', sourceId:lb.id, sourcePassageId:diagramPassage.id,
           x: parseFloat(lb.x)||5, y: parseFloat(lb.y)||5,
-          w:18, h:8,
+          w:m.w, h:m.h, userSized:false,
           html: lb.text||''
         });
       }
@@ -10028,20 +10066,26 @@ function slSyncDerivedElements(){
       if(!txt) return;
       const lid=xrow.querySelector('.lid')?.textContent||'';
       const labelStr=lid!=='—'?lid:'';
+      const html=`<b style="color:#C8A84B">${labelStr}</b> ${txt}`;
       const existing=existingCmts.find(e=>e.sourceCid===cid && e.sourcePassageId===passage.id);
       if(existing){
-        existing.html=`<b style="color:#C8A84B">${labelStr}</b> ${txt}`;
+        existing.html=html;
+        if(!existing.userSized){
+          const m=_slMeasureOverlayBox(html,40);
+          existing.w=m.w; existing.h=m.h;
+        }
         newCmts.push(existing);
       } else {
         // Default position: stagger near the owning region's own contentArea
-        // rather than a fixed slide-wide corner.
+        // rather than a fixed slide-wide corner. Sized to fit its text.
         const col=cmtIdx%2, row=Math.floor(cmtIdx/2);
         const ca=passage.contentArea;
+        const m=_slMeasureOverlayBox(html,40);
         newCmts.push({
           id:'el-'+(++SL_EL_CTR), type:'commentbox', sourceCid:cid, sourcePassageId:passage.id,
           x: Math.min(90, ca.x+ca.w*0.4+col*20), y: Math.min(85, ca.y+ca.h+2+row*15),
-          w:38, h:12,
-          html:`<b style="color:#C8A84B">${labelStr}</b> ${txt}`
+          w:m.w, h:m.h, userSized:false,
+          html
         });
       }
       cmtIdx++;
@@ -10600,6 +10644,7 @@ function slSetView(view){
   document.getElementById('sl-view-phrasing')?.classList.toggle('active',view==='phrasing');
   document.getElementById('sl-view-diagram')?.classList.toggle('active',view==='diagram');
   _slUpdateVisRowsForView(view);
+  slUpdateLabelList(); // "first diagram-view region" may have just changed
   autoSave();
   // Live re-render, same as the row checkbox / background picker below —
   // slRenderActive() already debounces (next-tick coalesce), so this is
@@ -10672,7 +10717,7 @@ function slSelectAllRows(){
   const old=[...passage.rowIds];
   passage.rowIds=_realRows().map(r=>r.dataset.rid).filter(Boolean);
   _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[...passage.rowIds]});
-  slUpdateRowList(); autoSave();
+  slUpdateRowList(); slUpdateCmtList(); autoSave();
   // Live re-render, matching the individual row checkbox this button sits
   // next to (app.js slUpdateRowList's per-row change handler).
   slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
@@ -10682,7 +10727,7 @@ function slClearAllRows(){
   const old=[...passage.rowIds];
   passage.rowIds=[];
   _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[]});
-  slUpdateRowList(); autoSave();
+  slUpdateRowList(); slUpdateCmtList(); autoSave();
   slRenderActive(); slRenderThumb(SL_ACTIVE_IDX);
 }
 
@@ -10711,6 +10756,8 @@ function slUpdatePropsPanel(){
   document.getElementById('sl-vis-brackets') .checked=!!passage.visibility.brackets;
   document.getElementById('sl-vis-labels')   .checked=!!passage.visibility.labels;
   slUpdateRowList();
+  slUpdateCmtList();
+  slUpdateLabelList();
 }
 // One pill per slide.passages[i] plus a trailing "+" tab. Clicking a tab
 // calls slSelectEl exactly like clicking the region on the canvas does —
@@ -10745,14 +10792,37 @@ function slRenderPassageTabs(){
   addTab.onclick=()=>slAddRegion();
   wrap.appendChild(addTab);
 }
+// Verse number isn't stored as a row attribute anywhere — it only exists
+// transiently inside recomputeIds()'s forward-fill (continuation lines
+// inherit the last row's explicit .vin value, baked into .lid's text but
+// not kept as separate reusable data). Re-derives the same forward-fill
+// here so callers can group/filter rows by verse without touching that
+// unrelated main-editor function.
+function _slRowsWithVerse(){
+  let lastVerse='';
+  return _realRows().map(xrow=>{
+    const v=(xrow.querySelector('.vin')?.value||'').trim();
+    if(v) lastVerse=v;
+    return {xrow, rid:xrow.dataset.rid, verse:v||lastVerse};
+  });
+}
 function slUpdateRowList(){
   const passage=_slActivePassage(); if(!passage) return;
   const list=document.getElementById('sl-row-list'); if(!list) return;
   list.innerHTML='';
-  _realRows().forEach(xrow=>{
-    const rid=xrow.dataset.rid; if(!rid) return;
+  let lastGroupVerse=null;
+  _slRowsWithVerse().forEach(({xrow,rid,verse})=>{
+    if(!rid) return;
+    if(verse && verse!==lastGroupVerse){
+      lastGroupVerse=verse;
+      const hdr=document.createElement('div');
+      hdr.className='sl-row-verse-hdr';
+      hdr.textContent=(typeof t==='function'?t('slides.verse-prefix'):'Verse ')+verse+(typeof t==='function'?t('slides.verse-suffix'):'');
+      hdr.title=typeof t==='function'?t('slides.verse-toggle-hint'):'Click to toggle all lines of this verse';
+      hdr.onclick=()=>slToggleVerseRows(verse);
+      list.appendChild(hdr);
+    }
     const lid=xrow.querySelector('.lid')?.textContent||'—';
-    const verse=xrow.querySelector('.vin')?.value||'';
     const checked=passage.rowIds.includes(rid);
     const label=document.createElement('label');
     label.className='sl-row-check';
@@ -10765,10 +10835,97 @@ function slUpdateRowList(){
       const checkedSet=new Set(this.checked ? [...passage.rowIds, rid] : passage.rowIds.filter(r=>r!==rid));
       passage.rowIds=_realRows().map(r=>r.dataset.rid).filter(rid2=>checkedSet.has(rid2));
       _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[...passage.rowIds]});
-      slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+      slUpdateCmtList(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
     });
     list.appendChild(label);
   });
+}
+// Clicking a verse-group header toggles all of that verse's lines at once
+// — selects them all if any are currently missing, deselects them all if
+// every one is already selected (so it behaves like a tri-state checkbox
+// rather than a one-way "add" button). Mirrors slSelectAllRows/
+// slClearAllRows' exact tail sequence, just scoped to one verse's rids.
+function slToggleVerseRows(verse){
+  const passage=_slActivePassage(); if(!passage) return;
+  const old=[...passage.rowIds];
+  const rows=_slRowsWithVerse();
+  const verseRids=rows.filter(r=>r.verse===verse).map(r=>r.rid).filter(Boolean);
+  if(!verseRids.length) return;
+  const allSelected=verseRids.every(rid=>passage.rowIds.includes(rid));
+  const targetSet=new Set(passage.rowIds);
+  verseRids.forEach(rid=> allSelected ? targetSet.delete(rid) : targetSet.add(rid));
+  passage.rowIds=rows.map(r=>r.rid).filter(rid=>rid&&targetSet.has(rid));
+  _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'rowIds',oldVal:old,newVal:[...passage.rowIds]});
+  slUpdateRowList(); slUpdateCmtList(); slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+}
+// Per-comment exclusion checklist — mirrors slUpdateRowList's structure,
+// but sourced from the same per-row comment lookup slSyncDerivedElements()
+// uses (rows in this region with non-empty comment text), one checkbox per
+// distinct comment id. Checked = currently shown (i.e. NOT in
+// hiddenCommentIds), independent of the region's own Comments master toggle.
+function slUpdateCmtList(){
+  const passage=_slActivePassage(); if(!passage) return;
+  const list=document.getElementById('sl-cmt-list'); if(!list) return;
+  list.innerHTML='';
+  const hidden=passage.hiddenCommentIds||[];
+  const seen=new Set();
+  passage.rowIds.forEach(rid=>{
+    const xrow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+    const cid=xrow?.dataset.cid; if(!cid||seen.has(cid)) return;
+    const raw=SL_CMT_CACHE[cid]||(document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`)?.innerHTML||'');
+    const txt=raw.replace(/<br\s*\/?>/gi,' ').replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').trim();
+    if(!txt) return;
+    seen.add(cid);
+    const lid=xrow.querySelector('.lid')?.textContent||'';
+    const checked=!hidden.includes(cid);
+    const label=document.createElement('label');
+    label.className='sl-row-check';
+    const preview=txt.length>26?txt.slice(0,26)+'…':txt;
+    label.innerHTML=`<input type="checkbox" ${checked?'checked':''}><span class="sl-row-lbl">${lid!=='—'?lid:''}</span><span style="color:var(--muted);font-size:10px">${escH(preview)}</span>`;
+    label.querySelector('input').addEventListener('change',function(){ slToggleHiddenComment(cid, !this.checked); });
+    list.appendChild(label);
+  });
+}
+function slToggleHiddenComment(cid, hide){
+  const passage=_slActivePassage(); if(!passage) return;
+  const old=[...(passage.hiddenCommentIds||[])];
+  const set=new Set(old);
+  hide ? set.add(cid) : set.delete(cid);
+  passage.hiddenCommentIds=[...set];
+  _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'hiddenCommentIds',oldVal:old,newVal:[...passage.hiddenCommentIds]});
+  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
+}
+// Per-label exclusion checklist — DIAGRAM_DATA.labels is project-wide, not
+// row-scoped (same documented limitation slSyncDerivedElements already has:
+// labels only ever sync to the slide's FIRST diagram-view region), so this
+// list is only meaningful/shown for that region.
+function slUpdateLabelList(){
+  const passage=_slActivePassage(); if(!passage) return;
+  const list=document.getElementById('sl-label-list'); if(!list) return;
+  list.innerHTML='';
+  const sl=SL_DECK.slides[SL_ACTIVE_IDX]; if(!sl) return;
+  const isFirstDiagramPassage = sl.passages.find(p=>p.view==='diagram')?.id===passage.id;
+  if(!isFirstDiagramPassage) return;
+  const hidden=passage.hiddenLabelIds||[];
+  (DIAGRAM_DATA.labels||[]).forEach(lb=>{
+    const txt=(lb.text||'').trim(); if(!txt) return;
+    const checked=!hidden.includes(lb.id);
+    const label=document.createElement('label');
+    label.className='sl-row-check';
+    const preview=txt.length>26?txt.slice(0,26)+'…':txt;
+    label.innerHTML=`<input type="checkbox" ${checked?'checked':''}><span style="color:var(--muted);font-size:10px">${escH(preview)}</span>`;
+    label.querySelector('input').addEventListener('change',function(){ slToggleHiddenLabel(lb.id, !this.checked); });
+    list.appendChild(label);
+  });
+}
+function slToggleHiddenLabel(labelId, hide){
+  const passage=_slActivePassage(); if(!passage) return;
+  const old=[...(passage.hiddenLabelIds||[])];
+  const set=new Set(old);
+  hide ? set.add(labelId) : set.delete(labelId);
+  passage.hiddenLabelIds=[...set];
+  _slPush({type:'sl-passage-prop',slideIdx:SL_ACTIVE_IDX,passageId:passage.id,prop:'hiddenLabelIds',oldVal:old,newVal:[...passage.hiddenLabelIds]});
+  slRenderActive(); slRenderThumb(SL_ACTIVE_IDX); autoSave();
 }
 // "+ Add region" — new independent content region on the active slide, at
 // slMakePassage's fixed default position/size every time (same spot a
@@ -11188,7 +11345,18 @@ function _slRenderOnePassage(passage, slide, container, w, h, isExport){
 
         const lane=document.createElement('div');
         lane.className='dlane';
-        lane.style.cssText='flex:1;min-width:0;display:flex;flex-direction:column;align-items:'+(IS_RTL?'flex-end':'flex-start')+';';
+        // flex:none (not just omitted) is required here — .dlane in app.css
+        // carries flex:1 for the REAL diagram canvas this class is shared
+        // with, and that class rule still applies to this clone with no
+        // inline flex value to beat it. diagWrap's width (below) is an
+        // artificial stand-in for the real canvas width (unmeasurable while
+        // #dzone is hidden in Slides View), not real content width — letting
+        // the lane stretch to fill it meant RTL content (align-items:flex-end)
+        // hugged the far edge of that oversized row instead of the label
+        // column right next to it, leaving a large visible gap. Sizing to
+        // actual content instead just leaves unused space trailing past the
+        // row, which renders nothing and is never visible.
+        lane.style.cssText='flex:none;display:flex;flex-direction:column;align-items:'+(IS_RTL?'flex-end':'flex-start')+';';
 
         if(liveDrow){
           // Use the actual .dblock clone from live diagram — preserves exact metrics
@@ -11414,8 +11582,8 @@ function slRenderSlideInto(slide, container, w, h, isExport){
     // Floatlabels/commentboxes are gated by their OWNING region's own
     // visibility toggle, not a slide-wide one — see slSyncDerivedElements.
     const ownerPassage=(isFloatLbl||isCmtBox) ? slide.passages.find(p=>p.id===el.sourcePassageId) : null;
-    if(isFloatLbl && (!ownerPassage || !ownerPassage.visibility.labels)) return;
-    if(isCmtBox  && (!ownerPassage || !ownerPassage.visibility.comments)) return;
+    if(isFloatLbl && (!ownerPassage || !ownerPassage.visibility.labels || ownerPassage.hiddenLabelIds?.includes(el.sourceId))) return;
+    if(isCmtBox  && (!ownerPassage || !ownerPassage.visibility.comments || ownerPassage.hiddenCommentIds?.includes(el.sourceCid))) return;
     const div=document.createElement("div");
     div.className="sl-el "+(isTextbox?"sl-el-textbox":"sl-el-overlay");
     div.setAttribute("data-el-id", el.id);
@@ -12101,6 +12269,10 @@ function slStartElResize(ev, el, div, dir, cw, ch){
   const onUp=()=>{
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
+    // A manual resize permanently opts a floatlabel/commentbox out of the
+    // auto-sizing slSyncDerivedElements() otherwise applies on every
+    // Refresh — same "user edit wins" convention used elsewhere in Slides.
+    if(el.type==='floatlabel'||el.type==='commentbox') el.userSized=true;
     _slPush({type:'sl-el-prop',slideIdx:SL_ACTIVE_IDX,elId:el.id,prop:'pos',oldVal:oldPos,newVal:{x:el.x,y:el.y,w:el.w,h:el.h}});
     // Do NOT call slRenderActive() here — the overlay div is already at the correct
     // size/position (updated live in onMove), and a full canvas rebuild would destroy
