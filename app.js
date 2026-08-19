@@ -6919,13 +6919,20 @@ function loadFile(e){
       const data=JSON.parse(ev.target.result);
       if(data.lang&&data.lang!==SESS){
         SESS=data.lang;IS_RTL=data.isRTL||false;IS_SINGLE=data.isSingle||false;
-      _applySessionFontDefaults();
         LANG=data.langLabel||(SESS==='greek'?'Greek':SESS==='hebrew'?'Hebrew':'Custom');
         document.getElementById('sess-lbl').textContent=LANG+' Session';
         document.getElementById('ch-o-lbl').textContent=IS_SINGLE?LANG:LANG+' Text';
   // ch-t-lbl always reads "Translation"; version shown in version-sub.
         document.getElementById('ch-t').style.display=IS_SINGLE?'none':'';
       }
+      // Font size isn't part of the saved JSON at all (collectData() never
+      // writes CEDIT_O_SIZE/CEDIT_T_SIZE) — it's purely derived from the
+      // session language here. Must run on EVERY load with a lang, not just
+      // when the language differs from the current session: loading a
+      // second same-language file after the toolbar +/- was used on the
+      // first one otherwise silently carries that leftover size into the
+      // new file instead of resetting to that language's default.
+      if(data.lang) _applySessionFontDefaults();
       loadData(data);
       CURRENT_FILENAME=loadedName;
       // A disk file is a fresh, independent document — never let it stay
