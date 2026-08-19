@@ -5278,29 +5278,32 @@ function collectData(){
     deck: typeof slCollectDeck==='function' ? slCollectDeck() : {slides:[]}};
 }
 
-/* Strips any background-color from inline style="" attributes in saved
-   HTML. Projects saved before 202607221100 may still carry source-app
-   background tints (Logos/BibleArc page backgrounds) baked into their
-   stored origHTML/transHTML; new pastes never get this style in the
-   first place (see _PASTE_SAFE_STYLES), but old saved rows need it
-   stripped every time they're loaded. Regex-based (not DOM-based) since
-   this also runs inside the batch diagram-PDF export loop across many
-   projects. */
-/* Strips source-app backgrounds (e.g. Logos/BibleArc/Word paste swatches)
-   from HTML, but preserves .hl spans — the app's own Highlight tool
-   (applyHl()) stores its color as an inline background-color on a .hl
-   span, and this function used to strip that too on every loadData(),
-   silently erasing user-applied highlights on reload. DOM-based (not
-   regex) so it can check each element's own class before touching its
-   style. */
+/* Strips legacy inline styling baked into HTML from old saved projects or
+   source-app pastes (Logos/BibleArc/Word), every time that HTML loads:
+    - background/background-color — source-app page-background tints.
+    - font-size — relative sizes (e.g. 133%, 166%, 83%) some sources embed
+      per-span for cantillation/accent marks, which compound on top of the
+      cell's own font-size setting and make that saved content render at
+      an inflated, inconsistent size no matter what the toolbar's Hebrew/
+      Translation size controls say. New pastes never get either style in
+      the first place (see _PASTE_SAFE_STYLES), but old saved rows need
+      them stripped on every load.
+   .hl spans are exempted from the background strip only — the app's own
+   Highlight tool (applyHl()) stores its color as an inline background-color
+   on a .hl span, and stripping that too would silently erase user-applied
+   highlights on reload. Font-size is never meaningful on a .hl span, so it's
+   stripped there as well. DOM-based (not regex) so it can check each
+   element's own class before touching its style. */
 function _stripBgFromHTML(html){
   if(!html) return html;
   const tmp=document.createElement('div');
   tmp.innerHTML=html;
   tmp.querySelectorAll('[style]').forEach(el=>{
-    if(el.classList.contains('hl')) return;
-    el.style.removeProperty('background');
-    el.style.removeProperty('background-color');
+    if(!el.classList.contains('hl')){
+      el.style.removeProperty('background');
+      el.style.removeProperty('background-color');
+    }
+    el.style.removeProperty('font-size');
     if(!el.getAttribute('style')) el.removeAttribute('style');
   });
   tmp.querySelectorAll('[bgcolor]').forEach(el=>el.removeAttribute('bgcolor'));
@@ -13326,8 +13329,15 @@ const _PASTE_BLOCK_TAGS = new Set(['p','div','li','tr','td','th','h1','h2','h3',
 /* Note: background-color is deliberately NOT allowed through — source
    apps (Logos, BibleArc, Word) often wrap lines in spans carrying page
    background tints, which would wash whole rows gray against the app's
-   cream cells. Font colors, weights, and styles still come through. */
-const _PASTE_SAFE_STYLES = new Set(['color','font-weight','font-style','text-decoration','font-size','vertical-align']);
+   cream cells. Font colors, weights, and styles still come through.
+   font-size is deliberately NOT allowed through either — sources like
+   Logos/BibleWorks commonly mark cantillation/accent glyphs with relative
+   sizes (133%, 166%, 83%...) that compound on the cell's own font-size and
+   render at an inflated, inconsistent size no matter what the toolbar's
+   Hebrew/Translation size controls say (this is also stripped from
+   already-saved content on every load — see _stripBgFromHTML — so a paste
+   kept here would only look right until the next reload anyway). */
+const _PASTE_SAFE_STYLES = new Set(['color','font-weight','font-style','text-decoration','vertical-align']);
 
 function _sanitizePasteHTML(rawHTML){
   // Resolve colors the way the browser actually would. Logos (and many
