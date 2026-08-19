@@ -3,7 +3,7 @@
 ════════════════════════════════════════ */
 let SESS='', LANG='', IS_RTL=false, IS_SINGLE=false;
 // Per-column Phrasing font sizes (px). Hebrew sessions default the
-// original-text column larger (18) since Hebrew glyphs read smaller
+// original-text column larger (24) since Hebrew glyphs read smaller
 // than Latin translation text at the same nominal size; translation
 // stays at the normal default. Not persisted per-project — resets to
 // the session's default every time a session/project is (re)loaded,
@@ -560,7 +560,7 @@ function cModalCancel(){
    Called from every place SESS is established: choosing a language on
    Screen 1, and every project/JSON load path. */
 function _applySessionFontDefaults(){
-  CEDIT_O_SIZE = DEFAULT_O_SIZE = (SESS==='hebrew') ? 18 : 14;
+  CEDIT_O_SIZE = DEFAULT_O_SIZE = (SESS==='hebrew') ? 24 : 14;
   CEDIT_T_SIZE = DEFAULT_T_SIZE = 14;
   document.documentElement.style.setProperty('--cedit-o-size', CEDIT_O_SIZE+'px');
   document.documentElement.style.setProperty('--cedit-t-size', CEDIT_T_SIZE+'px');

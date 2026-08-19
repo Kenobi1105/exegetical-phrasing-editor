@@ -4995,3 +4995,12 @@ body.hide-sections #section-strips{display:none}
 #cmargin::-webkit-scrollbar-track{background:transparent}
 #cmargin::-webkit-scrollbar-thumb{background:rgba(var(--ink-rgb),.18);border-radius:3px}
 #cmargin::-webkit-scrollbar-thumb:hover{background:rgba(var(--ink-rgb),.32)}
+
+/* ── Critical-apparatus reference letter superscripts (e.g. "a", "b") in
+   Phrasing View cells — same treatment as .dblock-text sup in Diagram View
+   (see that rule's comment for the full rationale: plain <sup> letters
+   like BHS's paired a…a textual-note markers come through paste as bare
+   <sup> tags, not .crit-mark, which is reserved for symbolic signs). This
+   was previously only styled in Diagram View; Phrasing View's own
+   original/translation cells never got the same blue. ── */
+.cedit sup{color:var(--crit,#1E6AFE)}
