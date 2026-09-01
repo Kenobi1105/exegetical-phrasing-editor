@@ -5918,8 +5918,8 @@ async function _capturePhrasingPDFBlob(ref){
 
   // Footnote text is pulled from user comments, which routinely quote the
   // Hebrew/Greek source text — needs a Unicode-capable font (see
-  // _embedGentiumPlusFont), not jsPDF's Latin-only built-ins.
-  const FN_FONT=await _embedGentiumPlusFont(doc);
+  // _embedPdfUnicodeFont), not jsPDF's Latin-only built-ins.
+  const FN_FONT=await _embedPdfUnicodeFont(doc);
 
   function drawPageHeader(y){
     doc.setFont('helvetica','bold');doc.setFontSize(15);
@@ -5975,7 +5975,12 @@ async function _capturePhrasingPDFBlob(ref){
       const cpl=Math.floor((usableW-labelW)/5.5);const words=fn.text.split(' ');const lines=[];let line='';
       words.forEach(w=>{const test=line?line+' '+w:w;if(test.length>cpl&&line){lines.push(line);line=w;}else line=test;});
       if(line)lines.push(line);
-      lines.forEach((l,i)=>{doc.text(l,MAR+labelW,y+FN_LINE_H+i*FN_LINE_H-3);});
+      // isInputVisual:false — this text is stored in normal reading
+      // (logical) order, same as it displays on-screen; jsPDF's default
+      // (isInputVisual:true) assumes the opposite, which corrupts any line
+      // containing Hebrew by reversing the ENTIRE line — including the
+      // English portions — rather than just reordering the Hebrew run.
+      lines.forEach((l,i)=>{doc.text(l,MAR+labelW,y+FN_LINE_H+i*FN_LINE_H-3,{isInputVisual:false});});
       y+=Math.max(1,lines.length)*FN_LINE_H+FN_GAP;
     });
   }
@@ -6159,38 +6164,61 @@ async function _loadJSZip(){
 // Comment/footnote text in PDF exports can contain Hebrew or Greek (users
 // routinely quote the source text in a comment) — jsPDF's built-in fonts
 // (helvetica/times/courier) only cover Latin (WinAnsi encoding), so those
-// glyphs render as tofu/garbled boxes with no embedded Unicode font. This
-// lazily fetches and base64-encodes the same "Gentium Plus" font already
-// used on-screen for all Hebrew/Greek text (--serif in app.css, a font
-// specifically designed for Biblical-scholarship Unicode coverage), so it
-// can be embedded into a jsPDF doc via addFileToVFS/addFont. Cached after
-// the first call so repeat exports (e.g. "Export All") don't re-fetch it.
-let _GENTIUM_PLUS_B64=null;
-async function _loadGentiumPlusFontB64(){
-  if(_GENTIUM_PLUS_B64) return _GENTIUM_PLUS_B64;
-  const buf=await fetch('./fonts/GentiumPlus-Regular.ttf').then(r=>r.arrayBuffer());
+// glyphs render as tofu/garbled boxes with no embedded Unicode font.
+//
+// Two separate fonts are used, picked by session language, rather than one
+// font for everything:
+//   - Greek/other sessions: "Gentium Plus" (--serif in app.css, the same
+//     font already used on-screen — verified to render Greek correctly
+//     through jsPDF's embedded-font pipeline).
+//   - Hebrew sessions: "Noto Serif Hebrew". Gentium Plus's own Hebrew
+//     glyphs are present in the font and render correctly in-browser, but
+//     jsPDF 2.5.1's (and even 4.2.1's) TrueType cmap parser fails to find
+//     them at all when the font is embedded via addFont — Hebrew
+//     characters are SILENTLY DROPPED (jsPDF's text2FontObject: an
+//     unresolved cmap lookup falls through to "append nothing" rather than
+//     erroring), while the exact same font's Greek/Latin glyphs resolve
+//     fine. Confirmed by rendering test PDFs through pdf.js: Gentium Plus
+//     drops all Hebrew (plain letters, not just combining marks) under
+//     both jsPDF versions; Noto Serif Hebrew's cmap resolves correctly for
+//     the identical text. This is a jsPDF/font-specific bug, not a general
+//     Hebrew-in-PDF limitation.
+// Both are lazily fetched and base64-encoded so they can be embedded into
+// a jsPDF doc via addFileToVFS/addFont, and cached after first use so
+// repeat exports (e.g. "Export All") don't re-fetch them.
+const _PDF_UNICODE_FONTS={
+  greek:  {file:'GentiumPlus-Regular.ttf',    name:'GentiumPlus',   b64:null},
+  hebrew: {file:'NotoSerifHebrew-Regular.ttf', name:'NotoSerifHeb', b64:null}
+};
+async function _loadPdfUnicodeFontB64(which){
+  const entry=_PDF_UNICODE_FONTS[which];
+  if(entry.b64) return entry.b64;
+  const buf=await fetch('./fonts/'+entry.file).then(r=>r.arrayBuffer());
   const bytes=new Uint8Array(buf);
   let binary='';
   const chunkSize=8192; // avoid String.fromCharCode.apply stack limits on large files
   for(let i=0;i<bytes.length;i+=chunkSize){
     binary+=String.fromCharCode.apply(null, bytes.subarray(i,i+chunkSize));
   }
-  _GENTIUM_PLUS_B64=btoa(binary);
-  return _GENTIUM_PLUS_B64;
+  entry.b64=btoa(binary);
+  return entry.b64;
 }
-// Embeds Gentium Plus into a jsPDF doc and returns the font name to use for
-// any text that might contain Hebrew/Greek — falls back to 'helvetica'
-// (Latin-only, so such text would still show garbled glyphs) only if the
-// font file can't be loaded (e.g. offline on first-ever visit, before the
+// Embeds the Unicode font appropriate for the CURRENT session's language
+// into a jsPDF doc and returns the font name to use for any text that
+// might contain Hebrew/Greek — falls back to 'helvetica' (Latin-only, so
+// such text would still show garbled/missing glyphs) only if the font
+// file can't be loaded (e.g. offline on first-ever visit, before the
 // service worker has cached it).
-async function _embedGentiumPlusFont(doc){
+async function _embedPdfUnicodeFont(doc){
+  const which=SESS==='hebrew'?'hebrew':'greek';
+  const entry=_PDF_UNICODE_FONTS[which];
   try{
-    const b64=await _loadGentiumPlusFontB64();
-    doc.addFileToVFS('GentiumPlus-Regular.ttf', b64);
-    doc.addFont('GentiumPlus-Regular.ttf','GentiumPlus','normal');
-    return 'GentiumPlus';
+    const b64=await _loadPdfUnicodeFontB64(which);
+    doc.addFileToVFS(entry.file, b64);
+    doc.addFont(entry.file, entry.name, 'normal');
+    return entry.name;
   }catch(e){
-    console.warn('Could not embed Gentium Plus font for PDF export — Hebrew/Greek text (e.g. in comments/footnotes) may render as garbled characters:',e);
+    console.warn('Could not embed '+entry.name+' font for PDF export — Hebrew/Greek text (e.g. in comments/footnotes) may render as garbled or missing characters:',e);
     return 'helvetica';
   }
 }
@@ -6791,8 +6819,8 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
 
   // Footnote text is pulled from user comments, which routinely quote the
   // Hebrew/Greek source text — needs a Unicode-capable font (see
-  // _embedGentiumPlusFont), not jsPDF's Latin-only built-ins.
-  const FN_FONT=await _embedGentiumPlusFont(doc);
+  // _embedPdfUnicodeFont), not jsPDF's Latin-only built-ins.
+  const FN_FONT=await _embedPdfUnicodeFont(doc);
 
   // Font-accurate word-wrap (jsPDF's splitTextToSize measures with whatever
   // font/size is currently set on doc) instead of a fixed chars-per-line
@@ -6830,7 +6858,11 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
       if(fn.lineId) doc.text(fn.lineId,MAR,fy+FN_LINE_H_S-3);
       doc.setTextColor(31,30,30);
       const lines=fnTextLines(fn);
-      lines.forEach((l,i)=>doc.text(l,MAR+labelW,fy+FN_LINE_H_S+i*FN_LINE_H_S-3));
+      // isInputVisual:false — see the identical note in _capturePhrasingPDFBlob's
+      // drawFns: this text is stored in normal reading (logical) order, and
+      // jsPDF's default assumption otherwise corrupts any line containing
+      // Hebrew by reversing the whole line, English portions included.
+      lines.forEach((l,i)=>doc.text(l,MAR+labelW,fy+FN_LINE_H_S+i*FN_LINE_H_S-3,{isInputVisual:false}));
       fy+=Math.max(1,lines.length)*FN_LINE_H_S+FN_GAP;
     });
   }
@@ -7255,8 +7287,8 @@ function exportPDF(){
 
     // Footnote text is pulled from user comments, which routinely quote the
     // Hebrew/Greek source text — needs a Unicode-capable font (see
-    // _embedGentiumPlusFont), not jsPDF's Latin-only built-ins.
-    const FN_FONT=await _embedGentiumPlusFont(doc);
+    // _embedPdfUnicodeFont), not jsPDF's Latin-only built-ins.
+    const FN_FONT=await _embedPdfUnicodeFont(doc);
 
     function stripHtml(html){
       return html
@@ -7297,7 +7329,12 @@ function exportPDF(){
           else line=test;
         });
         if(line)drawnLines.push(line);
-        drawnLines.forEach((l,i)=>{doc.text(l,MAR+labelW,y+FN_LINE_H+i*FN_LINE_H-3);});
+        // isInputVisual:false — see the identical note in
+        // _capturePhrasingPDFBlob's drawFns: this text is stored in normal
+        // reading (logical) order, and jsPDF's default assumption
+        // otherwise corrupts any line containing Hebrew by reversing the
+        // whole line, English portions included.
+        drawnLines.forEach((l,i)=>{doc.text(l,MAR+labelW,y+FN_LINE_H+i*FN_LINE_H-3,{isInputVisual:false});});
         y+=Math.max(1,drawnLines.length)*FN_LINE_H+FN_GAP;
       });
     }
