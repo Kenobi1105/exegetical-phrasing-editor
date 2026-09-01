@@ -5941,12 +5941,12 @@ async function _capturePhrasingPDFBlob(ref){
     return y+HDR_H;
   }
 
-  const PDF_SCALE=3;
+  const PDF_SCALE=2;
   async function cellToImg(el){
     if(!el||!el.innerText.trim()) return null;
     const naturalPx=el.offsetWidth||400;
     try{
-      const canvas=await html2canvas(el,{scale:PDF_SCALE,useCORS:true,allowTaint:true,backgroundColor:null,logging:false,width:naturalPx,windowWidth:window.innerWidth});
+      const canvas=await html2canvas(el,{scale:PDF_SCALE,useCORS:true,allowTaint:true,backgroundColor:'#ffffff',logging:false,width:naturalPx,windowWidth:window.innerWidth});
       const naturalWidthPt=(canvas.width/PDF_SCALE)*PT_PX;
       return{canvas,scale:PDF_SCALE,naturalWidthPt};
     }catch(e){return null;}
@@ -6035,7 +6035,7 @@ async function _capturePhrasingPDFBlob(ref){
     if(lineid)doc.text(lineid,MAR+vWpt+lWpt/2,curY+rowH/2+3,{align:'center'});
     let cx=MAR+vWpt+lWpt;
     canvases.forEach((obj,i)=>{
-      if(obj){const{canvas,scale:ps}=obj;const imgW2=displayWidths[i];const natPt=(canvas.width/ps)*PT_PX;const scaleFactor=imgW2/natPt;const imgH2=(canvas.height/ps)*PT_PX*scaleFactor;doc.addImage(canvas.toDataURL('image/png'),'PNG',cx+3,curY+ROW_PAD,imgW2-3,imgH2);}
+      if(obj){const{canvas,scale:ps}=obj;const imgW2=displayWidths[i];const natPt=(canvas.width/ps)*PT_PX;const scaleFactor=imgW2/natPt;const imgH2=(canvas.height/ps)*PT_PX*scaleFactor;doc.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',cx+3,curY+ROW_PAD,imgW2-3,imgH2);}
       cx+=displayWidths[i];
     });
     curY+=rowH;rowIdx++;
@@ -6939,7 +6939,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
 
     if(pageIdx>0) doc.addPage();
     const pageContentY=drawDiagHeader();
-    doc.addImage(sliceC.toDataURL('image/png'),'PNG',MAR,pageContentY,imgW,sliceImgH);
+    doc.addImage(sliceC.toDataURL('image/jpeg',0.92),'JPEG',MAR,pageContentY,imgW,sliceImgH);
     if(thisFns.length) drawFnsDiag(thisFns);
     const thisFnZone=fnZonePt(thisFns);
     lastContentBottom=thisFnZone?Math.max(pageContentY+sliceImgH,pH-MAR-thisFnZone):pageContentY+sliceImgH;
@@ -7282,7 +7282,7 @@ function exportPDF(){
     return y+HDR_H;
   }
 
-  const PDF_SCALE=3;
+  const PDF_SCALE=2;
 
   // Capture a cedit element at its NATURAL screen width (no reflow).
   // Returns {canvas, scale, naturalWidthPt} — caller decides how wide to place it.
@@ -7299,7 +7299,7 @@ function exportPDF(){
         scale:           PDF_SCALE,
         useCORS:         true,
         allowTaint:      true,
-        backgroundColor: null,
+        backgroundColor: '#ffffff',
         logging:         false,
         width:           naturalPx,
         windowWidth:     window.innerWidth
@@ -7466,7 +7466,7 @@ function exportPDF(){
           const natPt=(canvas.width/ps)*PT_PX;
           const scaleFactor=imgW/natPt;
           const imgH=(canvas.height/ps)*PT_PX*scaleFactor;
-          doc.addImage(canvas.toDataURL('image/png'),'PNG',cx+3,curY+ROW_PAD,imgW-3,imgH);
+          doc.addImage(canvas.toDataURL('image/jpeg',0.92),'JPEG',cx+3,curY+ROW_PAD,imgW-3,imgH);
         }
         cx+=displayWidths[i];
       });
