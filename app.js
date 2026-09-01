@@ -6788,25 +6788,34 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
       .replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
   }
 
-  const rowFnMap=[];
+  // rowMap covers EVERY diagram row — block-snap must protect uncommented
+  // rows too, not just commented ones. fn is null when the row has no
+  // (non-empty) comment; footnote content-lookups below filter on r.fn,
+  // while block-snap runs against the whole array.
+  const rowMap=[];
   const cR=canvas.getBoundingClientRect();
   document.querySelectorAll('#dcanvas .drow').forEach(drow=>{
     const rid=drow.dataset.rid;
     const pRow=document.querySelector(`.xrow[data-rid="${rid}"]`);
     const cid=pRow?pRow.dataset.cid:null;
-    if(!cid) return;
-    const cmtEl=document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`);
-    if(!cmtEl||!cmtEl.innerText.trim()) return;
-    const txt=stripHtmlFn2(cmtEl.innerHTML);
-    if(!txt) return;
-    const lid=pRow?pRow.querySelector('.lid')?.textContent||'':'';
+    let fn=null;
+    if(cid){
+      const cmtEl=document.querySelector(`.ccard[data-cid="${cid}"] .cedit-c`);
+      if(cmtEl&&cmtEl.innerText.trim()){
+        const txt=stripHtmlFn2(cmtEl.innerHTML);
+        if(txt){
+          const lid=pRow?pRow.querySelector('.lid')?.textContent||'':'';
+          fn={lineId:lid&&lid!=='—'?lid:'',text:txt};
+        }
+      }
+    }
     const dR=drow.getBoundingClientRect();
     const logTop=(dR.top-cR.top)/zoomRatio;
     const logBot=(dR.bottom-cR.top)/zoomRatio;
-    rowFnMap.push({
+    rowMap.push({
       rowTopPx:Math.round(logTop*captureScale),
       rowBotPx:Math.round(logBot*captureScale),
-      fn:{lineId:lid&&lid!=='—'?lid:'',text:txt}
+      fn
     });
   });
 
@@ -6877,7 +6886,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
     }
     const baseUsableH=usableH;
     const preEndY=srcY+Math.round((baseUsableH/imgH)*capturedCanvas.height);
-    const preFns=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<preEndY).map(r=>r.fn);
+    const preFns=rowMap.filter(r=>r.fn&&r.rowTopPx>=srcY&&r.rowTopPx<preEndY).map(r=>r.fn);
     const fnZone=preFns.length?(fnZonePt(preFns)+FN_SPACE_ABOVE):0;
     const adjustedUsableH=Math.max(baseUsableH*0.4,baseUsableH-fnZone);
 
@@ -6886,16 +6895,21 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
       Math.max(1,Math.round((adjustedUsableH/imgH)*capturedCanvas.height))
     );
 
-    // Block-snap: don't cut mid-row
+    // Block-snap: don't cut mid-row (checked against EVERY row via rowMap,
+    // not just commented ones). Only let the cut stand when the straddling
+    // row starts at the very top of this slice (srcY) — nothing precedes it
+    // on this page, so it's simply taller than one page's usable height and
+    // must be cut regardless. Otherwise, snapping back to its top is always
+    // safe and always makes forward progress, since slicePxH is then
+    // guaranteed > 0.
     const snapEndY=srcY+slicePxH;
-    const rowsOnPage=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowBotPx<=snapEndY);
-    const rowsStraddling=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<snapEndY&&r.rowBotPx>snapEndY);
-    if(rowsStraddling.length&&rowsOnPage.length>0){
+    const rowsStraddling=rowMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<snapEndY&&r.rowBotPx>snapEndY);
+    if(rowsStraddling.length&&rowsStraddling[0].rowTopPx>srcY){
       slicePxH=Math.max(1,rowsStraddling[0].rowTopPx-srcY);
     }
 
     const pageEndY=srcY+slicePxH;
-    const thisFns=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<pageEndY).map(r=>r.fn);
+    const thisFns=rowMap.filter(r=>r.fn&&r.rowTopPx>=srcY&&r.rowTopPx<pageEndY).map(r=>r.fn);
 
     const sliceC=document.createElement('canvas');
     sliceC.width=capturedCanvas.width;
