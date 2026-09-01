@@ -6655,9 +6655,30 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
 
   const clone=canvas.cloneNode(true);
   clone.style.zoom='1';
+  clone.style.transform='';
   clone.style.position='static';
-  clone.style.width=canvas.scrollWidth+'px';
+
+  // Measure the LIVE canvas's natural (unzoomed) width so the clone — which
+  // renders at zoom:1 above — isn't pinned to whatever width the live,
+  // possibly-zoomed canvas happens to occupy on screen. A position:static
+  // block can't shrink-to-fit its own content, so an explicit pixel width is
+  // still required; it just has to be the TRUE natural width. Desktop zoom
+  // uses CSS `zoom` (affects scrollWidth); touch zoom uses `transform:scale`
+  // (does NOT affect scrollWidth — see _applyDiagramZoomTransform). Clearing
+  // both and restoring synchronously measures correctly either way.
+  const liveZoom=canvas.style.zoom, liveTransform=canvas.style.transform;
+  canvas.style.zoom='1'; canvas.style.transform='';
+  const naturalWidth=canvas.scrollWidth;
+  canvas.style.zoom=liveZoom; canvas.style.transform=liveTransform;
+  clone.style.width=naturalWidth+'px';
+
   host.appendChild(clone);
+
+  // Cancel leftover zoom counter-scaling that cloneNode copied onto the
+  // connector SVGs (see setDiagramZoom / _applyDiagramZoomTransform) — once
+  // the clone itself renders at zoom:1, these would otherwise misalign the
+  // connector lines relative to the diagram blocks.
+  clone.querySelectorAll('#dconns,#dconns-back').forEach(el=>{ el.style.zoom='1'; el.style.transform=''; });
 
   clone.querySelectorAll('.dcell.dv').forEach(el=>el.style.color='#A89F90');
   clone.querySelectorAll('.dcell.dl').forEach(el=>el.style.color='#C8A84B');
@@ -6737,8 +6758,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   const HEADER_H=34;
   const imgW=usableW;
   const imgH=(capturedCanvas.height/capturedCanvas.width)*imgW;
-  const usableH1=pH-MAR*2-HEADER_H;
-  const usableHN=pH-MAR*2;
+  const usableH=pH-MAR*2-HEADER_H;
 
   function drawDiagHeader(){
     doc.setFont('helvetica','bold'); doc.setFontSize(13);
@@ -6775,7 +6795,11 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   let srcY=0, pageIdx=0;
   let lastContentBottom=0; // tracks where content ends on the final page, for the citation block below
   while(srcY<capturedCanvas.height){
-    const baseUsableH=pageIdx===0?usableH1:usableHN;
+    if(pageIdx>=300){
+      console.warn('_runDiagramPDFExport: aborting after '+pageIdx+' pages — likely a runaway export (check DIAGRAM_ZOOM or diagram content).');
+      return null;
+    }
+    const baseUsableH=usableH;
     const preEndY=srcY+Math.round((baseUsableH/imgH)*capturedCanvas.height);
     const preFns=rowFnMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<preEndY).map(r=>r.fn);
     const fnZone=preFns.length?(fnZonePt(preFns)+FN_SPACE_ABOVE):0;
