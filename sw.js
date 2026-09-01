@@ -2,7 +2,7 @@
    SERVICE WORKER — Exegetical Phrasing Editor
    Auto cache-busting: bump APP_VERSION on each deploy
 ════════════════════════════════════════ */
-const APP_VERSION = '202608141830';
+const APP_VERSION = '202609011500';
 const CACHE_NAME  = 'exeg-app-v' + APP_VERSION;
 
 /* sw.js must never be listed in PRECACHE — the browser always fetches sw.js
@@ -27,6 +27,7 @@ const PRECACHE = [
   './data/vulgate.json',
   './data/cuv_s.json',
   './data/cuv_t.json',
+  './fonts/GentiumPlus-Regular.ttf',
 ];
 
 /* All files served cache-first. The browser always fetches sw.js directly from

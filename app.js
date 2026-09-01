@@ -5916,6 +5916,11 @@ async function _capturePhrasingPDFBlob(ref){
   const LANG_=LANG||'';
   const HDR_H=18, ROW_PAD=4, MIN_H=22;
 
+  // Footnote text is pulled from user comments, which routinely quote the
+  // Hebrew/Greek source text — needs a Unicode-capable font (see
+  // _embedGentiumPlusFont), not jsPDF's Latin-only built-ins.
+  const FN_FONT=await _embedGentiumPlusFont(doc);
+
   function drawPageHeader(y){
     doc.setFont('helvetica','bold');doc.setFontSize(15);
     doc.setTextColor(31,30,30);doc.text(ref,MAR,y);
@@ -5966,7 +5971,7 @@ async function _capturePhrasingPDFBlob(ref){
     fns.forEach(fn=>{
       const labelW=fn.lineId.length*4.5+4;
       doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(73,53,72);doc.text(fn.lineId,MAR,y+FN_LINE_H-3);
-      doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(31,30,30);
+      doc.setFontSize(10);doc.setFont(FN_FONT,'normal');doc.setTextColor(31,30,30);
       const cpl=Math.floor((usableW-labelW)/5.5);const words=fn.text.split(' ');const lines=[];let line='';
       words.forEach(w=>{const test=line?line+' '+w:w;if(test.length>cpl&&line){lines.push(line);line=w;}else line=test;});
       if(line)lines.push(line);
@@ -6149,6 +6154,45 @@ async function _loadJSZip(){
     s.onload=res; s.onerror=rej;
     document.head.appendChild(s);
   });
+}
+
+// Comment/footnote text in PDF exports can contain Hebrew or Greek (users
+// routinely quote the source text in a comment) — jsPDF's built-in fonts
+// (helvetica/times/courier) only cover Latin (WinAnsi encoding), so those
+// glyphs render as tofu/garbled boxes with no embedded Unicode font. This
+// lazily fetches and base64-encodes the same "Gentium Plus" font already
+// used on-screen for all Hebrew/Greek text (--serif in app.css, a font
+// specifically designed for Biblical-scholarship Unicode coverage), so it
+// can be embedded into a jsPDF doc via addFileToVFS/addFont. Cached after
+// the first call so repeat exports (e.g. "Export All") don't re-fetch it.
+let _GENTIUM_PLUS_B64=null;
+async function _loadGentiumPlusFontB64(){
+  if(_GENTIUM_PLUS_B64) return _GENTIUM_PLUS_B64;
+  const buf=await fetch('./fonts/GentiumPlus-Regular.ttf').then(r=>r.arrayBuffer());
+  const bytes=new Uint8Array(buf);
+  let binary='';
+  const chunkSize=8192; // avoid String.fromCharCode.apply stack limits on large files
+  for(let i=0;i<bytes.length;i+=chunkSize){
+    binary+=String.fromCharCode.apply(null, bytes.subarray(i,i+chunkSize));
+  }
+  _GENTIUM_PLUS_B64=btoa(binary);
+  return _GENTIUM_PLUS_B64;
+}
+// Embeds Gentium Plus into a jsPDF doc and returns the font name to use for
+// any text that might contain Hebrew/Greek — falls back to 'helvetica'
+// (Latin-only, so such text would still show garbled glyphs) only if the
+// font file can't be loaded (e.g. offline on first-ever visit, before the
+// service worker has cached it).
+async function _embedGentiumPlusFont(doc){
+  try{
+    const b64=await _loadGentiumPlusFontB64();
+    doc.addFileToVFS('GentiumPlus-Regular.ttf', b64);
+    doc.addFont('GentiumPlus-Regular.ttf','GentiumPlus','normal');
+    return 'GentiumPlus';
+  }catch(e){
+    console.warn('Could not embed Gentium Plus font for PDF export — Hebrew/Greek text (e.g. in comments/footnotes) may render as garbled characters:',e);
+    return 'helvetica';
+  }
 }
 
 function _downloadBlob(blob, filename){
@@ -6738,27 +6782,30 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
     });
   });
 
-  function fnTextLines(fn){
-    const cpl=Math.floor(usableW/5.5);
-    const words=fn.text.split(' ');
-    const lines=[];let line='';
-    words.forEach(w=>{
-      const test=line?line+' '+w:w;
-      if(test.length>cpl&&line){lines.push(line);line=w;}
-      else line=test;
-    });
-    if(line) lines.push(line);
-    return lines;
-  }
-  function fnHeightPt(fn){ return Math.max(1,fnTextLines(fn).length)*FN_LINE_H_S+FN_GAP; }
-  function fnZonePt(fns){ return fns.length?(FN_SEP_H+fns.reduce((s,fn)=>s+fnHeightPt(fn),0)):0; }
-
   // ── Build jsPDF doc ──────────────────────────────────────────────
   const doc=new jsPDF({orientation,unit:'pt',format});
   const HEADER_H=34;
   const imgW=usableW;
   const imgH=(capturedCanvas.height/capturedCanvas.width)*imgW;
   const usableH=pH-MAR*2-HEADER_H;
+
+  // Footnote text is pulled from user comments, which routinely quote the
+  // Hebrew/Greek source text — needs a Unicode-capable font (see
+  // _embedGentiumPlusFont), not jsPDF's Latin-only built-ins.
+  const FN_FONT=await _embedGentiumPlusFont(doc);
+
+  // Font-accurate word-wrap (jsPDF's splitTextToSize measures with whatever
+  // font/size is currently set on doc) instead of a fixed chars-per-line
+  // guess — needed now that footnote text can be Gentium Plus at a
+  // different average glyph width than the char-count heuristic was tuned
+  // for, and correct for the mixed Latin/Hebrew/Greek text real comments
+  // contain either way.
+  function fnTextLines(fn){
+    doc.setFont(FN_FONT,'normal'); doc.setFontSize(FN_TXT_PT);
+    return doc.splitTextToSize(fn.text, usableW);
+  }
+  function fnHeightPt(fn){ return Math.max(1,fnTextLines(fn).length)*FN_LINE_H_S+FN_GAP; }
+  function fnZonePt(fns){ return fns.length?(FN_SEP_H+fns.reduce((s,fn)=>s+fnHeightPt(fn),0)):0; }
 
   function drawDiagHeader(){
     doc.setFont('helvetica','bold'); doc.setFontSize(13);
@@ -6781,11 +6828,8 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
       const labelW=fn.lineId?(fn.lineId.length*3.5+3):0;
       doc.setFontSize(FN_LBL_PT); doc.setFont('helvetica','bold'); doc.setTextColor(73,53,72);
       if(fn.lineId) doc.text(fn.lineId,MAR,fy+FN_LINE_H_S-3);
-      doc.setFontSize(FN_TXT_PT); doc.setFont('helvetica','normal'); doc.setTextColor(31,30,30);
-      const cpl=Math.floor(usableW/4.8);
-      const words=fn.text.split(' '); const lines=[]; let line='';
-      words.forEach(w=>{const test=line?line+' '+w:w;if(test.length>cpl&&line){lines.push(line);line=w;}else line=test;});
-      if(line) lines.push(line);
+      doc.setTextColor(31,30,30);
+      const lines=fnTextLines(fn);
       lines.forEach((l,i)=>doc.text(l,MAR+labelW,fy+FN_LINE_H_S+i*FN_LINE_H_S-3));
       fy+=Math.max(1,lines.length)*FN_LINE_H_S+FN_GAP;
     });
@@ -7209,6 +7253,11 @@ function exportPDF(){
 
     showProgress(0,'Exporting PDF…');
 
+    // Footnote text is pulled from user comments, which routinely quote the
+    // Hebrew/Greek source text — needs a Unicode-capable font (see
+    // _embedGentiumPlusFont), not jsPDF's Latin-only built-ins.
+    const FN_FONT=await _embedGentiumPlusFont(doc);
+
     function stripHtml(html){
       return html
         .replace(/<br\s*\/?>/gi,' ').replace(/<\/p>/gi,' ').replace(/<\/div>/gi,' ')
@@ -7238,7 +7287,7 @@ function exportPDF(){
         const labelW=fn.lineId.length*4.5+4; // wider at 9pt
         doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(73,53,72);
         doc.text(fn.lineId,MAR,y+FN_LINE_H-3);
-        doc.setFontSize(10);doc.setFont('helvetica','normal');doc.setTextColor(31,30,30);
+        doc.setFontSize(10);doc.setFont(FN_FONT,'normal');doc.setTextColor(31,30,30);
         const charsPerLine=Math.floor((usableW-labelW)/5.5);
         const words=fn.text.split(' ');
         const drawnLines=[];let line='';
