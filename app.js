@@ -6812,9 +6812,26 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
     const dR=drow.getBoundingClientRect();
     const logTop=(dR.top-cR.top)/zoomRatio;
     const logBot=(dR.bottom-cR.top)/zoomRatio;
+
+    // A section-start divider (.dsec-divider.dsec-start, from a type:'section'
+    // annotation) is rendered as this row's immediately-preceding sibling
+    // when this row begins a labeled section. It has no rowFnMap entry of
+    // its own, so without this it's invisible to block-snap and can end up
+    // stranded alone at the bottom of a page while the section's own first
+    // row starts the next one. snapTopPx extends the row's snap boundary
+    // up to the divider's own top when present, so the two are always kept
+    // together by the exact same "push the whole span to the next page"
+    // logic already used for rows — rowTopPx (the row's own true top)
+    // stays untouched for footnote-page-assignment purposes below.
+    const prevSib=drow.previousElementSibling;
+    const divider=(prevSib&&prevSib.classList.contains('dsec-divider')&&prevSib.classList.contains('dsec-start'))?prevSib:null;
+    const sR=divider?divider.getBoundingClientRect():dR;
+    const snapLogTop=(sR.top-cR.top)/zoomRatio;
+
     rowMap.push({
       rowTopPx:Math.round(logTop*captureScale),
       rowBotPx:Math.round(logBot*captureScale),
+      snapTopPx:Math.round(snapLogTop*captureScale),
       fn
     });
   });
@@ -6896,16 +6913,19 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
     );
 
     // Block-snap: don't cut mid-row (checked against EVERY row via rowMap,
-    // not just commented ones). Only let the cut stand when the straddling
-    // row starts at the very top of this slice (srcY) — nothing precedes it
-    // on this page, so it's simply taller than one page's usable height and
-    // must be cut regardless. Otherwise, snapping back to its top is always
-    // safe and always makes forward progress, since slicePxH is then
-    // guaranteed > 0.
+    // not just commented ones), and don't strand a section-start divider
+    // alone at the bottom of a page either — snapTopPx is the divider's own
+    // top when one immediately precedes this row, else the row's own top
+    // (see rowMap construction above). Only let the cut stand when the
+    // straddling span starts at the very top of this slice (srcY) —
+    // nothing precedes it on this page, so it's simply taller than one
+    // page's usable height and must be cut regardless. Otherwise, snapping
+    // back to its top is always safe and always makes forward progress,
+    // since slicePxH is then guaranteed > 0.
     const snapEndY=srcY+slicePxH;
-    const rowsStraddling=rowMap.filter(r=>r.rowTopPx>=srcY&&r.rowTopPx<snapEndY&&r.rowBotPx>snapEndY);
-    if(rowsStraddling.length&&rowsStraddling[0].rowTopPx>srcY){
-      slicePxH=Math.max(1,rowsStraddling[0].rowTopPx-srcY);
+    const rowsStraddling=rowMap.filter(r=>r.snapTopPx>=srcY&&r.snapTopPx<snapEndY&&r.rowBotPx>snapEndY);
+    if(rowsStraddling.length&&rowsStraddling[0].snapTopPx>srcY){
+      slicePxH=Math.max(1,rowsStraddling[0].snapTopPx-srcY);
     }
 
     const pageEndY=srcY+slicePxH;
