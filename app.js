@@ -7640,30 +7640,18 @@ function _brkRenderDiagram(){
   const rows = Array.from(document.querySelectorAll('.xrow'));
   const rids = rows.map(r=>r.dataset.rid);
 
-  // Sort brackets by lane so we can compute cumulative X correctly
-  const sorted = [...BRACKETS].sort((a,b)=>a.lane-b.lane);
-
-  // laneXMap: lane number → laneX (the X of the bracket's vertical line)
-  // Each lane's X = max(previous laneX + previous label width + gap, baseline)
-  // We compute this cumulatively, lane by lane.
-  const laneXMap = {};
-  let prevLaneX  = null;
-  let prevLabelW = 0;
-
-  sorted.forEach(brk=>{
+  // Rightmost edge among a bracket's spanned rows — checks BOTH the
+  // Greek/Hebrew block AND its translation (a separate sibling element,
+  // not nested inside the block, with its own independent width), since a
+  // translation longer than the original-text line was previously
+  // invisible to this calculation and could overlap the bracket.
+  function brkMaxRight(brk){
     const si = rids.indexOf(String(brk.startRid));
     const ei = rids.indexOf(String(brk.endRid));
-    if(si<0||ei<0) return;
+    if(si<0||ei<0) return null;
     const lo = Math.min(si,ei), hi = Math.max(si,ei);
-    const spannedRids = rids.slice(lo, hi+1);
-
-    // Rightmost edge among spanned rows — checks BOTH the Greek/Hebrew
-    // block AND its translation (a separate sibling element, not nested
-    // inside the block, with its own independent width), since a
-    // translation longer than the original-text line was previously
-    // invisible to this calculation and could overlap the bracket.
     let maxRight = 0;
-    spannedRids.forEach(rid=>{
+    rids.slice(lo, hi+1).forEach(rid=>{
       const block = canvas.querySelector(`.dblock[data-rid="${rid}"]`);
       if(block){
         const r = block.getBoundingClientRect();
@@ -7678,27 +7666,44 @@ function _brkRenderDiagram(){
         if(transRight > maxRight) maxRight = transRight;
       }
     });
+    return maxRight;
+  }
 
-    // Baseline X for this bracket if it were lane 1
+  // Per-bracket X (NOT per-lane): each bracket's own natural baseX comes
+  // from its OWN blocks. Brackets sharing a lane never overlap in row
+  // range (that's what _brkReassignAllLanes guarantees), so they must
+  // never push each other — only a genuine step to a NEW, higher lane
+  // (nested/overlapping brackets needing to clear an inner lane's label)
+  // should shift X rightward. The previous version keyed a single shared
+  // X per lane number and chained the "clear the previous label" push
+  // across every bracket regardless of lane, so adding any new same-lane
+  // bracket kept shoving every earlier bracket's shared X further right.
+  const bracketX = new Map();
+  const sorted = [...BRACKETS].sort((a,b)=>a.lane-b.lane);
+  let prevLane = null, prevLaneMaxX = null, prevLaneMaxLabelW = 0;
+  let curLaneMaxX = null, curLaneMaxLabelW = 0;
+
+  sorted.forEach(brk=>{
+    const maxRight = brkMaxRight(brk);
+    if(maxRight===null) return;
     const baseX = maxRight + BRK_PIP_OFFSET + BRK_LANE_W * 0.5;
 
-    // Step from previous lane: must clear previous label + gap
-    let laneX;
-    if(prevLaneX === null){
-      laneX = baseX;
-    } else {
-      const minStep = prevLabelW > 0
-        ? prevLabelW + BRK_LABEL_GAP + 20   // label width + gap + padding
-        : BRK_LANE_W;                         // no label: use fixed minimum
-      laneX = Math.max(baseX, prevLaneX + minStep);
+    if(brk.lane !== prevLane){
+      if(prevLane !== null){ prevLaneMaxX = curLaneMaxX; prevLaneMaxLabelW = curLaneMaxLabelW; }
+      curLaneMaxX = null; curLaneMaxLabelW = 0;
+      prevLane = brk.lane;
     }
 
-    laneXMap[brk.lane] = laneX;
-    prevLaneX  = laneX;
-    prevLabelW = _brkMeasureLabelWidth(brk.label);
+    const laneX = prevLaneMaxX === null
+      ? baseX
+      : Math.max(baseX, prevLaneMaxX + (prevLaneMaxLabelW > 0 ? prevLaneMaxLabelW + BRK_LABEL_GAP + 20 : BRK_LANE_W));
+
+    bracketX.set(brk.id, laneX);
+    curLaneMaxX = curLaneMaxX===null ? laneX : Math.max(curLaneMaxX, laneX);
+    curLaneMaxLabelW = Math.max(curLaneMaxLabelW, _brkMeasureLabelWidth(brk.label));
   });
 
-  // Now draw each bracket using its computed laneX
+  // Now draw each bracket using its own computed X
   BRACKETS.forEach(brk=>{
     const si = rids.indexOf(String(brk.startRid));
     const ei = rids.indexOf(String(brk.endRid));
@@ -7714,7 +7719,7 @@ function _brkRenderDiagram(){
     const yStart = (sRect.top    - canvasRect.top) / zoom;
     const yEnd   = (eRect.bottom - canvasRect.top) / zoom;
 
-    const laneX = laneXMap[brk.lane] ?? (100 + (brk.lane-1)*BRK_LANE_W);
+    const laneX = bracketX.get(brk.id) ?? (100 + (brk.lane-1)*BRK_LANE_W);
     _brkDrawSVG(dsvg, brk, laneX, yStart, yEnd);
   });
 }
@@ -11264,13 +11269,14 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
   const rows=Array.from(document.querySelectorAll('.xrow'));
   const rids=rows.map(r=>r.dataset.rid);
 
-  // Compute laneXMap same as _brkRenderDiagram but using clone offsets
-  const sorted=[...BRACKETS].sort((a,b)=>a.lane-b.lane);
-  const laneXMap={};
-  let prevLaneX=null, prevLabelW=0;
-  sorted.forEach(brk=>{
+  // Per-bracket X (NOT per-lane) — same fix as _brkRenderDiagram: brackets
+  // sharing a lane never overlap in row range (guaranteed by
+  // _brkReassignAllLanes), so they must never push each other. Only a
+  // genuine step to a NEW, higher lane should shift X rightward, keyed per
+  // bracket id rather than a single shared X per lane number.
+  function brkMaxRightInClone(brk){
     const si=rids.indexOf(String(brk.startRid)), ei=rids.indexOf(String(brk.endRid));
-    if(si<0||ei<0) return;
+    if(si<0||ei<0) return null;
     const lo=Math.min(si,ei),hi=Math.max(si,ei);
     let maxRight=0;
     rids.slice(lo,hi+1).forEach(rid=>{
@@ -11280,10 +11286,30 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
       const right=left+block.offsetWidth;
       if(right>maxRight) maxRight=right;
     });
+    return maxRight;
+  }
+  const sorted=[...BRACKETS].sort((a,b)=>a.lane-b.lane);
+  const bracketX=new Map();
+  let prevLane=null, prevLaneMaxX=null, prevLaneMaxLabelW=0;
+  let curLaneMaxX=null, curLaneMaxLabelW=0;
+  sorted.forEach(brk=>{
+    const maxRight=brkMaxRightInClone(brk);
+    if(maxRight===null) return;
     const baseX=maxRight+BRK_PIP_OFFSET+BRK_LANE_W*0.5;
-    let laneX=prevLaneX===null?baseX:Math.max(baseX,prevLaneX+(prevLabelW>0?prevLabelW+BRK_LABEL_GAP+20:BRK_LANE_W));
-    laneXMap[brk.lane]=laneX;
-    prevLaneX=laneX; prevLabelW=_brkMeasureLabelWidth(brk.label);
+
+    if(brk.lane!==prevLane){
+      if(prevLane!==null){ prevLaneMaxX=curLaneMaxX; prevLaneMaxLabelW=curLaneMaxLabelW; }
+      curLaneMaxX=null; curLaneMaxLabelW=0;
+      prevLane=brk.lane;
+    }
+
+    const laneX=prevLaneMaxX===null
+      ? baseX
+      : Math.max(baseX, prevLaneMaxX+(prevLaneMaxLabelW>0?prevLaneMaxLabelW+BRK_LABEL_GAP+20:BRK_LANE_W));
+
+    bracketX.set(brk.id, laneX);
+    curLaneMaxX = curLaneMaxX===null ? laneX : Math.max(curLaneMaxX, laneX);
+    curLaneMaxLabelW = Math.max(curLaneMaxLabelW, _brkMeasureLabelWidth(brk.label));
   });
 
   BRACKETS.forEach(brk=>{
@@ -11296,7 +11322,7 @@ function slDrawBracketsIntoClone(cloneCanvas, visibleRids){
     if(!startDrow||!endDrow) return;
     const yStart=offsetRelTo(startDrow,cloneCanvas);
     const yEnd  =offsetRelTo(endDrow,cloneCanvas)+endDrow.offsetHeight;
-    const laneX =laneXMap[brk.lane]??(100+(brk.lane-1)*BRK_LANE_W);
+    const laneX =bracketX.get(brk.id)??(100+(brk.lane-1)*BRK_LANE_W);
     _brkDrawSVG(dsvg, brk, laneX, yStart, yEnd);
   });
 }
