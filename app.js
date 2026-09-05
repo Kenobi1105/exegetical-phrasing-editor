@@ -567,7 +567,7 @@ function _applySessionFontDefaults(){
   document.querySelectorAll('[id^="oc-"] .cedit').forEach(c=>{ c.style.fontSize=CEDIT_O_SIZE+'px'; });
   document.querySelectorAll('[id^="tc-"] .cedit').forEach(c=>{ c.style.fontSize=CEDIT_T_SIZE+'px'; });
   const ot=document.getElementById('phrasing-sz-txt'); if(ot) ot.textContent=CEDIT_O_SIZE+'px';
-  if(typeof setDiagramFontSize==='function') setDiagramFontSize(18);
+  if(typeof setDiagramFontSize==='function') setDiagramFontSize(SESS==='hebrew' ? 24 : 18);
   _updatePhrasingSizeGrpVisibility();
 }
 /* Shows the single unsplit -/+ stepper for Chinese/Custom sessions, or the
