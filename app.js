@@ -836,27 +836,8 @@ function setEditorView(view){
 }
 
 function _repositionCmtCards(isDiagram){
-  const mg=document.getElementById('cmargin');
-  if(!mg) return;
-  const mr=mg.getBoundingClientRect();
-  document.querySelectorAll('.ccard').forEach(card=>{
-    const rid=card.dataset.rid;
-    let rowEl=null;
-    if(isDiagram){
-      rowEl=document.querySelector(`#dcanvas .drow[data-rid="${rid}"]`);
-    } else {
-      rowEl=document.querySelector(`.xrow[data-rid="${rid}"]`);
-    }
-    if(!rowEl) return;
-    const rr=rowEl.getBoundingClientRect();
-    const scrollEl=isDiagram
-      ? document.getElementById('dcanvas-scroll')
-      : document.getElementById('rows-scroll');
-    const scrollTop=scrollEl?scrollEl.scrollTop:0;
-    const newTop=Math.max(4, rr.top-mr.top+scrollTop-6);
-    card.style.top=newTop+'px';
-  });
-  setTimeout(drawConns,50);
+  // Notes are no longer positioned against either editor canvas.
+  _syncCommentList();
 }
 
 /* Diagram View zoom — applies CSS `zoom` (not `transform`) to #dcanvas so
@@ -3401,6 +3382,7 @@ function recomputeIds(){
     const cid=row.dataset.cid;
     if(cid){const h=document.querySelector(`.ccard[data-cid="${cid}"] .chdr-i`);if(h)h.textContent=effective+letter;}
   });
+  _syncCommentList();
   refreshDiagramIfActive();
 }
 
@@ -3855,26 +3837,24 @@ function applyRowUndo(op){
     if(row){row.classList.remove('has-cmt');delete row.dataset.cid;
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.remove('on');}
     _dcmtSyncBadge(op.rid);
-    drawConns(); return;
+    _syncCommentList(); return;
   }
   if(op.type==='cmt-remove'){
     // Undo comment deletion: restore the card
-    const mg=document.getElementById('cmargin');if(!mg)return;
+    const list=_commentList();if(!list)return;
     const existing=document.querySelector(`.ccard[data-cid="${op.cid}"]`);
     if(!existing){
       const card=_buildCmtCard(op.cid,op.rid,op.lid,op.top,op.left,op.width,op.html);
-      mg.appendChild(card);
-      new ResizeObserver(drawConns).observe(card);
+      list.appendChild(card);
     }
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     if(row){row.dataset.cid=op.cid;row.classList.add('has-cmt');
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.add('on');}
     _dcmtSyncBadge(op.rid);
-    drawConns(); return;
+    _syncCommentList(); return;
   }
   if(op.type==='cmt-move'){
-    const card=document.querySelector(`.ccard[data-cid="${op.cid}"]`);
-    if(card){card.style.left=op.prevLeft+'px';card.style.top=op.prevTop+'px';drawConns();}
+    // Legacy layout-only operation: Notes now flow in document order.
     return;
   }
   if(op.type==='cmt-text'){
@@ -3993,7 +3973,7 @@ function applyRowRedo(op){
     document.getElementById('rows-body').innerHTML='';
     document.querySelectorAll('.ccard').forEach(c=>c.remove());
     document.getElementById('refin').value='';
-    document.getElementById('svgl').innerHTML='';
+    document.getElementById('svgl')?.replaceChildren();
     RC=CC=0; addEmptyRow();
     toast(typeof t==='function'?t('toast.cleared-short'):'Cleared');
     return;
@@ -4036,18 +4016,17 @@ function applyRowRedo(op){
   // ── Comment box ops ───────────────────────────────────────────────────
   if(op.type==='cmt-add'){
     // Redo comment creation: rebuild the card
-    const mg=document.getElementById('cmargin');if(!mg)return;
+    const list=_commentList();if(!list)return;
     const existing=document.querySelector(`.ccard[data-cid="${op.cid}"]`);
     if(!existing){
       const card=_buildCmtCard(op.cid,op.rid,op.lid,op.top,op.left,op.width,'');
-      mg.appendChild(card);
-      new ResizeObserver(drawConns).observe(card);
+      list.appendChild(card);
     }
     const row=document.querySelector(`.xrow[data-rid="${op.rid}"]`);
     if(row){row.dataset.cid=op.cid;row.classList.add('has-cmt');
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.add('on');}
     _dcmtSyncBadge(op.rid);
-    drawConns(); return;
+    _syncCommentList(); return;
   }
   if(op.type==='cmt-remove'){
     // Redo comment deletion: remove the card again
@@ -4057,11 +4036,10 @@ function applyRowRedo(op){
     if(row){row.classList.remove('has-cmt');delete row.dataset.cid;
       const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.remove('on');}
     _dcmtSyncBadge(op.rid);
-    drawConns(); return;
+    _syncCommentList(); return;
   }
   if(op.type==='cmt-move'){
-    const card=document.querySelector(`.ccard[data-cid="${op.cid}"]`);
-    if(card){card.style.left=op.nextLeft+'px';card.style.top=op.nextTop+'px';drawConns();}
+    // Legacy layout-only operation: Notes now flow in document order.
     return;
   }
   if(op.type==='cmt-text'){
@@ -4524,38 +4502,68 @@ document.addEventListener('selectionchange',()=>{
 /* ════════════════════════════════════════
    COMMENTS
 ════════════════════════════════════════ */
-function toggleCmt(btn,rid){
-  const row=document.querySelector(`.xrow[data-rid="${rid}"]`);if(!row)return;
-  const ec=row.dataset.cid;
-  if(ec){
-    const card=document.querySelector(`.ccard[data-cid="${ec}"]`);
-    if(card){const h=card.style.display==='none';card.style.display=h?'flex':'none';btn.classList.toggle('on',h);drawConns();}
-    return;
+function _commentList(){ return document.getElementById('cmt-list'); }
+
+function _syncCommentList(){
+  const list=_commentList();
+  if(!list) return;
+  const rowOrder=new Map(_realRows().map((row,index)=>[String(row.dataset.rid),index]));
+  [...list.querySelectorAll('.ccard')]
+    .sort((a,b)=>{
+      const ai=rowOrder.get(String(a.dataset.rid)),bi=rowOrder.get(String(b.dataset.rid));
+      if(ai!==bi) return (ai??Number.MAX_SAFE_INTEGER)-(bi??Number.MAX_SAFE_INTEGER);
+      return Number(a.dataset.cid)-Number(b.dataset.cid);
+    })
+    .forEach(card=>list.appendChild(card));
+}
+
+function _revealComment(cid,{focus=true}={}){
+  const card=document.querySelector(`.ccard[data-cid="${cid}"]`);
+  if(!card) return;
+  const pane=document.getElementById('cmargin');
+  if(pane?.classList.contains('pane-hidden')){
+    pane.classList.remove('pane-hidden');
+    try{localStorage.setItem(WORKSPACE_NOTES_KEY,'1');}catch(_){}
+    document.getElementById('btn-cmt-pane')?.classList.add('active');
   }
-  const cid=++CC;
-  row.dataset.cid=cid;row.classList.add('has-cmt');btn.classList.add('on');
-  const lid=row.querySelector('.lid')?.textContent||'';
-  const mg=document.getElementById('cmargin');
-  const rr=row.getBoundingClientRect(),mr=mg.getBoundingClientRect();
-  const top=rr.top-mr.top+(document.getElementById('rows-scroll').scrollTop||0);
-  const initLeft=18, initTop=Math.max(4,top-6), initW=226;
-  const card=_buildCmtCard(cid,rid,lid,initTop,initLeft,initW);
-  mg.appendChild(card);
-  new ResizeObserver(drawConns).observe(card);
-  rowPush({type:'cmt-add',cid,rid,top:initTop,left:initLeft,width:initW,lid});
-  _dcmtSyncBadge(rid);
+  _syncCommentList();
+  card.scrollIntoView({block:'nearest',behavior:'smooth'});
+  card.classList.remove('ccard-jump-flash','ccard-jump-flash-fade');
+  card.classList.add('ccard-jump-flash');
+  setTimeout(()=>card.classList.add('ccard-jump-flash-fade'),50);
+  setTimeout(()=>card.classList.remove('ccard-jump-flash','ccard-jump-flash-fade'),1400);
+  if(focus) setTimeout(()=>{
+    const ed=card.querySelector('.cedit-c');
+    if(ed){ed.focus();activeEl=ed;}
+  },220);
   if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
-  setTimeout(()=>{card.querySelector('.cedit-c').focus();drawConns();},40);
+}
+
+function _createCommentForRow(rid){
+  const row=document.querySelector(`.xrow[data-rid="${rid}"]`);if(!row)return;
+  const existing=row.dataset.cid;
+  if(existing){_revealComment(existing);return;}
+  const cid=++CC;
+  row.dataset.cid=cid;row.classList.add('has-cmt');
+  row.querySelector('.cmtbtn')?.classList.add('on');
+  const lid=row.querySelector('.lid')?.textContent||'';
+  const list=_commentList();if(!list)return;
+  list.appendChild(_buildCmtCard(cid,rid,lid));
+  _syncCommentList();
+  rowPush({type:'cmt-add',cid,rid,lid});
+  _dcmtSyncBadge(rid);
+  _revealComment(cid);
   autoSave();
 }
 
+function toggleCmt(_btn,rid){ _createCommentForRow(rid); }
+
 /* Build a comment card element — shared by toggleCmt and undo restore */
-function _buildCmtCard(cid,rid,lid,top,left,width,html){
+function _buildCmtCard(cid,rid,lid,_top,_left,_width,html){
   const card=document.createElement('div');
   card.className='ccard';card.dataset.cid=cid;card.dataset.rid=rid;
-  card.style.cssText=`top:${top}px;left:${left}px;width:${width}px;`;
   card.innerHTML=`
-    <div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))">
+    <div class="chdr">
       <span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid&&lid!=='—'?lid:''}</span>
       <button class="ccl" onclick="closeCmt('${cid}')">✕</button>
     </div>
@@ -4563,9 +4571,6 @@ function _buildCmtCard(cid,rid,lid,top,left,width,html){
       <div class="cedit-c" contenteditable="true" spellcheck="false"
         onfocus="_cmtFocusSnap(this,${cid})" onblur="_cmtBlurSnap(this,${cid});autoSave()"
         onkeydown="if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);}setTimeout(()=>{saveRange();updateTb();},0)"></div>
-    </div>
-    <div class="crh" onmousedown="startCR2(event,this.closest('.ccard'))">
-      <svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/><line x1="6" y1="10" x2="10" y2="6"/></svg>
     </div>`;
   if(html) card.querySelector('.cedit-c').innerHTML=html;
   return card;
@@ -4632,88 +4637,15 @@ function closeCmt(cid){
   const rid=card.dataset.rid;
   const ed=card.querySelector('.cedit-c');
   const html=ed?ed.innerHTML:'';
-  const top=parseInt(card.style.top)||4;
-  const left=parseInt(card.style.left)||18;
-  const width=card.offsetWidth||226;
   const lid=card.querySelector('.chdr-i')?.textContent||'';
   const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
   if(row){row.classList.remove('has-cmt');delete row.dataset.cid;const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.remove('on');}
-  rowPush({type:'cmt-remove',cid,rid,top,left,width,html,lid});
+  rowPush({type:'cmt-remove',cid,rid,html,lid});
   _dcmtSyncBadge(rid);
-  card.remove();drawConns();autoSave();
+  card.remove();_syncCommentList();autoSave();
   if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
 }
-function drawConns(){
-  const svg=document.getElementById('svgl');
-  const cmarginEl=document.getElementById('cmargin');
-  const mr=cmarginEl.getBoundingClientRect();
-  // cmargin may scroll (overflow-y:auto). SVG is position:absolute;inset:0
-  // so its coordinate origin is at cmargin's scroll origin, not viewport.
-  // Add cmargin.scrollTop to all y values so lines track correctly.
-  const cmScrollTop=cmarginEl.scrollTop||0;
-  const totalH=Math.max(cmarginEl.scrollHeight, mr.height);
-  svg.innerHTML='';
-  svg.setAttribute('width',mr.width);
-  svg.setAttribute('height',totalH);
-  document.querySelectorAll('.ccard').forEach(card=>{
-    if(card.style.display==='none')return;
-    const rid=card.dataset.rid;
-    // In Diagram View the Phrasing View rows (.xrow) are hidden (display:none)
-    // so getBoundingClientRect() returns zeros. Use the .drow instead.
-    let rowEl=null;
-    if(EDITOR_VIEW==='diagram'){
-      rowEl=document.querySelector(`#dcanvas .drow[data-rid="${rid}"]`);
-    }
-    if(!rowEl) rowEl=document.querySelector(`.xrow[data-rid="${rid}"]`);
-    if(!rowEl)return;
-    const rr=rowEl.getBoundingClientRect(),cr=card.getBoundingClientRect();
-    // Convert viewport-relative coords to cmargin scroll-space coords
-    const x1=2;
-    const y1=rr.top+rr.height/2-mr.top+cmScrollTop;
-    const x2=cr.left-mr.left;
-    const y2=cr.top+20-mr.top+cmScrollTop;
-    const cx1=x1+(x2-x1)*.55,cx2=x2-(x2-x1)*.25;
-    const lineD=`M${x1},${y1} C${cx1},${y1} ${cx2},${y2} ${x2},${y2}`;
-    const p=document.createElementNS('http://www.w3.org/2000/svg','path');
-    p.setAttribute('class','cline');p.setAttribute('d',lineD);
-    // Wide invisible hit-path + hover-group, same technique already used
-    // for the block-to-block connector system's .dconn-hit (the visible
-    // line stays too thin to reliably click on its own) — click jumps to
-    // the same comment card the badge icon already does.
-    const cid=card.dataset.cid;
-    const group=document.createElementNS('http://www.w3.org/2000/svg','g');
-    group.setAttribute('class','cline-group');
-    const hit=document.createElementNS('http://www.w3.org/2000/svg','path');
-    hit.setAttribute('class','cline-hit');hit.setAttribute('d',lineD);
-    hit.addEventListener('pointerdown',ev=>{ev.stopPropagation();});
-    hit.addEventListener('click',ev=>{ev.stopPropagation();if(cid)jumpToCmt(cid);});
-    group.appendChild(hit);group.appendChild(p);
-    svg.appendChild(group);
-    const d=document.createElementNS('http://www.w3.org/2000/svg','circle');
-    d.setAttribute('cx',x1);d.setAttribute('cy',y1);d.setAttribute('r','3');
-    d.setAttribute('fill','var(--sig)');d.setAttribute('opacity','.45');svg.appendChild(d);
-  });
-}
-function startDrag(e,card){
-  if(e.target.classList.contains('ccl'))return;e.preventDefault();
-  const sx=e.clientX,sy=e.clientY,sl=parseInt(card.style.left)||18,st=parseInt(card.style.top)||4;
-  const cid=Number(card.dataset.cid);
-  const mm=ev=>{card.style.left=Math.max(0,sl+ev.clientX-sx)+'px';card.style.top=Math.max(0,st+ev.clientY-sy)+'px';drawConns();};
-  const mu=()=>{
-    document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
-    const nl=parseInt(card.style.left)||18,nt=parseInt(card.style.top)||4;
-    if(nl!==sl||nt!==st) rowPush({type:'cmt-move',cid,prevLeft:sl,prevTop:st,nextLeft:nl,nextTop:nt});
-    autoSave();
-  };
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
-}
-function startCR2(e,card){
-  e.preventDefault();e.stopPropagation();
-  const sx=e.clientX,sy=e.clientY,sw=card.offsetWidth,sh=card.offsetHeight;
-  const mm=ev=>{card.style.width=Math.max(180,sw+ev.clientX-sx)+'px';card.style.height=Math.max(100,sh+ev.clientY-sy)+'px';drawConns();};
-  const mu=()=>{document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);autoSave();};
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
-}
+function drawConns(){ /* Retained as a safe no-op for legacy callers. */ }
 
 /* Scroll #cmargin so the comment card nearest to the diagram viewport
    centre comes into view when the diagram canvas is scrolled. */
@@ -4721,8 +4653,7 @@ function _scrollCmarginToVisible(){
   const scrollEl=document.getElementById('dcanvas-scroll');
   const cmarginEl=document.getElementById('cmargin');
   if(!scrollEl||!cmarginEl) return;
-  const cards=[...document.querySelectorAll('.ccard')]
-    .filter(c=>c.style.display!=='none');
+  const cards=[...document.querySelectorAll('.ccard')];
   if(!cards.length) return;
   // The diagram scroll mid-point in canvas logical coordinates
   const zR=DIAGRAM_ZOOM/100;
@@ -4741,11 +4672,7 @@ function _scrollCmarginToVisible(){
     if(dist<bestDist){bestDist=dist;bestCard=card;}
   });
   if(!bestCard) return;
-  // card.style.top is in cmargin scroll space — scroll to centre it
-  const cardTop=parseInt(bestCard.style.top)||0;
-  const cardH=bestCard.offsetHeight||100;
-  const target=cardTop+cardH/2-cmarginEl.clientHeight/2;
-  cmarginEl.scrollTo({top:Math.max(0,target),behavior:'smooth'});
+  _revealComment(bestCard.dataset.cid,{focus:false});
 }
 
 /* Jump from a Diagram View comment badge to its card: un-hide it if
@@ -4754,26 +4681,7 @@ function _scrollCmarginToVisible(){
    _scrollCmarginToVisible(), and the two-class flash/fade timing bible.js
    uses for .bverse-highlight/-fade. */
 function jumpToCmt(cid){
-  const card=document.querySelector(`.ccard[data-cid="${cid}"]`);
-  if(!card) return;
-  const cmarginEl=document.getElementById('cmargin');
-  if(card.style.display==='none'){
-    card.style.display='flex';
-    const rid=card.dataset.rid;
-    const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
-    const btn=row?row.querySelector('.cmtbtn'):null;
-    if(btn) btn.classList.add('on');
-    drawConns();
-  }
-  if(cmarginEl){
-    const cardTop=parseInt(card.style.top)||0;
-    const cardH=card.offsetHeight||100;
-    const target=cardTop+cardH/2-cmarginEl.clientHeight/2;
-    cmarginEl.scrollTo({top:Math.max(0,target),behavior:'smooth'});
-  }
-  card.classList.add('ccard-jump-flash');
-  setTimeout(()=>card.classList.add('ccard-jump-flash-fade'),50);
-  setTimeout(()=>card.classList.remove('ccard-jump-flash','ccard-jump-flash-fade'),1400);
+  _revealComment(cid);
 }
 
 /* Select a diagram block by rid — gold outline, deselects previous */
@@ -4923,7 +4831,6 @@ function toggleCmtPane(){
   // either way (hide or show) — refresh every SVG overlay that's keyed off
   // canvas geometry, same set the window 'resize' handler already refreshes.
   setTimeout(()=>{
-    drawConns();
     refreshBrackets();
     refreshDiagramConnectors();
     if(typeof renderSectionStrips==='function') renderSectionStrips();
@@ -4939,54 +4846,13 @@ function addCommentOnFocusedRow(){
       toast(typeof t==='function'?t('toast.select-block-first'):'Select a block first.');
       return;
     }
-    const rid=SELECTED_DIAG_RID;
-    // Check if this row already has a comment card
-    const pRow=document.querySelector(`.xrow[data-rid="${rid}"]`);
-    const ec=pRow?pRow.dataset.cid:null;
-    if(ec){
-      // Toggle existing card visibility
-      const card=document.querySelector(`.ccard[data-cid="${ec}"]`);
-      if(card){
-        const h=card.style.display==='none';
-        card.style.display=h?'flex':'none';
-        const btn=pRow?pRow.querySelector('.cmtbtn'):null;
-        if(btn) btn.classList.toggle('on',h);
-        drawConns();
-      }
-      return;
-    }
-    // Create new comment card positioned at the selected drow's vertical position
-    const cid=++CC;
-    if(pRow){pRow.dataset.cid=cid;pRow.classList.add('has-cmt');}
-    const btn=pRow?pRow.querySelector('.cmtbtn'):null;
-    if(btn) btn.classList.add('on');
-    const lid=pRow?pRow.querySelector('.lid')?.textContent||'':'';
-    const mg=document.getElementById('cmargin');
-    // Compute top from the drow's position relative to cmargin
-    const drow=document.querySelector(`#dcanvas .drow[data-rid="${rid}"]`);
-    const mr=mg.getBoundingClientRect();
-    let top=8;
-    if(drow){
-      const dr=drow.getBoundingClientRect();
-      // In diagram view use dcanvas-scroll's scrollTop, not rows-scroll
-      const scrollEl=document.getElementById('dcanvas-scroll');
-      top=Math.max(4, dr.top-mr.top+(scrollEl?scrollEl.scrollTop:0));
-    }
-    const initLeft=18, initW=226;
-    const card=_buildCmtCard(cid,rid,lid,top,initLeft,initW);
-    mg.appendChild(card);
-    new ResizeObserver(drawConns).observe(card);
-    rowPush({type:'cmt-add',cid,rid,top,left:initLeft,width:initW,lid});
-    _dcmtSyncBadge(rid);
-    setTimeout(()=>{card.querySelector('.cedit-c').focus();drawConns();},40);
-    autoSave();
+    _createCommentForRow(SELECTED_DIAG_RID);
     return;
   }
   // Phrasing View: use lastFocusedRowEl
   if(lastFocusedRowEl){
     const rid=lastFocusedRowEl.dataset.rid;
-    const btn=lastFocusedRowEl.querySelector('.cmtbtn');
-    if(rid) toggleCmt(btn||{classList:{add:()=>{},toggle:()=>{},remove:()=>{}}},rid);
+    if(rid) _createCommentForRow(rid);
   }
 }
 
@@ -5105,7 +4971,7 @@ function restartSess(){
   document.getElementById('rows-body').innerHTML='';
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
   document.getElementById('refin').value='';
-  document.getElementById('svgl').innerHTML='';
+  document.getElementById('svgl')?.replaceChildren();
   const pta=document.getElementById('paste-ta');if(pta)pta.innerHTML='';
   setSourceCitation('');
   RC=CC=0;ROW_STACK.length=0;ROW_REDO.length=0;SESS='';
@@ -5386,8 +5252,7 @@ function collectData(){
   const cmts=[];
   document.querySelectorAll('.ccard').forEach(card=>{
     const ed=card.querySelector('.cedit-c');
-    cmts.push({cid:card.dataset.cid,rid:card.dataset.rid,html:ed?ed.innerHTML:'',
-      top:card.style.top,left:card.style.left,width:card.style.width,height:card.style.height,hidden:card.style.display==='none'});
+    cmts.push({cid:card.dataset.cid,rid:card.dataset.rid,html:ed?ed.innerHTML:''});
   });
   return{lang:SESS,langLabel:LANG,isRTL:IS_RTL,isSingle:IS_SINGLE,
     verseRef:document.getElementById('refin').value,
@@ -5487,20 +5352,27 @@ function loadData(data){
   });
   recomputeIds();
   restoreAllIndents();
-  const margin=document.getElementById('cmargin');
+  const list=_commentList();
   SL_CMT_CACHE={};  // reset comment cache
   (data.cmts||[]).forEach(c=>{
     const row=document.querySelector(`.xrow[data-rid="${c.rid}"]`);
     const lid=row?(row.querySelector('.lid')?.textContent||''):'';
-    const card=document.createElement('div');card.className='ccard';card.dataset.cid=c.cid;card.dataset.rid=c.rid;
-    card.style.cssText=`top:${c.top||'8px'};left:${c.left||'18px'};width:${c.width||'226px'};${c.height?'height:'+c.height+';':''}${c.hidden?'display:none;':''}`;
-    card.innerHTML=`<div class="chdr" onmousedown="startDrag(event,this.closest('.ccard'))"><span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${lid!=='—'?lid:''}</span><button class="ccl" onclick="closeCmt('${c.cid}')">✕</button></div><div class="cbody"><div class="cedit-c" contenteditable="true" spellcheck="false" onfocus="activeEl=this" onblur="autoSave()" onkeydown="if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);}setTimeout(()=>{saveRange();updateTb();},0)"></div></div><div class="crh" onmousedown="startCR2(event,this.closest('.ccard'))"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><line x1="2" y1="10" x2="10" y2="2"/><line x1="6" y1="10" x2="10" y2="6"/></svg></div>`;
-    const ed=card.querySelector('.cedit-c');if(ed&&c.html)ed.innerHTML=c.html;
+    // Some older saves only stored the relationship on the comment itself.
+    // Restore the row anchor as well so badges, PDF footnotes, and the
+    // one-comment-per-row rule remain intact.
+    if(row && c.cid){
+      row.dataset.cid=c.cid;row.classList.add('has-cmt');
+      row.querySelector('.cmtbtn')?.classList.add('on');
+    }
+    // Legacy per-card geometry is intentionally ignored: Notes are a list.
+    const card=_buildCmtCard(c.cid,c.rid,lid,undefined,undefined,undefined,c.html||'');
     // Cache comment HTML for use when pane is hidden (slides view)
     if(c.cid) SL_CMT_CACHE[c.cid]=c.html||'';
-    margin.appendChild(card);new ResizeObserver(drawConns).observe(card);
+    list?.appendChild(card);
+    const idNumber=Number(c.cid);
+    if(Number.isFinite(idNumber)) CC=Math.max(CC,idNumber);
   });
-  setTimeout(drawConns,100);
+  _syncCommentList();
   // Restore Diagram View data — connectors are fully wired up as of Stage 3
   // (solid-line, block-to-block by row ID, rendered when Diagram View is
   // active) with selection/style/color/delete added afterward. Floating
@@ -7263,7 +7135,7 @@ function clearAll(){
   document.getElementById('rows-body').innerHTML='';
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
   document.getElementById('refin').value='';
-  document.getElementById('svgl').innerHTML='';
+  document.getElementById('svgl')?.replaceChildren();
   setSourceCitation('');
   RC=CC=0;
   DIAGRAM_DATA={connectors:[], labels:[]};
