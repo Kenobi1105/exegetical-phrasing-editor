@@ -7469,6 +7469,9 @@ async function _buildPhrasingPDF(ref, onProgress){
   const showSectionDividers=!document.body.classList.contains('hide-sections');
   const propByRid=new Map(),sectionStartsByRid=new Map(),sectionsByRid=new Map();
   const PROP_PLAIN_H=8,PROP_LABEL_H=14,SECTION_H=16;
+  // The PDF keeps section rails in a dedicated margin lane so proposition
+  // dividers can never cut through (or visually interrupt) a section.
+  const SECTION_RAIL_X=MAR+2,SECTION_RAIL_W=3,SECTION_RAIL_STRIDE=5,ANNOTATION_GAP=7;
 
   function addToMap(map,key,value){
     if(!map.has(key)) map.set(key,[]);
@@ -7498,18 +7501,31 @@ async function _buildPhrasingPDF(ref, onProgress){
       for(let index=first;index<=last;index++) addToMap(sectionsByRid,String(rowEls[index].dataset.rid),section);
     });
   }
+  const maxSectionDepth=Math.max(1,...[...sectionsByRid.values()].map(sections=>sections.length));
+  const annotationX=SECTION_RAIL_X+(maxSectionDepth-1)*SECTION_RAIL_STRIDE+SECTION_RAIL_W+ANNOTATION_GAP;
+  function sectionLane(section,rid){
+    const lane=(sectionsByRid.get(rid)||[]).indexOf(section);
+    return lane<0?0:lane;
+  }
+  function sectionRailX(lane){return SECTION_RAIL_X+lane*SECTION_RAIL_STRIDE;}
   function annotationHeight(rid){
     const sectionH=(sectionStartsByRid.get(rid)||[]).length*SECTION_H;
     const propH=(propByRid.get(rid)||[]).reduce((sum,ann)=>sum+(String(ann.label||'').trim()?PROP_LABEL_H:PROP_PLAIN_H),0);
     return sectionH+propH;
   }
-  function drawSectionHeader(section,y){
+  function drawSectionHeader(section,y,lane){
     const color=annotationColor(section.color,[83,74,183]);
-    doc.setDrawColor(...color);doc.setLineWidth(1);doc.line(MAR,y+SECTION_H-3,MAR+usableW,y+SECTION_H-3);
+    const railX=sectionRailX(lane),ruleY=y+SECTION_H-3;
+    // Starting the rule at the rail makes the title and its continuous
+    // section marker read as one visual unit.
+    doc.setDrawColor(...color);doc.setLineWidth(1);doc.line(railX,ruleY,MAR+usableW,ruleY);
     const label=String(section.label||'').trim();
     if(label){
       doc.setFont(fnFont,'normal');doc.setFontSize(8);doc.setTextColor(...color);
-      doc.text(label,MAR+6,y+9,{isInputVisual:false});
+      // The embedded Unicode face has no bold variant. A light second pass
+      // gives every label (including Hebrew/Greek) the same bold treatment.
+      doc.text(label,annotationX,y+9,{isInputVisual:false});
+      doc.text(label,annotationX+.28,y+9,{isInputVisual:false});
     }
   }
   function drawPropDivider(ann,y){
@@ -7518,23 +7534,34 @@ async function _buildPhrasingPDF(ref, onProgress){
     const label=String(ann.label||'').trim();
     if(label){
       doc.setFont(fnFont,'normal');doc.setFontSize(7.5);doc.setTextColor(...color);
-      doc.text(label,MAR+6,y+8,{isInputVisual:false});
+      doc.text(label,annotationX,y+8,{isInputVisual:false});
     }
-    doc.setDrawColor(...color);doc.setLineWidth(.65);doc.line(MAR,y+height-2,MAR+usableW,y+height-2);
+    doc.setDrawColor(...color);doc.setLineWidth(.65);doc.line(annotationX,y+height-2,MAR+usableW,y+height-2);
     return height;
   }
-  function drawSectionGutters(rid,y,height){
+  function drawSectionGutters(rid,annotationY,rowY,rowH,sectionHeaders){
+    const headerY=new Map(sectionHeaders.map(header=>[header.section,header.y]));
+    const railEndY=rowY+rowH;
     (sectionsByRid.get(rid)||[]).forEach((section,index)=>{
       const color=annotationColor(section.color,[83,74,183]);
       doc.setFillColor(...color);
-      doc.rect(MAR+1+index*4,y+1,3,Math.max(1,height-2),'F');
+      // Existing sections carry directly from the previous row. New sections
+      // begin at their own title, then continue through any proposition
+      // divider and the first row without a white gap.
+      const railStartY=headerY.get(section)??annotationY;
+      doc.rect(sectionRailX(index),railStartY,SECTION_RAIL_W,Math.max(1,railEndY-railStartY),'F');
     });
   }
   function drawRowAnnotations(rid,y){
     let nextY=y;
-    (sectionStartsByRid.get(rid)||[]).forEach(section=>{drawSectionHeader(section,nextY);nextY+=SECTION_H;});
+    const sectionHeaders=[];
+    (sectionStartsByRid.get(rid)||[]).forEach(section=>{
+      const lane=sectionLane(section,rid);
+      sectionHeaders.push({section,y:nextY});
+      drawSectionHeader(section,nextY,lane);nextY+=SECTION_H;
+    });
     (propByRid.get(rid)||[]).forEach(ann=>{nextY+=drawPropDivider(ann,nextY);});
-    return nextY;
+    return {rowY:nextY,sectionHeaders};
   }
 
   let curY=drawColHeaders(drawPageHeader(MAR+12));
@@ -7564,10 +7591,12 @@ async function _buildPhrasingPDF(ref, onProgress){
     }
     if(footnote?.text) pageFns.push(footnote);
 
-    curY=drawRowAnnotations(String(rid),curY);
+    const annotationY=curY;
+    const rowAnnotations=drawRowAnnotations(String(rid),curY);
+    curY=rowAnnotations.rowY;
 
     doc.setFillColor(255,255,255);doc.rect(MAR,curY,usableW,rowH,'F');
-    drawSectionGutters(String(rid),curY,rowH);
+    drawSectionGutters(String(rid),annotationY,curY,rowH,rowAnnotations.sectionHeaders);
     const previous=rowIdx?rowEls[rowIdx-1].querySelector('.vin')?.value:null;
     if(verse&&verse!==previous){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...SIG);doc.text(verse,MAR+vWpt/2,curY+rowH/2+3,{align:'center'});}
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...ACC);
