@@ -5121,3 +5121,61 @@ body.hide-sections #section-strips{display:none}
   #btn-workspace-tools,#workspace-tools-popover{display:none!important}
   #workspace-project-context{min-width:42px;max-width:42px}.workspace-project-copy{display:none}
 }
+
+/* ── Toolbar polish: compact header, reliable transient popups, soft tiles ── */
+#refbar > #workspace-document-state{
+  display:flex!important;flex-direction:row!important;align-items:center!important;
+  flex:0 0 auto!important;width:auto!important;align-self:center;
+  padding:4px 8px;gap:5px;
+}
+#workspace-document-state{font-size:9px;line-height:1}
+#refbar #version-sub,#refbar #version-sub-input{
+  background:transparent!important;border-bottom:0!important;
+}
+
+/* The shared color and size panels can be opened from inside Workspace Tools. */
+#color-palette-popover,#fsz-popover{z-index:1001!important}
+
+/* Every overflow action reads from one left-aligned edge. */
+#workspace-more-popover .workspace-more-section>p,
+#workspace-more-popover .workspace-more-section>div,
+#workspace-more-popover .ibtn,
+#workspace-more-popover .bbtn,
+#workspace-more-popover .lang-pill{
+  text-align:left;
+}
+#workspace-more-popover .workspace-menu-label,
+#workspace-more-popover .bbtn>span{flex:1;text-align:left}
+#workspace-more-popover #lang-toggle-btn{justify-content:flex-start}
+
+/* Soft filled toolbar tiles keep the familiar SVGs while improving contrast. */
+#workspace-project-btn,
+#toolbar>.tbtn:not(.tglsw),
+#toolbar>.tg>.tbtn:not(.tglsw),
+#toolbar>.tr-r>.ibtn{
+  width:32px;height:32px;border:1px solid rgba(255,255,255,.1);
+  background:rgba(255,255,255,.09);box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+}
+#workspace-project-btn:hover,
+#toolbar>.tbtn:not(.tglsw):hover,
+#toolbar>.tg>.tbtn:not(.tglsw):hover,
+#toolbar>.tr-r>.ibtn:hover{
+  background:rgba(255,255,255,.17);border-color:rgba(255,255,255,.19);
+}
+#workspace-project-btn:focus-visible,
+#toolbar>.tbtn:not(.tglsw):focus-visible,
+#toolbar>.tg>.tbtn:not(.tglsw):focus-visible,
+#toolbar>.tr-r>.ibtn:focus-visible{
+  outline:2px solid var(--accent);outline-offset:2px;
+}
+#toolbar>.tbtn:not(.tglsw).on,
+#toolbar>.tg>.tbtn:not(.tglsw).on,
+#toolbar>.tr-r>.ibtn.active{
+  background:var(--accent);border-color:rgba(255,255,255,.18);color:var(--ink);
+}
+#workspace-project-btn svg,
+#toolbar>.tbtn:not(.tglsw) svg,
+#toolbar>.tg>.tbtn:not(.tglsw) svg,
+#toolbar>.tr-r>.ibtn svg{
+  width:18px;height:18px;stroke-width:2.15;
+}

@@ -7390,6 +7390,15 @@ function _pdfNextPaint(){
   return new Promise(resolve=>requestAnimationFrame(resolve));
 }
 
+// Notes can be collapsed while exporting. HTMLElement.innerText depends on
+// rendered visibility, so it can be empty even though the comment is saved.
+// HTML and the comment cache remain available in either dock state.
+function _pdfCommentHtml(cid){
+  if(!cid) return '';
+  const live=document.querySelector('.ccard[data-cid="'+cid+'"] .cedit-c');
+  return live?.innerHTML||SL_CMT_CACHE?.[cid]||'';
+}
+
 /* Returns a jsPDF document.  Both a normal download and a bulk ZIP call this
    function so page layout, PDF-only sizing, and performance behavior cannot
    drift apart. */
@@ -7467,8 +7476,7 @@ async function _buildPhrasingPDF(ref, onProgress){
     const orig=row.querySelector('#oc-'+rid+' .cedit');
     const trans=row.querySelector('#tc-'+rid+' .cedit');
     const cid=row.dataset.cid;
-    const cmt=cid?document.querySelector('.ccard[data-cid="'+cid+'"] .cedit-c'):null;
-    const footnoteText=cmt?.innerText?.trim()?stripHtml(cmt.innerHTML):'';
+    const footnoteText=stripHtml(_pdfCommentHtml(cid));
     const footnote=footnoteText?{lineId:cleanLineId||verse,text:footnoteText}:null;
 
     await _pdfNextPaint();
