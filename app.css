@@ -5004,3 +5004,115 @@ body.hide-sections #section-strips{display:none}
    was previously only styled in Diagram View; Phrasing View's own
    original/translation cells never got the same blue. ── */
 .cedit sup{color:var(--crit,#1E6AFE)}
+
+/* ════════════════════════════════════════
+   MODERN WORKSPACE REVAMP — appended 2026-10
+════════════════════════════════════════ */
+#app{background:#eef0f2}
+#toolbar{
+  position:relative;height:58px;padding:0 16px;gap:7px;
+  background:linear-gradient(90deg,#352638 0%,var(--sig) 54%,#5b435c 100%);
+  border-bottom:1px solid rgba(255,255,255,.12);box-shadow:0 1px 0 rgba(0,0,0,.16);
+}
+#workspace-project-context{display:flex;align-items:center;gap:9px;min-width:174px;max-width:240px;color:var(--label);overflow:hidden}
+#workspace-project-btn{width:32px;height:32px;flex:none;border:1px solid rgba(255,255,255,.2);border-radius:8px;background:rgba(255,255,255,.09);color:var(--label);cursor:pointer;display:grid;place-items:center}
+#workspace-project-btn:hover{background:rgba(255,255,255,.18)}
+#workspace-project-btn svg{width:15px;height:15px}
+.workspace-project-copy{min-width:0;display:flex;flex-direction:column;gap:1px}
+.workspace-eyebrow{font-size:8px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(247,243,233,.55)}
+#workspace-project-name{font-size:12px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#fff}
+#view-toggle-grp{position:absolute;left:50%;transform:translateX(-50%);margin:0;background:rgba(0,0,0,.16);padding:3px;border:1px solid rgba(255,255,255,.1);border-radius:10px}
+.vtbtn{height:30px;padding:0 11px;border-radius:7px;font-size:11px}
+.workspace-tools-btn{margin-left:0}
+#phrasing-fmt-sep1,#phrasing-fmt-sep2,#phrasing-fmt-sep3,#dzoom-sep,#dlabel-sep,#toolbar>.tsep:last-of-type{display:none!important}
+
+#workspace-tools-popover,#workspace-more-popover{
+  position:absolute;display:none;z-index:300;top:52px;
+  border:1px solid rgba(61,43,63,.16);border-radius:12px;background:var(--surface);
+  box-shadow:0 16px 42px rgba(24,18,26,.2);color:var(--ink);
+}
+#workspace-tools-popover{left:clamp(150px,22vw,340px);width:min(520px,calc(100vw - 28px));padding:10px;grid-template-columns:1fr 1fr;gap:8px}
+#workspace-tools-popover.open{display:grid}
+#workspace-more-popover{right:14px;width:190px;padding:6px}
+#workspace-more-popover.open{display:block}
+.workspace-tools-section{padding:8px;border-radius:8px;background:#faf9f7;border:1px solid rgba(73,53,72,.07)}
+.workspace-tools-section>p{margin:0 0 6px;font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.workspace-tools-row{display:flex;align-items:center;gap:4px;min-height:32px;flex-wrap:wrap}
+#workspace-tools-popover .tg{background:transparent;padding:0;gap:2px}
+#workspace-tools-popover .tbtn{color:var(--sig);background:rgba(73,53,72,.06)}
+#workspace-tools-popover .tbtn:hover,#workspace-tools-popover .tbtn.on{background:var(--accent);color:var(--ink)}
+#workspace-tools-popover .tsw{border-color:rgba(73,53,72,.2)}
+#workspace-more-actions{display:flex;flex-direction:column;gap:2px}
+#workspace-more-popover .ibtn,#workspace-more-popover .bbtn,#workspace-more-popover .lang-pill{
+  width:100%;height:34px;justify-content:flex-start;gap:9px;padding:0 10px;border:none;border-radius:7px;
+  background:transparent;color:var(--ink);font-family:var(--ui);font-size:11px;font-weight:600;box-shadow:none;
+}
+#workspace-more-popover .ibtn:hover,#workspace-more-popover .bbtn:hover,#workspace-more-popover .lang-pill:hover{background:rgba(73,53,72,.08);color:var(--sig)}
+#workspace-more-popover .ibtn svg{width:15px;height:15px}
+#workspace-more-popover .ibtn::after{content:attr(title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#workspace-more-popover #btn-projects{display:none}
+#workspace-more-popover #btn-clear{color:#b42828}
+.workspace-export-btn{height:32px;display:flex;align-items:center;gap:7px;padding:0 12px;border:none;border-radius:8px;background:var(--accent);color:#352638;font-family:var(--ui);font-weight:800;font-size:11px;cursor:pointer;white-space:nowrap}
+.workspace-export-btn:hover{filter:brightness(1.05)}
+.workspace-count{position:absolute;right:1px;top:1px;min-width:15px;height:15px;padding:0 3px;border-radius:99px;align-items:center;justify-content:center;background:var(--accent);color:var(--ink);font-size:8px;font-weight:800;border:2px solid var(--sig)}
+#toolbar .tr-r{gap:5px}
+#toolbar .tr-r>.tsep{display:none}
+#btn-projects{display:none}
+
+#refbar{min-height:62px;display:flex;align-items:center;gap:16px;padding:9px 24px!important;background:rgba(255,255,255,.93);border-bottom:1px solid rgba(73,53,72,.1);box-shadow:0 1px 4px rgba(35,28,34,.04);z-index:5}
+#refin{font-size:20px;line-height:1.05}
+#version-sub,#version-sub-input{font-size:11px!important}
+#workspace-document-state{display:flex;align-items:center;gap:6px;flex:none;padding:6px 9px;border-radius:99px;background:#f8f4ed;border:1px solid rgba(73,53,72,.12);color:var(--muted);font-size:10px;font-weight:700;white-space:nowrap}
+.workspace-state-dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+#workspace-document-state.is-saved{color:#567265;background:#f2f8f4;border-color:rgba(86,114,101,.18)}
+#workspace-document-state.is-saved .workspace-state-dot{background:#5b9a73}
+
+#editor-area{margin-top:0;padding:12px 14px 10px;gap:10px;background:#eef0f2}
+#tzone,#dzone{background:var(--surface);border:1px solid rgba(73,53,72,.13);border-radius:12px;box-shadow:0 4px 18px rgba(39,29,39,.06);overflow:hidden}
+#col-hdr{height:34px;padding:0 10px;background:#fcfbf9;border-bottom:1px solid rgba(73,53,72,.1);box-shadow:0 1px 0 rgba(255,255,255,.9);position:relative;z-index:2}
+.ch{font-size:9px;color:#8c8279}
+#rows-scroll{padding:6px 12px 48px 34px;background:linear-gradient(90deg,#faf9f7 0 28px,#fff 28px)}
+.xrow{margin-bottom:3px;border:1px solid transparent;border-radius:7px}
+.xrow.row-odd{background:#faf9f7}
+.xrow:hover{background:#fff9e9;border-color:rgba(200,168,75,.26)}
+.xrow:focus-within{background:#fffdf7;border-color:rgba(73,53,72,.24);box-shadow:0 1px 5px rgba(73,53,72,.08)}
+.xrow.has-cmt{border-left:3px solid var(--sig)}
+.vdiv{background:rgba(73,53,72,.1)}
+.vin{font-size:13px}.lid{font-size:11px}
+#row-actions{position:sticky;bottom:-2px;z-index:4;margin:18px 0 0;padding:8px 0 0;background:linear-gradient(180deg,rgba(255,255,255,0),#fff 24px);border-top:0}
+.ra-btn{height:29px;padding:0 11px;font-size:10px;opacity:.72}.ra-btn:hover{opacity:1}
+
+#cmargin{width:300px;border:1px solid rgba(73,53,72,.13);border-radius:12px;background:#f8f7f5;box-shadow:0 4px 18px rgba(39,29,39,.05);overflow:hidden}
+#cmargin.pane-hidden{width:0;min-width:0;border-width:0;visibility:hidden;pointer-events:none}
+#cmargin-hdr{padding:9px 10px;background:#fff;border-bottom-color:rgba(73,53,72,.1)}
+.cmargin-title{font-family:var(--ui);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;color:var(--sig);margin-right:auto}
+.ccard{border-color:rgba(73,53,72,.14);border-radius:9px;box-shadow:0 3px 12px rgba(39,29,39,.09)}
+.chdr{padding:6px 9px;background:linear-gradient(90deg,#493548,#604764)}
+.cbody{padding:9px 10px}
+
+#proj-panel,#bible-panel{border:1px solid rgba(73,53,72,.16)!important;box-shadow:0 16px 46px rgba(27,20,28,.19)!important;background:#fbfaf8}
+#proj-panel-hdr,#bpanel-hdr{min-height:52px;padding:12px 16px!important;background:#fff;border-bottom:1px solid rgba(73,53,72,.1)}
+#proj-panel-search-row{padding:10px 12px;background:#fbfaf8}
+#proj-list{padding:4px 8px 12px}
+
+#bbar{height:30px;padding:0 18px;background:rgba(255,255,255,.94);border-top-color:rgba(73,53,72,.1)}
+#bbar>.bbtn.p{display:none}
+#bbar .workspace-file-action{display:none!important}
+#bbar .bbst{font-size:10px}
+
+@media (max-width:1120px){
+  #workspace-project-context{min-width:42px;max-width:42px}.workspace-project-copy{display:none}
+  #workspace-tools-popover{left:80px}
+  #toolbar{padding:0 10px}.workspace-export-btn span:first-child{display:none}.workspace-export-btn{padding:0 9px}
+  #toolbar .sbadge{display:none}
+}
+@media (max-width:820px){
+  #view-toggle-grp{position:static;transform:none;margin:0}.vtbtn{padding:0 8px}.vtbtn span{display:none}
+  #refbar{padding:8px 14px!important}#workspace-document-state{display:none}
+  #editor-area{padding:8px}.workspace-export-btn{display:none}
+  #cmargin{position:absolute;right:8px;top:8px;bottom:8px;z-index:30}
+}
+@media (pointer:coarse){
+  #btn-workspace-tools,#workspace-tools-popover{display:none!important}
+  #workspace-project-context{min-width:42px;max-width:42px}.workspace-project-copy{display:none}
+}

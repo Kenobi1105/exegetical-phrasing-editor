@@ -201,6 +201,17 @@ const LANGS = {
     'toolbar.indent':      'Indent (Tab)',
     'toolbar.outdent':     'Outdent (Shift+Tab)',
     'view.phrasing':       'Phrasing',
+    'workspace.project':   'Project',
+    'workspace.untitled':  'Untitled',
+    'workspace.draft':     'Draft',
+    'workspace.saved':     'Saved locally',
+    'workspace.tools':     'Tools',
+    'workspace.more':      'More actions',
+    'workspace.notes':     'Notes',
+    'workspace.tools.text':'Text',
+    'workspace.tools.structure':'Structure',
+    'workspace.tools.diagram':'Diagram',
+    'workspace.tools.annotations':'Annotations',
     'view.diagram':        'Diagram',
     'view.phrasing.title': 'Phrasing View (Alt+T)',
     'view.diagram.title':  'Diagram View (Alt+T)',
@@ -739,6 +750,17 @@ const LANGS = {
     'toolbar.indent':      '增加缩进 (Tab)',
     'toolbar.outdent':     '减少缩进 (Shift+Tab)',
     'view.phrasing':       '分句',
+    'workspace.project':   '项目',
+    'workspace.untitled':  '未命名',
+    'workspace.draft':     '草稿',
+    'workspace.saved':     '已保存到本机',
+    'workspace.tools':     '工具',
+    'workspace.more':      '更多操作',
+    'workspace.notes':     '注释',
+    'workspace.tools.text':'文字',
+    'workspace.tools.structure':'结构',
+    'workspace.tools.diagram':'图示',
+    'workspace.tools.annotations':'注释工具',
     'view.diagram':        '图示',
     'view.phrasing.title': '分句视图 (Alt+T)',
     'view.diagram.title':  '图示视图 (Alt+T)',
@@ -1232,6 +1254,7 @@ function toggleLang() {
   LANG_UI = LANG_UI === 'en' ? 'zh' : 'en';
   try { localStorage.setItem('exeg-ui-lang', LANG_UI); } catch(_) {}
   applyLang();
+  if (typeof syncWorkspaceChrome === 'function') syncWorkspaceChrome();
 }
 
 /* ── Run on load ── */

@@ -832,6 +832,7 @@ function setEditorView(view){
   if(isSlides) setTimeout(()=>slRenderAll(), 80);
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
   if(typeof _refreshMobilePanelSections==='function') _refreshMobilePanelSections();
+  if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
 }
 
 function _repositionCmtCards(isDiagram){
@@ -4543,6 +4544,7 @@ function toggleCmt(btn,rid){
   new ResizeObserver(drawConns).observe(card);
   rowPush({type:'cmt-add',cid,rid,top:initTop,left:initLeft,width:initW,lid});
   _dcmtSyncBadge(rid);
+  if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
   setTimeout(()=>{card.querySelector('.cedit-c').focus();drawConns();},40);
   autoSave();
 }
@@ -4639,6 +4641,7 @@ function closeCmt(cid){
   rowPush({type:'cmt-remove',cid,rid,top,left,width,html,lid});
   _dcmtSyncBadge(rid);
   card.remove();drawConns();autoSave();
+  if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
 }
 function drawConns(){
   const svg=document.getElementById('svgl');
@@ -4785,12 +4788,114 @@ function selectDiagBlock(rid){
   }
 }
 
+/* ════════════════════════════════════════
+   MODERN WORKSPACE CHROME
+════════════════════════════════════════ */
+const WORKSPACE_NOTES_KEY='exeg-notes-pane-open';
+let _workspaceChromeReady=false;
+
+function _workspaceMove(id,targetId){
+  const el=document.getElementById(id),target=document.getElementById(targetId);
+  if(el&&target&&el.parentNode!==target) target.appendChild(el);
+}
+
+function _organizeWorkspaceTools(){
+  if(window.matchMedia?.('(pointer:coarse)').matches) return;
+  ['phrasing-sz-grp','phrasing-sz-split-grp','phrasing-color-grp'].forEach(id=>_workspaceMove(id,'workspace-tools-text'));
+  ['phrasing-indent-grp','divider-grp','psection-grp'].forEach(id=>_workspaceMove(id,'workspace-tools-structure'));
+  ['dzoom-grp','dfont-grp','tb-tgl-dgtrans','dsection-grp'].forEach(id=>_workspaceMove(id,'workspace-tools-diagram'));
+  ['tb-add-label','tb-add-cmt','tb-dem','tb-add-arrow','tb-add-connector','tb-add-bracket'].forEach(id=>_workspaceMove(id,'workspace-tools-annotations'));
+  ['btn-projects','btn-restart','btn-help','btn-account','lang-toggle-btn'].forEach(id=>_workspaceMove(id,'workspace-more-actions'));
+  const settingsButton=document.querySelector('#toolbar .tr-r button[data-i18n-title="toolbar.settings"]');
+  if(settingsButton) document.getElementById('workspace-more-actions')?.append(settingsButton);
+  ['bbar-save','bbar-load-json','btn-clear'].forEach(id=>_workspaceMove(id,'workspace-more-actions'));
+}
+
+function _refreshWorkspaceToolSections(){
+  document.querySelectorAll('#workspace-tools-popover .workspace-tools-section').forEach(section=>{
+    const row=section.querySelector('.workspace-tools-row');
+    const visible=row&&[...row.children].some(el=>getComputedStyle(el).display!=='none');
+    section.style.display=visible?'':'none';
+  });
+}
+
+function syncWorkspaceChrome(state){
+  const ref=document.getElementById('refin')?.value.trim()||'';
+  const entry=typeof projIndex==='function'&&CURRENT_PROJECT_ID
+    ?projIndex().find(p=>p.id===CURRENT_PROJECT_ID):null;
+  const name=entry?.name||ref||(typeof t==='function'?t('workspace.untitled'):'Untitled');
+  const title=document.getElementById('workspace-project-name');
+  if(title) title.textContent=name;
+  const status=document.getElementById('workspace-save-state');
+  if(status){
+    const key=state==='saved'||CURRENT_PROJECT_ID?'workspace.saved':'workspace.draft';
+    status.textContent=typeof t==='function'?t(key):(key==='workspace.saved'?'Saved locally':'Draft');
+    status.parentElement?.classList.toggle('is-saved',key==='workspace.saved');
+  }
+  const notes=document.querySelectorAll('.ccard').length;
+  const badge=document.getElementById('workspace-notes-count');
+  if(badge){badge.textContent=notes;badge.style.display=notes?'flex':'none';}
+  const cm=document.getElementById('cmargin');
+  document.getElementById('btn-cmt-pane')?.classList.toggle('active',!!cm&&!cm.classList.contains('pane-hidden'));
+  _refreshWorkspaceToolSections();
+}
+
+function toggleWorkspaceTools(event){
+  event?.stopPropagation();
+  const pop=document.getElementById('workspace-tools-popover');
+  const more=document.getElementById('workspace-more-popover');
+  if(!pop) return;
+  const open=!pop.classList.contains('open');
+  pop.classList.toggle('open',open);pop.setAttribute('aria-hidden',String(!open));
+  document.getElementById('btn-workspace-tools')?.classList.toggle('on',open);
+  more?.classList.remove('open');more?.setAttribute('aria-hidden','true');
+}
+function toggleWorkspaceMore(event){
+  event?.stopPropagation();
+  const pop=document.getElementById('workspace-more-popover');
+  const tools=document.getElementById('workspace-tools-popover');
+  if(!pop) return;
+  const open=!pop.classList.contains('open');
+  pop.classList.toggle('open',open);pop.setAttribute('aria-hidden',String(!open));
+  document.getElementById('btn-workspace-more')?.classList.toggle('on',open);
+  tools?.classList.remove('open');tools?.setAttribute('aria-hidden','true');
+  document.getElementById('btn-workspace-tools')?.classList.remove('on');
+}
+function closeWorkspacePopovers(){
+  ['workspace-tools-popover','workspace-more-popover'].forEach(id=>{
+    const pop=document.getElementById(id);pop?.classList.remove('open');pop?.setAttribute('aria-hidden','true');
+  });
+  document.getElementById('btn-workspace-tools')?.classList.remove('on');
+  document.getElementById('btn-workspace-more')?.classList.remove('on');
+}
+function initWorkspaceChrome(){
+  if(_workspaceChromeReady) return;
+  _workspaceChromeReady=true;
+  _organizeWorkspaceTools();
+  const cm=document.getElementById('cmargin');
+  let notesOpen=false;
+  try{notesOpen=localStorage.getItem(WORKSPACE_NOTES_KEY)==='1';}catch(_){}
+  cm?.classList.toggle('pane-hidden',!notesOpen);
+  document.addEventListener('click',event=>{
+    if(event.target.closest('#workspace-tools-popover,#workspace-more-popover,#btn-workspace-tools,#btn-workspace-more')) return;
+    closeWorkspacePopovers();
+  });
+  document.addEventListener('keydown',event=>{if(event.key==='Escape') closeWorkspacePopovers();});
+  if(window.matchMedia){
+    const mq=window.matchMedia('(pointer:coarse)');
+    const reorganize=()=>setTimeout(_organizeWorkspaceTools,0);
+    if(mq.addEventListener) mq.addEventListener('change',reorganize); else mq.addListener(reorganize);
+  }
+  syncWorkspaceChrome();
+}
+
 /* Toggle the comment pane (#cmargin) show/hide */
 function toggleCmtPane(){
   if(EDITOR_VIEW==='slides') return; // disabled in Slides View
   const cm=document.getElementById('cmargin');
   if(!cm) return;
   const hidden=cm.classList.toggle('pane-hidden');
+  try{localStorage.setItem(WORKSPACE_NOTES_KEY,hidden?'0':'1');}catch(_){}
   const btn=document.getElementById('btn-cmt-pane');
   if(btn) btn.classList.toggle('active',!hidden);
   // #cmargin.pane-hidden collapses to width:0, which resizes #dcanvas-scroll
@@ -4802,6 +4907,7 @@ function toggleCmtPane(){
     refreshDiagramConnectors();
     if(typeof renderSectionStrips==='function') renderSectionStrips();
   },50);
+  syncWorkspaceChrome();
 }
 
 /* Feature 3: Add comment anchored to the currently focused or last-focused row */
@@ -5448,6 +5554,7 @@ function loadData(data){
   // Restore diagram font size
   if(data.diagramFontSize) setTimeout(()=>setDiagramFontSize(data.diagramFontSize), 0);
   if(typeof slLoadDeck==='function') slLoadDeck(data.deck||{slides:[]});
+  if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome(CURRENT_PROJECT_ID?'saved':'draft');
 }
 
 const storeKey=()=>'exeg7-'+SESS+(IS_SINGLE?'-'+LANG:'');
@@ -5610,6 +5717,7 @@ async function projSave(showPanel){
   document.getElementById('stbar').textContent=(typeof t==='function'?t('toast.saved-ts'):'Saved · ')+ts;
   renderProjPanel();
   renderS1Recent();
+  if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome('saved');
   toast(typeof t==='function'?t('toast.saved'):'Saved to app');
   // Cloud push is additive and fire-and-forget — never delays or blocks
   // the local save above. account.js is optional; guard its absence.
@@ -5901,7 +6009,7 @@ async function _exportAllPDF(idx){
 
 // Capture the current session as a phrasing PDF blob (no file-save dialog).
 // Returns a Blob or null on failure.
-async function _capturePhrasingPDFBlob(ref){
+async function _capturePhrasingPDFBlobLegacy(ref){
   const {jsPDF}=window.jspdf;
   if(!jsPDF) return null;
   ref=ref||document.getElementById('refin')?.value.trim()||'Untitled';
@@ -6614,6 +6722,7 @@ function autoSave(){
   asT=setTimeout(async()=>{
     // Session autosave (crash recovery)
     try{ localStorage.setItem(storeKey(),JSON.stringify(collectData())); }catch(_){}
+    if(!CURRENT_PROJECT_ID && typeof syncWorkspaceChrome==='function') syncWorkspaceChrome('draft');
     // Project autosave — only if a project is already open
     if(CURRENT_PROJECT_ID){
       const ref=document.getElementById('refin').value.trim();
@@ -6652,6 +6761,7 @@ function autoSave(){
           stbar.classList.remove('stbar-saved');
         },2000);
       }
+      if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome('saved');
     }
   },700);
 }
@@ -6662,7 +6772,15 @@ function autoSave(){
 function toggleExportPopup(e){
   e.stopPropagation();
   const p=document.getElementById('export-popup');
-  p.classList.toggle('show');
+  const opening=!p.classList.contains('show');
+  p.classList.toggle('show',opening);
+  if(opening&&e.currentTarget){
+    const r=e.currentTarget.getBoundingClientRect();
+    p.style.transform='none';
+    p.style.left=Math.max(8,Math.min(window.innerWidth-p.offsetWidth-8,r.right-p.offsetWidth))+'px';
+    p.style.top=(r.bottom+8)+'px';
+    p.style.bottom='auto';
+  }
 }
 function closeExportPopup(){
   document.getElementById('export-popup').classList.remove('show');
@@ -7176,6 +7294,213 @@ function _drawPdfCitation(doc, startY, MAR, usableW, pH){
   lines.forEach(l=>{ doc.text(l,MAR,y); y+=LINE_H; });
 }
 
+/* ── Shared phrasing-PDF renderer ──────────────────────────────────────
+   The old exporter rendered original and translation cells independently.
+   That meant two expensive html2canvas passes for every row and preserved
+   Hebrew's larger on-screen default (24px) beside a 14px translation.  The
+   shared renderer below snapshots both cells together, once per row. */
+const PHRASING_PDF_SCALE=1.5;
+
+function _pdfPhrasingLayout(){
+  const orig=document.querySelector('[id^="oc-"] .cedit');
+  const trans=!IS_SINGLE?document.querySelector('[id^="tc-"] .cedit'):null;
+  const origCell=orig?.closest('.xcell');
+  const transCell=trans?.closest('.xcell');
+  const origPx=Math.max(80,origCell?.getBoundingClientRect().width||0);
+  const transPx=IS_SINGLE?0:Math.max(80,transCell?.getBoundingClientRect().width||0);
+  const total=origPx+transPx;
+  return {
+    origPx,
+    transPx,
+    origRatio:IS_SINGLE?1:(total?origPx/total:.6)
+  };
+}
+
+/* Create a detached, off-screen row that contains only the original and
+   translation text cells.  The translation receives the original cell's
+   computed size in this clone only: project data and the live editor never
+   change. */
+async function _pdfPhrasingRowSnapshot(origEl, transEl, layout){
+  const hasOrig=!!origEl?.innerText?.trim();
+  const hasTrans=!!transEl?.innerText?.trim();
+  if(!hasOrig&&!hasTrans) return null;
+
+  const originalSize=getComputedStyle(origEl||transEl).fontSize;
+  const host=document.createElement('div');
+  host.className='pdf-phrasing-row-snapshot';
+  host.style.cssText='position:fixed;left:-100000px;top:0;display:flex;align-items:flex-start;'
+    +'box-sizing:border-box;background:#fff;pointer-events:none;z-index:-1;'
+    +'width:'+(layout.origPx+layout.transPx)+'px;';
+
+  function cloneCell(source, width, normaliseSize){
+    const sourceCell=source?.closest('.xcell');
+    const cell=sourceCell?sourceCell.cloneNode(true):document.createElement('div');
+    cell.removeAttribute('id');
+    cell.style.flex='0 0 '+width+'px';
+    cell.style.width=width+'px';
+    cell.style.minWidth=width+'px';
+    cell.style.boxSizing='border-box';
+    const editor=cell.querySelector('.cedit');
+    if(editor){
+      editor.removeAttribute('id');
+      editor.setAttribute('contenteditable','false');
+      editor.style.width='100%';
+      if(normaliseSize) editor.style.fontSize=originalSize;
+    }
+    return cell;
+  }
+
+  host.appendChild(cloneCell(origEl,layout.origPx,false));
+  if(!IS_SINGLE) host.appendChild(cloneCell(transEl,layout.transPx,true));
+  document.body.appendChild(host);
+  try{
+    const canvas=await html2canvas(host,{
+      scale:PHRASING_PDF_SCALE,useCORS:true,allowTaint:true,
+      backgroundColor:'#ffffff',logging:false,width:host.offsetWidth,
+      windowWidth:window.innerWidth
+    });
+    return {canvas,scale:PHRASING_PDF_SCALE};
+  }finally{
+    host.remove();
+  }
+}
+
+function _pdfNextPaint(){
+  return new Promise(resolve=>requestAnimationFrame(resolve));
+}
+
+/* Returns a jsPDF document.  Both a normal download and a bulk ZIP call this
+   function so page layout, PDF-only sizing, and performance behavior cannot
+   drift apart. */
+async function _buildPhrasingPDF(ref, onProgress){
+  const {jsPDF}=window.jspdf||{};
+  if(!jsPDF) throw new Error('PDF library not loaded.');
+
+  const doc=new jsPDF({orientation:IS_SINGLE?'portrait':'landscape',unit:'pt',format:'a4'});
+  const pW=doc.internal.pageSize.getWidth();
+  const pH=doc.internal.pageSize.getHeight();
+  const MAR=28, usableW=pW-MAR*2, PT_PX=72/96;
+  const vWpt=26,lWpt=32,tableBodyW=usableW-vWpt-lWpt;
+  const SIG=[73,53,72],ACC=[200,168,75];
+  const HDR_H=18,ROW_PAD=4,MIN_H=22;
+  const layout=_pdfPhrasingLayout();
+  const origHdrW=IS_SINGLE?tableBodyW:tableBodyW*layout.origRatio;
+  const transHdrW=IS_SINGLE?0:tableBodyW-origHdrW;
+  const update=(pct,label)=>{ if(typeof onProgress==='function') onProgress(pct,label); };
+
+  function drawPageHeader(y){
+    doc.setFont('helvetica','bold');doc.setFontSize(15);doc.setTextColor(31,30,30);doc.text(ref,MAR,y);
+    doc.setFont('helvetica','normal');doc.setFontSize(8);doc.setTextColor(168,159,144);
+    doc.text(LANG+' · Exegetical Phrasing',MAR,y+12);
+    return y+24;
+  }
+  function drawColHeaders(y){
+    doc.setFillColor(...SIG);doc.rect(MAR,y,usableW,HDR_H,'F');
+    doc.setFont('helvetica','bold');doc.setFontSize(7);doc.setTextColor(247,243,233);
+    const labels=IS_SINGLE
+      ?['VERSE','LINE',(LANG||'').toUpperCase()+' TEXT']
+      :['VERSE','LINE',(LANG||'').toUpperCase()+' TEXT','TRANSLATION'];
+    const widths=IS_SINGLE?[vWpt,lWpt,origHdrW]:[vWpt,lWpt,origHdrW,transHdrW];
+    let x=MAR; widths.forEach((w,i)=>{doc.text(labels[i],x+3,y+HDR_H/2+2.5);x+=w;});
+    return y+HDR_H;
+  }
+  function stripHtml(html){
+    return html.replace(/<br\s*\/?>/gi,' ').replace(/<\/p>/gi,' ').replace(/<\/div>/gi,' ')
+      .replace(/<[^>]+>/g,'').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&')
+      .replace(/&lt;/g,'<').replace(/&gt;/g,'>').trim();
+  }
+
+  const FN_LINE_H=13,FN_GAP=5,FN_SEP_H=10;
+  const fnFont=await _embedPdfUnicodeFont(doc);
+  function fnH(fn){return Math.ceil((fn.text.length||1)/Math.floor(usableW/5.5))*FN_LINE_H+FN_GAP;}
+  function fnZoneH(fns){return fns.length?FN_SEP_H+fns.reduce((sum,fn)=>sum+fnH(fn),0):0;}
+  function drawFns(fns){
+    if(!fns.length) return;
+    let y=pH-MAR-fnZoneH(fns);
+    doc.setDrawColor(...SIG);doc.setLineWidth(.4);doc.line(MAR,y,MAR+usableW*.3,y);y+=6;
+    fns.forEach(fn=>{
+      const labelW=fn.lineId.length*4.5+4;
+      doc.setFontSize(9);doc.setFont('helvetica','bold');doc.setTextColor(...SIG);doc.text(fn.lineId,MAR,y+FN_LINE_H-3);
+      doc.setFontSize(10);doc.setFont(fnFont,'normal');doc.setTextColor(31,30,30);
+      const chars=Math.floor((usableW-labelW)/5.5),lines=[];let line='';
+      fn.text.split(' ').forEach(word=>{
+        const candidate=line?line+' '+word:word;
+        if(candidate.length>chars&&line){lines.push(line);line=word;}else line=candidate;
+      });
+      if(line) lines.push(line);
+      lines.forEach((text,i)=>doc.text(text,MAR+labelW,y+FN_LINE_H+i*FN_LINE_H-3,{isInputVisual:false}));
+      y+=Math.max(1,lines.length)*FN_LINE_H+FN_GAP;
+    });
+  }
+
+  const rowEls=_realRows();
+  let curY=drawColHeaders(drawPageHeader(MAR+12));
+  let rowIdx=0,pageFns=[];
+  update(0,'Exporting PDF…');
+
+  for(const row of rowEls){
+    const rid=row.dataset.rid;
+    const verse=row.querySelector('.vin')?.value||'';
+    const lineId=row.querySelector('.lid')?.textContent||'';
+    const cleanLineId=lineId==='—'?'':lineId;
+    const orig=row.querySelector('#oc-'+rid+' .cedit');
+    const trans=row.querySelector('#tc-'+rid+' .cedit');
+    const cid=row.dataset.cid;
+    const cmt=cid?document.querySelector('.ccard[data-cid="'+cid+'"] .cedit-c'):null;
+    const footnoteText=cmt?.innerText?.trim()?stripHtml(cmt.innerHTML):'';
+    const footnote=footnoteText?{lineId:cleanLineId||verse,text:footnoteText}:null;
+
+    await _pdfNextPaint();
+    const snapshot=await _pdfPhrasingRowSnapshot(orig,trans,layout);
+    const natW=snapshot?(snapshot.canvas.width/snapshot.scale)*PT_PX:tableBodyW;
+    const imageH=snapshot?(snapshot.canvas.height/snapshot.scale)*PT_PX*(tableBodyW/natW):0;
+    const rowH=Math.max(MIN_H,imageH+ROW_PAD*2);
+    const reserved=fnZoneH(footnote?[...pageFns,footnote]:pageFns);
+    if(curY+rowH>pH-MAR-reserved){
+      drawFns(pageFns);doc.addPage();curY=drawColHeaders(drawPageHeader(MAR+12));pageFns=[];
+    }
+    if(footnote?.text) pageFns.push(footnote);
+
+    doc.setFillColor(255,255,255);doc.rect(MAR,curY,usableW,rowH,'F');
+    const previous=rowIdx?rowEls[rowIdx-1].querySelector('.vin')?.value:null;
+    if(verse&&verse!==previous){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...SIG);doc.text(verse,MAR+vWpt/2,curY+rowH/2+3,{align:'center'});}
+    doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...ACC);
+    if(cleanLineId) doc.text(cleanLineId,MAR+vWpt+lWpt/2,curY+rowH/2+3,{align:'center'});
+    if(snapshot) doc.addImage(snapshot.canvas.toDataURL('image/jpeg',.92),'JPEG',MAR+vWpt+lWpt,curY+ROW_PAD,tableBodyW,imageH);
+
+    curY+=rowH;rowIdx++;
+    update(Math.round((rowIdx/Math.max(1,rowEls.length))*90),'Rendering row '+rowIdx+' of '+rowEls.length+'…');
+  }
+  drawFns(pageFns);
+  const lastFnZone=fnZoneH(pageFns);
+  _drawPdfCitation(doc,lastFnZone?Math.max(curY,pH-MAR-lastFnZone):curY,MAR,usableW,pH);
+  return doc;
+}
+
+async function _capturePhrasingPDFBlob(ref){
+  const doc=await _buildPhrasingPDF(ref);
+  return doc.output('blob');
+}
+
+function exportPDF(){
+  const refEl=document.getElementById('refin');
+  let ref=refEl.value.trim();
+  if(!ref){
+    const entered=prompt(typeof t==='function'?t('prompt.export-ref'):'Enter the verse reference before exporting.\n\nExample: John 1:1–10');
+    if(!entered||!entered.trim()){toast(typeof t==='function'?t('toast.export-cancel'):'Export cancelled — verse reference required');return;}
+    ref=entered.trim();refEl.value=ref;autoSave();
+  }
+  showProgress(0,'Exporting PDF…');
+  _buildPhrasingPDF(ref,(pct,label)=>showProgress(pct,label))
+    .then(doc=>{
+      showProgress(95,'Saving PDF…');
+      doc.save(buildFilename(ref)+' Phrasing.pdf');
+      toast((typeof t==='function'?t('toast.pdf-done'):'Downloaded: ')+buildFilename(ref)+' Phrasing.pdf');
+    })
+    .catch(err=>{toast((typeof t==='function'?t('toast.pdf-error'):'Export error: ')+err.message);console.error(err);})
+    .finally(()=>hideProgress());
+}
+
 /* ════════════════════════════════════════
    PDF EXPORT
    Font pre-loaded at session start (instant).
@@ -7183,7 +7508,7 @@ function _drawPdfCitation(doc, startY, MAR, usableW, pH){
    formatting — font colors, bold, highlights —
    is preserved exactly as seen on screen.
 ════════════════════════════════════════ */
-function exportPDF(){
+function exportPDFLegacy(){
   // 1. Require verse reference
   const refEl=document.getElementById('refin');
   let ref=refEl.value.trim();
@@ -13929,6 +14254,7 @@ function _splitInlineVerses(html,currentVerse){
 }
 
 document.addEventListener('DOMContentLoaded',async()=>{
+  initWorkspaceChrome();
   // Runs once, blocking, before anything below touches project data (in
   // particular renderS1Recent() further down) — see projMigrateToIdbOnce
   // for why this is safe to await here (idempotent, resumable, leaves
