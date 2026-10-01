@@ -7464,6 +7464,79 @@ async function _buildPhrasingPDF(ref, onProgress){
   }
 
   const rowEls=_realRows();
+  const rowIndex=new Map(rowEls.map((row,index)=>[String(row.dataset.rid),index]));
+  const showPropDividers=!document.body.classList.contains('hide-dividers');
+  const showSectionDividers=!document.body.classList.contains('hide-sections');
+  const propByRid=new Map(),sectionStartsByRid=new Map(),sectionsByRid=new Map();
+  const PROP_PLAIN_H=8,PROP_LABEL_H=14,SECTION_H=16;
+
+  function addToMap(map,key,value){
+    if(!map.has(key)) map.set(key,[]);
+    map.get(key).push(value);
+  }
+  function annotationColor(value,fallback){
+    const hex=String(value||fallback).replace('#','');
+    return /^[0-9a-f]{6}$/i.test(hex)
+      ? [parseInt(hex.slice(0,2),16),parseInt(hex.slice(2,4),16),parseInt(hex.slice(4,6),16)]
+      : fallback;
+  }
+
+  const pdfAnnotations=Array.isArray(ANNOTATIONS)?ANNOTATIONS:[];
+  if(showPropDividers){
+    pdfAnnotations.filter(ann=>ann.type==='divider').forEach(ann=>{
+      const rid=String(ann.beforeRid||ann.afterRid||'');
+      if(rowIndex.has(rid)) addToMap(propByRid,rid,ann);
+    });
+  }
+  if(showSectionDividers){
+    pdfAnnotations.filter(ann=>ann.type==='section').forEach(ann=>{
+      const start=rowIndex.get(String(ann.startRid)),end=rowIndex.get(String(ann.endRid));
+      if(start===undefined||end===undefined) return;
+      const first=Math.min(start,end),last=Math.max(start,end);
+      const section={...ann,first,last};
+      addToMap(sectionStartsByRid,String(rowEls[first].dataset.rid),section);
+      for(let index=first;index<=last;index++) addToMap(sectionsByRid,String(rowEls[index].dataset.rid),section);
+    });
+  }
+  function annotationHeight(rid){
+    const sectionH=(sectionStartsByRid.get(rid)||[]).length*SECTION_H;
+    const propH=(propByRid.get(rid)||[]).reduce((sum,ann)=>sum+(String(ann.label||'').trim()?PROP_LABEL_H:PROP_PLAIN_H),0);
+    return sectionH+propH;
+  }
+  function drawSectionHeader(section,y){
+    const color=annotationColor(section.color,[83,74,183]);
+    doc.setDrawColor(...color);doc.setLineWidth(1);doc.line(MAR,y+SECTION_H-3,MAR+usableW,y+SECTION_H-3);
+    const label=String(section.label||'').trim();
+    if(label){
+      doc.setFont(fnFont,'normal');doc.setFontSize(8);doc.setTextColor(...color);
+      doc.text(label,MAR+6,y+9,{isInputVisual:false});
+    }
+  }
+  function drawPropDivider(ann,y){
+    const height=String(ann.label||'').trim()?PROP_LABEL_H:PROP_PLAIN_H;
+    const color=annotationColor(ann.color,[200,168,75]);
+    const label=String(ann.label||'').trim();
+    if(label){
+      doc.setFont(fnFont,'normal');doc.setFontSize(7.5);doc.setTextColor(...color);
+      doc.text(label,MAR+6,y+8,{isInputVisual:false});
+    }
+    doc.setDrawColor(...color);doc.setLineWidth(.65);doc.line(MAR,y+height-2,MAR+usableW,y+height-2);
+    return height;
+  }
+  function drawSectionGutters(rid,y,height){
+    (sectionsByRid.get(rid)||[]).forEach((section,index)=>{
+      const color=annotationColor(section.color,[83,74,183]);
+      doc.setFillColor(...color);
+      doc.rect(MAR+1+index*4,y+1,3,Math.max(1,height-2),'F');
+    });
+  }
+  function drawRowAnnotations(rid,y){
+    let nextY=y;
+    (sectionStartsByRid.get(rid)||[]).forEach(section=>{drawSectionHeader(section,nextY);nextY+=SECTION_H;});
+    (propByRid.get(rid)||[]).forEach(ann=>{nextY+=drawPropDivider(ann,nextY);});
+    return nextY;
+  }
+
   let curY=drawColHeaders(drawPageHeader(MAR+12));
   let rowIdx=0,pageFns=[];
   update(0,'Exporting PDF…');
@@ -7484,13 +7557,17 @@ async function _buildPhrasingPDF(ref, onProgress){
     const natW=snapshot?(snapshot.canvas.width/snapshot.scale)*PT_PX:tableBodyW;
     const imageH=snapshot?(snapshot.canvas.height/snapshot.scale)*PT_PX*(tableBodyW/natW):0;
     const rowH=Math.max(MIN_H,imageH+ROW_PAD*2);
+    const annH=annotationHeight(String(rid));
     const reserved=fnZoneH(footnote?[...pageFns,footnote]:pageFns);
-    if(curY+rowH>pH-MAR-reserved){
+    if(curY+annH+rowH>pH-MAR-reserved){
       drawFns(pageFns);doc.addPage();curY=drawColHeaders(drawPageHeader(MAR+12));pageFns=[];
     }
     if(footnote?.text) pageFns.push(footnote);
 
+    curY=drawRowAnnotations(String(rid),curY);
+
     doc.setFillColor(255,255,255);doc.rect(MAR,curY,usableW,rowH,'F');
+    drawSectionGutters(String(rid),curY,rowH);
     const previous=rowIdx?rowEls[rowIdx-1].querySelector('.vin')?.value:null;
     if(verse&&verse!==previous){doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(...SIG);doc.text(verse,MAR+vWpt/2,curY+rowH/2+3,{align:'center'});}
     doc.setFont('helvetica','normal');doc.setFontSize(10);doc.setTextColor(...ACC);
