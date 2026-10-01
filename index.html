@@ -1231,6 +1231,10 @@
 /* ── Service Worker registration + update detection ── */
 if('serviceWorker' in navigator){
   navigator.serviceWorker.register('./sw.js').then(reg=>{
+    // Ask the browser to check now rather than waiting for its normal
+    // throttled service-worker update interval. This keeps the update banner
+    // responsive immediately after a new GitHub Pages deployment.
+    reg.update().catch(err=>console.warn('[SW] Update check failed:', err));
     // A waiting SW means a new version installed while the page was open
     if(reg.waiting){ swShowBanner(); }
 

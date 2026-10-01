@@ -83,6 +83,15 @@ if not exist ".git" (
 
 :: ── Stage and commit ──────────────────────────────────
 echo.
+:: Bump the service-worker cache key before every deploy. This is what lets
+:: open browser tabs detect a new release and show the Update banner.
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0bump-version.ps1"
+if errorlevel 1 (
+    echo ❌ Could not bump the service-worker version.
+    pause
+    exit /b 1
+)
+
 echo 📦 Staging files...
 git add -A
 

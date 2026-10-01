@@ -100,6 +100,19 @@ fi
 
 # ── Step 5: Stage and commit ──────────────────────────
 echo ""
+# Bump the service-worker cache key before every deploy. This is what lets
+# open browser tabs detect a new release and show the Update banner.
+APP_VERSION="$(date '+%Y%m%d%H%M%S')"
+SW_TMP="sw.js.tmp"
+sed "s/^const APP_VERSION = '[^']*';/const APP_VERSION = '$APP_VERSION';/" sw.js > "$SW_TMP"
+if cmp -s sw.js "$SW_TMP"; then
+    rm -f "$SW_TMP"
+    echo "❌ Could not bump the service-worker version."
+    exit 1
+fi
+mv "$SW_TMP" sw.js
+echo "✅ Release version $APP_VERSION"
+
 echo "📦 Staging files..."
 git add -A
 

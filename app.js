@@ -7545,10 +7545,11 @@ async function _buildPhrasingPDF(ref, onProgress){
     (sectionsByRid.get(rid)||[]).forEach((section,index)=>{
       const color=annotationColor(section.color,[83,74,183]);
       doc.setFillColor(...color);
-      // Existing sections carry directly from the previous row. New sections
-      // begin at their own title, then continue through any proposition
-      // divider and the first row without a white gap.
-      const railStartY=headerY.get(section)??annotationY;
+      // Existing sections carry directly from the previous row. A new
+      // section begins at its title rule, leaving the title-height space
+      // clear so adjacent sections do not read as one uninterrupted rail.
+      const headerStartY=headerY.get(section);
+      const railStartY=headerStartY===undefined?annotationY:headerStartY+SECTION_H-3;
       doc.rect(sectionRailX(index),railStartY,SECTION_RAIL_W,Math.max(1,railEndY-railStartY),'F');
     });
   }
