@@ -5033,7 +5033,7 @@ body.hide-sections #section-strips{display:none}
 }
 #workspace-tools-popover{left:clamp(150px,22vw,340px);width:min(520px,calc(100vw - 28px));padding:10px;grid-template-columns:1fr 1fr;gap:8px}
 #workspace-tools-popover.open{display:grid}
-#workspace-more-popover{right:14px;width:190px;padding:6px}
+#workspace-more-popover{right:14px;width:232px;padding:7px}
 #workspace-more-popover.open{display:block}
 .workspace-tools-section{padding:8px;border-radius:8px;background:#faf9f7;border:1px solid rgba(73,53,72,.07)}
 .workspace-tools-section>p{margin:0 0 6px;font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
@@ -5042,15 +5042,20 @@ body.hide-sections #section-strips{display:none}
 #workspace-tools-popover .tbtn{color:var(--sig);background:rgba(73,53,72,.06)}
 #workspace-tools-popover .tbtn:hover,#workspace-tools-popover .tbtn.on{background:var(--accent);color:var(--ink)}
 #workspace-tools-popover .tsw{border-color:rgba(73,53,72,.2)}
-#workspace-more-actions{display:flex;flex-direction:column;gap:2px}
+.workspace-more-section{display:flex;flex-direction:column;padding:3px 0}
+.workspace-more-section+.workspace-more-section{margin-top:4px;padding-top:8px;border-top:1px solid rgba(73,53,72,.1)}
+.workspace-more-section>p{margin:0 10px 4px;font-family:var(--ui);font-size:9px;font-weight:800;letter-spacing:.09em;text-transform:uppercase;color:#938a82}
+.workspace-more-section>div{display:flex;flex-direction:column;gap:2px}
 #workspace-more-popover .ibtn,#workspace-more-popover .bbtn,#workspace-more-popover .lang-pill{
-  width:100%;height:34px;justify-content:flex-start;gap:9px;padding:0 10px;border:none;border-radius:7px;
+  width:100%;height:34px;display:flex;align-items:center;justify-content:flex-start;gap:9px;padding:0 10px;border:none;border-radius:7px;
   background:transparent;color:var(--ink);font-family:var(--ui);font-size:11px;font-weight:600;box-shadow:none;
 }
 #workspace-more-popover .ibtn:hover,#workspace-more-popover .bbtn:hover,#workspace-more-popover .lang-pill:hover{background:rgba(73,53,72,.08);color:var(--sig)}
 #workspace-more-popover .ibtn svg{width:15px;height:15px}
-#workspace-more-popover .ibtn::after{content:attr(title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-#workspace-more-popover #btn-projects{display:none}
+.workspace-menu-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#workspace-more-popover #lang-toggle-btn .workspace-menu-label{order:-1;flex:1}
+#workspace-more-popover #lang-toggle-label{margin-left:auto;padding:3px 6px;border-radius:5px;background:rgba(73,53,72,.08);font-size:10px}
+#btn-projects.workspace-redundant-action{display:none!important}
 #workspace-more-popover #btn-clear{color:#b42828}
 .workspace-export-btn{height:32px;display:flex;align-items:center;gap:7px;padding:0 12px;border:none;border-radius:8px;background:var(--accent);color:#352638;font-family:var(--ui);font-weight:800;font-size:11px;cursor:pointer;white-space:nowrap}
 .workspace-export-btn:hover{filter:brightness(1.05)}

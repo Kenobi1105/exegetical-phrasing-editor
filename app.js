@@ -4799,16 +4799,37 @@ function _workspaceMove(id,targetId){
   if(el&&target&&el.parentNode!==target) target.appendChild(el);
 }
 
+function _workspaceMenuMove(id,targetId,labelKey){
+  _workspaceMove(id,targetId);
+  const el=document.getElementById(id);
+  if(!el||!labelKey) return;
+  let label=el.querySelector('.workspace-menu-label');
+  if(!label){
+    label=document.createElement('span');
+    label.className='workspace-menu-label';
+    el.appendChild(label);
+  }
+  label.dataset.i18n=labelKey;
+  label.textContent=typeof t==='function'?t(labelKey):labelKey;
+}
+
 function _organizeWorkspaceTools(){
   if(window.matchMedia?.('(pointer:coarse)').matches) return;
   ['phrasing-sz-grp','phrasing-sz-split-grp','phrasing-color-grp'].forEach(id=>_workspaceMove(id,'workspace-tools-text'));
   ['phrasing-indent-grp','divider-grp','psection-grp'].forEach(id=>_workspaceMove(id,'workspace-tools-structure'));
   ['dzoom-grp','dfont-grp','tb-tgl-dgtrans','dsection-grp'].forEach(id=>_workspaceMove(id,'workspace-tools-diagram'));
   ['tb-add-label','tb-add-cmt','tb-dem','tb-add-arrow','tb-add-connector','tb-add-bracket'].forEach(id=>_workspaceMove(id,'workspace-tools-annotations'));
-  ['btn-projects','btn-restart','btn-help','btn-account','lang-toggle-btn'].forEach(id=>_workspaceMove(id,'workspace-more-actions'));
+  document.getElementById('btn-projects')?.classList.add('workspace-redundant-action');
+  _workspaceMenuMove('btn-restart','workspace-more-workspace','workspace.menu.restart');
+  _workspaceMenuMove('btn-help','workspace-more-workspace','workspace.menu.shortcuts');
+  _workspaceMenuMove('btn-account','workspace-more-workspace','workspace.menu.account');
+  _workspaceMenuMove('lang-toggle-btn','workspace-more-preferences','workspace.menu.language');
   const settingsButton=document.querySelector('#toolbar .tr-r button[data-i18n-title="toolbar.settings"]');
-  if(settingsButton) document.getElementById('workspace-more-actions')?.append(settingsButton);
-  ['bbar-save','bbar-load-json','btn-clear'].forEach(id=>_workspaceMove(id,'workspace-more-actions'));
+  if(settingsButton){
+    settingsButton.id='btn-settings';
+    _workspaceMenuMove('btn-settings','workspace-more-preferences','workspace.menu.settings');
+  }
+  ['bbar-save','bbar-load-json','btn-clear'].forEach(id=>_workspaceMove(id,'workspace-more-project'));
 }
 
 function _refreshWorkspaceToolSections(){

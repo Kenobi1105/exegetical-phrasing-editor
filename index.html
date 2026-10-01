@@ -490,7 +490,18 @@
           <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
         </button>
         <div id="workspace-more-popover" aria-hidden="true">
-          <div id="workspace-more-actions"></div>
+          <section class="workspace-more-section">
+            <p data-i18n="workspace.menu.workspace">Workspace</p>
+            <div id="workspace-more-workspace"></div>
+          </section>
+          <section class="workspace-more-section">
+            <p data-i18n="workspace.menu.preferences">Preferences</p>
+            <div id="workspace-more-preferences"></div>
+          </section>
+          <section class="workspace-more-section workspace-more-project-section">
+            <p data-i18n="workspace.menu.project-file">Project file</p>
+            <div id="workspace-more-project"></div>
+          </section>
         </div>
         <div class="tsep" style="margin:0 4px"></div>
         <button class="ibtn" id="btn-restart" data-i18n-title="toolbar.restart" title="Restart session (Ctrl+Shift+R)" onclick="restartSess()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 2.1l4 4-4 4"/><path d="M3 12.2v-2a4 4 0 0 1 4-4h14"/><path d="M7 21.9l-4-4 4-4"/><path d="M21 11.8v2a4 4 0 0 1-4 4H3"/></svg></button>
