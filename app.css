@@ -5179,3 +5179,35 @@ body.hide-sections #section-strips{display:none}
 #toolbar>.tr-r>.ibtn svg{
   width:18px;height:18px;stroke-width:2.15;
 }
+
+/* Professional toolbar controls: grouped, restrained, and clearly focused. */
+#cmargin{overflow-x:visible;overflow-y:auto}
+#cmargin.pane-hidden{overflow:hidden}
+#toolbar>.tg{
+  padding:2px;background:rgba(0,0,0,.12);border:1px solid rgba(255,255,255,.08);border-radius:6px;
+}
+#workspace-project-btn,
+#toolbar>.tbtn:not(.tglsw),
+#toolbar>.tg>.tbtn:not(.tglsw),
+#toolbar>.tr-r>.ibtn{
+  border:1px solid transparent;border-radius:5px;background:transparent;box-shadow:none;
+}
+#workspace-project-btn:hover,
+#toolbar>.tbtn:not(.tglsw):hover,
+#toolbar>.tg>.tbtn:not(.tglsw):hover,
+#toolbar>.tr-r>.ibtn:hover{
+  background:rgba(255,255,255,.1);border-color:rgba(255,255,255,.12);
+}
+#toolbar>.tbtn:not(.tglsw).on,
+#toolbar>.tg>.tbtn:not(.tglsw).on,
+#toolbar>.tr-r>.ibtn.active{
+  background:rgba(240,208,143,.18);border-color:rgba(240,208,143,.34);color:var(--label);
+}
+#workspace-project-btn svg,
+#toolbar>.tbtn:not(.tglsw) svg,
+#toolbar>.tg>.tbtn:not(.tglsw) svg,
+#toolbar>.tr-r>.ibtn svg{
+  width:16px;height:16px;stroke-width:2;
+}
+.workspace-export-btn{border-radius:6px;box-shadow:inset 0 0 0 1px rgba(73,53,72,.12)}
+.workspace-export-caret{font-size:9px;line-height:1;transform:translateY(-1px)}
