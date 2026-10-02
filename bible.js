@@ -482,6 +482,16 @@ function bBuildVerseList(section, corpus, bookIdx, chapter, verses){
     const hasHTML=typeof v==='string'&&/<[a-zA-Z]/.test(v);
     const txt=hasHTML?v:escH(String(v));
     row.innerHTML=`<span class="bpvnum">${i+1}</span><span class="bpvtxt">${txt}</span>`;
+    row.tabIndex=0;
+    row.setAttribute('role','button');
+    const saveSelection=()=>{
+      const version=tab?.version||bDefaultVersion();
+      window.studyNotebookBibleSelection={type:'bible',corpus,bookIdx,chapter,verse:i+1,version,reference:bReferenceLabel(corpus,bookIdx,chapter,i+1),label:bReferenceLabel(corpus,bookIdx,chapter,i+1)+' · '+String(v).replace(/<[^>]*>/g,'').slice(0,54)};
+      row.classList.add('bverse-study-selected');
+      cnt.querySelectorAll('.bverse-study-selected').forEach(el=>{if(el!==row)el.classList.remove('bverse-study-selected');});
+    };
+    row.addEventListener('click',saveSelection);
+    row.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();saveSelection();}});
     cnt.appendChild(row);
   });
   // Wire footnote interactions after building
@@ -1266,6 +1276,22 @@ function closeBible(){
   bPanelOpen=false;
   bPickerClose();
 }
+async function bOpenNotebookVerse(link){
+  if(!link||link.type!=='bible') return;
+  if(!bPanelOpen) openBible_();
+  await bLoadIndex().catch(()=>{});
+  const section='top';
+  let tab=bTabs[section][bActiveTab[section]];
+  if(!tab){
+    tab={version:link.version||bDefaultVersion(),corpus:link.corpus,bookIdx:link.bookIdx,chapter:link.chapter,verse:link.verse||1};
+    bTabs[section].push(tab);bActiveTab[section]=bTabs[section].length-1;
+  }else{
+    tab.version=link.version||tab.version;tab.corpus=link.corpus;tab.bookIdx=link.bookIdx;tab.chapter=link.chapter;tab.verse=link.verse||1;
+  }
+  bFocusedSection=section;bRenderTabBar(section);bRefreshPaneChrome(section);
+  await bLoadPassageInfinite(section,link.corpus,link.bookIdx,link.chapter,link.verse||1);
+}
+window.bOpenNotebookVerse=bOpenNotebookVerse;
 /* ── Bible panel pin ── */
 let bPinned=false;
 try{bPinned=JSON.parse(localStorage.getItem('bPinned')||'false');}catch(_){}

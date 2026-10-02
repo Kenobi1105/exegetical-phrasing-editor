@@ -33,6 +33,28 @@ const LANGS = {
     's1.local-note':       'Projects save privately in this browser until you choose to back them up or sync.',
     's1.all-projects':     'All projects',
     's1.import':           'Import project or backup',
+    /* ── Study Notebook ── */
+    'study.notebook.title':'Study Notebook',
+    'study.notebook.toggle':'Study Notebook (Alt+4)',
+    'study.search':        'Search notebook',
+    'study.filter.all':    'All stages',
+    'study.filter.aria':   'Filter study notes',
+    'study.stage.observation':'Observation',
+    'study.stage.question':'Question',
+    'study.stage.cross-reference':'Cross-reference',
+    'study.stage.insight': 'Insight',
+    'study.stage.application':'Application',
+    'study.add':           'Add entry',
+    'study.empty':         'Start with an observation, question, or insight.',
+    'study.title.placeholder':'Entry title',
+    'study.body.placeholder':'Write your study note…',
+    'study.attach':        'Attach current source',
+    'study.attach.none':   'Select a row, diagram phrase, or Bible verse first.',
+    'study.attachment.unavailable':'This source is no longer available.',
+    'study.delete.confirm':'Delete this notebook entry?',
+    'study.delete':        'Delete entry',
+    'study.detach':        'Remove attachment',
+    'study.export.include':'Include Study Notebook',
     /* ── Critical apparatus marks (NA28) ── */
     'crit.omit-word':      'The word following this sign is omitted by the witnesses cited.',
     'crit.omit-words':     'The words between these signs are omitted by the witnesses cited.',
@@ -552,6 +574,28 @@ const LANGS = {
     's1.local-note':       '项目会私密保存在此浏览器中，直到您选择备份或同步。',
     's1.all-projects':     '所有项目',
     's1.import':           '导入项目或备份',
+    /* ── 研读笔记本 ── */
+    'study.notebook.title':'研读笔记本',
+    'study.notebook.toggle':'研读笔记本（Alt+4）',
+    'study.search':        '搜索笔记本',
+    'study.filter.all':    '所有阶段',
+    'study.filter.aria':   '筛选研读笔记',
+    'study.stage.observation':'观察',
+    'study.stage.question':'问题',
+    'study.stage.cross-reference':'交叉经文',
+    'study.stage.insight': '洞见',
+    'study.stage.application':'应用',
+    'study.add':           '添加条目',
+    'study.empty':         '从观察、问题或洞见开始。',
+    'study.title.placeholder':'条目标题',
+    'study.body.placeholder':'写下你的研读笔记…',
+    'study.attach':        '附加当前来源',
+    'study.attach.none':   '请先选择一行、图表短语或经文。',
+    'study.attachment.unavailable':'此来源已不可用。',
+    'study.delete.confirm':'删除此笔记本条目？',
+    'study.delete':        '删除条目',
+    'study.detach':        '移除附加来源',
+    'study.export.include':'包含研读笔记本',
     /* ── 校勘符号（NA28）── */
     'crit.omit-word':      '所引证的抄本省略此符号后的单词。',
     'crit.omit-words':     '所引证的抄本省略这两个符号之间的词语。',
@@ -1133,6 +1177,9 @@ function applyLang() {
 
   // Re-render Screen 1 recent projects (translates "No saved projects yet.")
   if (typeof renderS1Recent === 'function') renderS1Recent();
+
+  // Study Notebook cards and dynamically generated stage labels.
+  if (typeof renderStudyNotebook === 'function') renderStudyNotebook();
 
   // Re-render the account modal (no-op while hidden) and its status badges
   if (typeof acctRender === 'function') acctRender();

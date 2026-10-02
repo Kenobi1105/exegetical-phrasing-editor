@@ -140,6 +140,16 @@ const DIAGRAM_FONT_MIN=10, DIAGRAM_FONT_MAX=28, DIAGRAM_FONT_STEP=1;
 let ANNOTATIONS=[];
 let ANN_CTR=0; // ever-incrementing annotation id seed
 
+/* ── Project-level Study Notebook ──
+   Unlike row comments, these entries may connect several sources across a
+   passage. The array is persisted as part of collectData(), keeping it
+   compatible with project JSON, backups, and cloud payloads. */
+let STUDY_NOTEBOOK=[];
+let STUDY_NOTE_CTR=0;
+let STUDY_NOTE_ACTIVE_ID=null;
+const STUDY_NOTEBOOK_OPEN_KEY='exeg-study-notebook-open';
+const STUDY_STAGES=['observation','question','cross-reference','insight','application'];
+
 /* ── Shared two-layer color palette (Highlight + Text Color + Line Color + Bracket Color) ──
    Layer 1 preset row differs by tool:
      - highlight / lineColor → 4 soft tones (original palette)
@@ -595,6 +605,8 @@ function openEditor(){
   // Reset bracket and annotation state for new session
   BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
   ANNOTATIONS=[]; ANN_CTR=0;
+  STUDY_NOTEBOOK=[]; STUDY_NOTE_CTR=0; STUDY_NOTE_ACTIVE_ID=null; window.studyNotebookBibleSelection=null;
+  renderStudyNotebook();
   setSourceCitation(''); // parsePasteIntoRows (below, if pasting) sets it fresh
   if(typeof _brkCancelPending==='function') _brkCancelPending();
   if(typeof _brkCloseEditPopup==='function') _brkCloseEditPopup();
@@ -4983,6 +4995,10 @@ function syncWorkspaceChrome(state){
   if(badge){badge.textContent=notes;badge.style.display=notes?'flex':'none';}
   const cm=document.getElementById('cmargin');
   document.getElementById('btn-cmt-pane')?.classList.toggle('active',!!cm&&!cm.classList.contains('pane-hidden'));
+  const notebook=document.getElementById('study-notebook');
+  const notebookCount=document.getElementById('workspace-notebook-count');
+  if(notebookCount){notebookCount.textContent=STUDY_NOTEBOOK.length;notebookCount.style.display=STUDY_NOTEBOOK.length?'flex':'none';}
+  document.getElementById('btn-study-notebook')?.classList.toggle('active',!!notebook&&!notebook.classList.contains('pane-hidden'));
   _refreshWorkspaceToolSections();
 }
 
@@ -5019,9 +5035,14 @@ function initWorkspaceChrome(){
   _workspaceChromeReady=true;
   _organizeWorkspaceTools();
   const cm=document.getElementById('cmargin');
+  const notebook=document.getElementById('study-notebook');
   let notesOpen=false;
   try{notesOpen=localStorage.getItem(WORKSPACE_NOTES_KEY)==='1';}catch(_){}
   cm?.classList.toggle('pane-hidden',!notesOpen);
+  let notebookOpen=false;
+  try{notebookOpen=localStorage.getItem(STUDY_NOTEBOOK_OPEN_KEY)==='1';}catch(_){}
+  notebook?.classList.toggle('pane-hidden',!notebookOpen);
+  if(notebookOpen) cm?.classList.add('pane-hidden');
   document.addEventListener('click',event=>{
     if(event.target.closest('#workspace-tools-popover,#workspace-more-popover,#btn-workspace-tools,#btn-workspace-more')) return;
     closeWorkspacePopovers();
@@ -5040,6 +5061,10 @@ function toggleCmtPane(){
   const cm=document.getElementById('cmargin');
   if(!cm) return;
   const hidden=cm.classList.toggle('pane-hidden');
+  if(!hidden){
+    document.getElementById('study-notebook')?.classList.add('pane-hidden');
+    try{localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');}catch(_){}
+  }
   try{localStorage.setItem(WORKSPACE_NOTES_KEY,hidden?'0':'1');}catch(_){}
   const btn=document.getElementById('btn-cmt-pane');
   if(btn) btn.classList.toggle('active',!hidden);
@@ -5051,6 +5076,137 @@ function toggleCmtPane(){
     refreshDiagramConnectors();
     if(typeof renderSectionStrips==='function') renderSectionStrips();
   },50);
+  syncWorkspaceChrome();
+}
+
+/* ════════════════════════════════════════
+   STUDY NOTEBOOK
+════════════════════════════════════════ */
+function _studyStageLabel(stage){
+  const key='study.stage.'+stage;
+  return typeof t==='function'?t(key):stage;
+}
+function _studyNewId(){return 'study-'+Date.now()+'-'+(++STUDY_NOTE_CTR);}
+function _studyStripHtml(html){
+  const node=document.createElement('div');node.innerHTML=html||'';
+  return (node.textContent||'').replace(/\s+/g,' ').trim();
+}
+function _studyEscAttr(value){return escH(String(value||'')).replace(/"/g,'&quot;');}
+function _studyFind(id){return STUDY_NOTEBOOK.find(note=>note.id===id);}
+function _studyReferenceForRow(rid){
+  const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
+  if(!row) return null;
+  const line=row.querySelector('.lid')?.textContent||'';
+  const verse=row.querySelector('.vin')?.value||'';
+  const text=_studyStripHtml(row.querySelector(`#oc-${rid} .cedit`)?.innerHTML||'');
+  return {type:'row',rid:String(rid),label:(line&&line!=='—'?line:(verse?'v'+verse:'Line'))+(text?' · '+text.slice(0,54):''),snapshot:{line,verse,text}};
+}
+function studyNotebookCurrentAttachment(){
+  if(EDITOR_VIEW==='diagram'&&SELECTED_DIAG_RID){const link=_studyReferenceForRow(SELECTED_DIAG_RID);if(link)link.view='diagram';return link;}
+  if(lastFocusedRowEl?.dataset?.rid){return _studyReferenceForRow(lastFocusedRowEl.dataset.rid);}
+  const bibleSel=window.studyNotebookBibleSelection;
+  if(bibleSel) return {...bibleSel};
+  return null;
+}
+function studyNotebookAttachmentAvailable(link){
+  if(link.type==='row') return !!document.querySelector(`.xrow[data-rid="${link.rid}"]`);
+  if(link.type==='bible') return true;
+  return false;
+}
+function studyNotebookSave(id,field,el){
+  const note=_studyFind(id);if(!note) return;
+  note[field]=field==='bodyHTML'?el.innerHTML:el.textContent;
+  note.updatedAt=Date.now();STUDY_NOTE_ACTIVE_ID=id;
+  autoSave();
+}
+function studyNotebookSetStage(id,value){
+  const note=_studyFind(id);if(!note||!STUDY_STAGES.includes(value)) return;
+  note.stage=value;note.updatedAt=Date.now();autoSave();renderStudyNotebook();
+}
+function studyNotebookDelete(id){
+  const note=_studyFind(id);if(!note) return;
+  if(!confirm(typeof t==='function'?t('study.delete.confirm'):'Delete this notebook entry?')) return;
+  STUDY_NOTEBOOK=STUDY_NOTEBOOK.filter(item=>item.id!==id);
+  if(STUDY_NOTE_ACTIVE_ID===id)STUDY_NOTE_ACTIVE_ID=null;
+  autoSave();renderStudyNotebook();syncWorkspaceChrome();
+}
+function addStudyNote(stage){
+  const filter=document.getElementById('study-notebook-filter')?.value||'observation';
+  const note={id:_studyNewId(),stage:STUDY_STAGES.includes(stage)?stage:(STUDY_STAGES.includes(filter)?filter:'observation'),title:'',bodyHTML:'',attachments:[],createdAt:Date.now(),updatedAt:Date.now()};
+  STUDY_NOTEBOOK.unshift(note);STUDY_NOTE_ACTIVE_ID=note.id;
+  renderStudyNotebook();syncWorkspaceChrome();autoSave();
+  requestAnimationFrame(()=>document.querySelector(`.study-note-title[data-note-id="${note.id}"]`)?.focus());
+}
+function studyNotebookAttachCurrent(id){
+  const note=_studyFind(id),attachment=studyNotebookCurrentAttachment();
+  if(!note){return;}
+  if(!attachment){toast(typeof t==='function'?t('study.attach.none'):'Select a row, diagram phrase, or Bible verse first.');return;}
+  note.attachments=Array.isArray(note.attachments)?note.attachments:[];
+  const duplicate=note.attachments.some(item=>item.type===attachment.type&&item.rid===attachment.rid&&item.reference===attachment.reference);
+  if(!duplicate) note.attachments.push(attachment);
+  note.updatedAt=Date.now();autoSave();renderStudyNotebook();
+}
+function studyNotebookDetach(id,index){
+  const note=_studyFind(id);if(!note||!note.attachments?.[index]) return;
+  note.attachments.splice(index,1);note.updatedAt=Date.now();autoSave();renderStudyNotebook();
+}
+function studyNotebookFormat(command){
+  const active=document.activeElement;
+  if(!active?.closest?.('.study-note-card')) return;
+  document.execCommand(command,false,null);
+  const id=active.dataset.noteId;
+  if(id) studyNotebookSave(id,active.classList.contains('study-note-title')?'title':'bodyHTML',active);
+}
+function studyNotebookJump(link){
+  if(!link)return;
+  if(link.type==='bible'&&typeof window.bOpenNotebookVerse==='function'){window.bOpenNotebookVerse(link);return;}
+  if(link.type!=='row'||!studyNotebookAttachmentAvailable(link)){toast(typeof t==='function'?t('study.attachment.unavailable'):'This source is no longer available.');return;}
+  if(link.view==='diagram'){
+    if(EDITOR_VIEW!=='diagram')setEditorView('diagram');
+    selectDiagBlock(link.rid);
+    const block=document.querySelector(`#dcanvas .dblock[data-rid="${link.rid}"]`);
+    block?.scrollIntoView({block:'center',behavior:'smooth'});
+    return;
+  }
+  if(EDITOR_VIEW!=='phrasing')setEditorView('phrasing');
+  const row=document.querySelector(`.xrow[data-rid="${link.rid}"]`);
+  row?.scrollIntoView({block:'center',behavior:'smooth'});
+  row?.classList.add('study-note-source-focus');
+  setTimeout(()=>row?.classList.remove('study-note-source-focus'),1500);
+}
+function studyNotebookJumpByIndex(id,index){studyNotebookJump(_studyFind(id)?.attachments?.[index]);}
+function _studyNoteCard(note){
+  const deleteLabel=typeof t==='function'?t('study.delete'):'Delete entry';
+  const detachLabel=typeof t==='function'?t('study.detach'):'Remove attachment';
+  const attachments=(note.attachments||[]).map((link,index)=>{
+    const available=studyNotebookAttachmentAvailable(link);
+    return `<span class="study-note-attachment${available?'':' is-orphan'}" title="${_studyEscAttr(link.label)}"><button type="button" onclick="studyNotebookJumpByIndex('${note.id}',${index})">${escH(link.label||'Source')}</button><button type="button" class="study-note-detach" onclick="studyNotebookDetach('${note.id}',${index})" aria-label="${_studyEscAttr(detachLabel)}">×</button></span>`;
+  }).join('');
+  const stamp=new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleDateString([],{month:'short',day:'numeric'})+' · '+new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  return `<article class="study-note-card" data-study-id="${note.id}"><div class="study-note-card-hdr"><select class="study-note-stage" onchange="studyNotebookSetStage('${note.id}',this.value)">${STUDY_STAGES.map(stage=>`<option value="${stage}"${note.stage===stage?' selected':''}>${escH(_studyStageLabel(stage))}</option>`).join('')}</select><button class="study-note-delete" type="button" onclick="studyNotebookDelete('${note.id}')" title="${_studyEscAttr(deleteLabel)}" aria-label="${_studyEscAttr(deleteLabel)}">×</button></div><div class="study-note-title" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.title.placeholder'):'Entry title') }" onfocus="STUDY_NOTE_ACTIVE_ID='${note.id}'" oninput="studyNotebookSave('${note.id}','title',this)">${escH(note.title||'')}</div><div class="study-note-body" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.body.placeholder'):'Write your study note…') }" onfocus="STUDY_NOTE_ACTIVE_ID='${note.id}'" oninput="studyNotebookSave('${note.id}','bodyHTML',this)">${note.bodyHTML||''}</div>${attachments?`<div class="study-note-attachments">${attachments}</div>`:''}<footer class="study-note-footer"><span>${escH(stamp)}</span><button class="study-note-attach" type="button" onclick="studyNotebookAttachCurrent('${note.id}')">${typeof t==='function'?t('study.attach'):'Attach current source'}</button></footer></article>`;
+}
+function renderStudyNotebook(){
+  const list=document.getElementById('study-notebook-list');if(!list)return;
+  const query=(document.getElementById('study-notebook-search')?.value||'').trim().toLowerCase();
+  const stage=document.getElementById('study-notebook-filter')?.value||'all';
+  const notes=STUDY_NOTEBOOK.filter(note=>{
+    if(stage!=='all'&&note.stage!==stage)return false;
+    return !query||_studyStripHtml(note.title+' '+note.bodyHTML+' '+(note.attachments||[]).map(a=>a.label).join(' ')).toLowerCase().includes(query);
+  });
+  list.innerHTML=notes.length?notes.map(_studyNoteCard).join(''):`<div class="study-notebook-empty">${typeof t==='function'?t('study.empty'):'Start with an observation, question, or insight.'}</div>`;
+  const total=document.getElementById('study-notebook-count');if(total)total.textContent=STUDY_NOTEBOOK.length;
+  syncWorkspaceChrome();
+}
+function toggleStudyNotebook(){
+  const dock=document.getElementById('study-notebook');if(!dock)return;
+  const opening=dock.classList.contains('pane-hidden');
+  dock.classList.toggle('pane-hidden',!opening);
+  if(opening){
+    const cm=document.getElementById('cmargin');cm?.classList.add('pane-hidden');
+    try{localStorage.setItem(WORKSPACE_NOTES_KEY,'0');localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'1');}catch(_){}
+    renderStudyNotebook();
+  }else try{localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');}catch(_){}
+  setTimeout(()=>{refreshBrackets();refreshDiagramConnectors();if(typeof renderSectionStrips==='function')renderSectionStrips();},50);
   syncWorkspaceChrome();
 }
 
@@ -5217,6 +5373,8 @@ function restartSess(){
   // Reset bracket, annotation, and legacy deck state.
   BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
   ANNOTATIONS=[]; ANN_CTR=0;
+  STUDY_NOTEBOOK=[]; STUDY_NOTE_CTR=0; STUDY_NOTE_ACTIVE_ID=null; window.studyNotebookBibleSelection=null;
+  renderStudyNotebook();
   if(typeof _brkCancelPending==='function') _brkCancelPending();
   LEGACY_SLIDES_DECK={slides:[]};
   sessionVersionLabel='';
@@ -5367,6 +5525,7 @@ function collectData(){
     brackets: typeof collectBracketData==='function' ? collectBracketData() : [],
     annotations: ANNOTATIONS.map(a=>({...a})),
     annCtr: ANN_CTR,
+    studyNotebook:{entries:STUDY_NOTEBOOK.map(note=>({...note,attachments:(note.attachments||[]).map(link=>({...link}))})),nextId:STUDY_NOTE_CTR},
     sourceCitation: SOURCE_CITATION,
     deck: LEGACY_SLIDES_DECK};
 }
@@ -5406,6 +5565,7 @@ function _stripBgFromHTML(html){
 function loadData(data){
   document.getElementById('rows-body').innerHTML='';
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
+  window.studyNotebookBibleSelection=null;
   RC=data.RC||0;CC=data.CC||0;CNX=data.CNX||0;LBL=data.LBL||0;
   // data.colors (per-project color snapshot) is deliberately no longer read
   // — the global theme (Settings) is now the single source of truth for
@@ -5473,6 +5633,14 @@ function loadData(data){
     if(Number.isFinite(idNumber)) CC=Math.max(CC,idNumber);
   });
   _syncCommentList();
+  const savedNotebook=data.studyNotebook;
+  STUDY_NOTEBOOK=Array.isArray(savedNotebook?.entries)?savedNotebook.entries.filter(note=>note&&typeof note.id==='string'&&/^[A-Za-z0-9_-]+$/.test(note.id)&&STUDY_STAGES.includes(note.stage)).map(note=>({
+    id:note.id,stage:note.stage,title:typeof note.title==='string'?note.title:'',bodyHTML:typeof note.bodyHTML==='string'?note.bodyHTML:'',
+    attachments:Array.isArray(note.attachments)?note.attachments.filter(link=>link&&typeof link.type==='string'&&typeof link.label==='string').map(link=>({...link})):[],
+    createdAt:Number.isFinite(note.createdAt)?note.createdAt:Date.now(),updatedAt:Number.isFinite(note.updatedAt)?note.updatedAt:Date.now()
+  })):[];
+  STUDY_NOTE_CTR=Number.isFinite(savedNotebook?.nextId)?savedNotebook.nextId:STUDY_NOTEBOOK.length;
+  STUDY_NOTE_ACTIVE_ID=null;renderStudyNotebook();
   // Restore Diagram View data — connectors are fully wired up as of Stage 3
   // (solid-line, block-to-block by row ID, rendered when Diagram View is
   // active) with selection/style/color/delete added afterward. Floating
@@ -7255,6 +7423,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   // last page: the diagram image or the pinned-to-bottom footnote zone.
   _drawPdfCitation(doc, lastContentBottom, MAR, usableW, pH);
 
+  if(studyNotebookIncludeInPdf()) appendStudyNotebookPDF(doc);
   return doc;
 }
 async function doExportJSON(){
@@ -7425,6 +7594,7 @@ function clearAll(){
   // Now clear
   document.getElementById('rows-body').innerHTML='';
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
+  STUDY_NOTEBOOK=[];STUDY_NOTE_CTR=0;STUDY_NOTE_ACTIVE_ID=null;window.studyNotebookBibleSelection=null;renderStudyNotebook();
   document.getElementById('refin').value='';
   document.getElementById('svgl')?.replaceChildren();
   setSourceCitation('');
@@ -7772,7 +7942,33 @@ async function _buildPhrasingPDF(ref, onProgress){
   drawFns(pageFns);
   const lastFnZone=fnZoneH(pageFns);
   _drawPdfCitation(doc,lastFnZone?Math.max(curY,pH-MAR-lastFnZone):curY,MAR,usableW,pH);
+  if(studyNotebookIncludeInPdf()) appendStudyNotebookPDF(doc);
   return doc;
+}
+
+function studyNotebookIncludeInPdf(){return !!document.getElementById('export-study-notebook')?.checked&&STUDY_NOTEBOOK.length>0;}
+function appendStudyNotebookPDF(doc){
+  const margin=36,width=doc.internal.pageSize.getWidth()-margin*2,height=doc.internal.pageSize.getHeight(),stageGroups=STUDY_STAGES.map(stage=>[stage,STUDY_NOTEBOOK.filter(note=>note.stage===stage)]).filter(([,notes])=>notes.length);
+  if(!stageGroups.length)return;
+  doc.addPage();let y=margin;
+  const pageHeader=()=>{doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(73,53,72);doc.text(typeof t==='function'?t('study.notebook.title'):'Study Notebook',margin,y);y+=26;};
+  const ensure=need=>{if(y+need>height-margin){doc.addPage();y=margin;pageHeader();}};
+  pageHeader();
+  for(const [stage,notes] of stageGroups){
+    ensure(28);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(200,168,75);doc.text(_studyStageLabel(stage).toUpperCase(),margin,y);y+=16;
+    for(const note of notes){
+      const title=_studyStripHtml(note.title)||_studyStageLabel(stage);
+      const body=_studyStripHtml(note.bodyHTML)||'';
+      const links=(note.attachments||[]).map(link=>link.label).filter(Boolean).join(' · ');
+      const titleLines=doc.splitTextToSize(title,width),bodyLines=body?doc.splitTextToSize(body,width):[],linkLines=links?doc.splitTextToSize(links,width):[];
+      const need=titleLines.length*13+bodyLines.length*12+linkLines.length*10+18;ensure(Math.min(need,height-margin*2));
+      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(31,30,30);doc.text(titleLines,margin,y);y+=titleLines.length*13;
+      if(bodyLines.length){doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(55,52,50);doc.text(bodyLines,margin,y);y+=bodyLines.length*12;}
+      if(linkLines.length){doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(120,98,35);doc.text(linkLines,margin,y);y+=linkLines.length*10;}
+      y+=8;
+    }
+    y+=4;
+  }
 }
 
 async function _capturePhrasingPDFBlob(ref){
@@ -10583,12 +10779,12 @@ document.addEventListener('keydown',function(ev){
   if(typeof toggleLang==='function')toggleLang();
 });
 
-/* ── Alt+1/2/3/T/L/D/A/B/S/J/K/H hotkeys ── */
+/* ── Alt+1/2/3/4/T/L/D/A/B/S/J/K/H hotkeys ── */
 document.addEventListener('keydown',function(ev){
   if(!ev.altKey||ev.shiftKey||ev.ctrlKey||ev.metaKey)return;
-  if(!'123tTlLdDaAbBcCeEsSjJkKhH'.includes(ev.key))return;
+  if(!'1234tTlLdDaAbBcCeEsSjJkKhH'.includes(ev.key))return;
   const tag=(ev.target.tagName||'').toLowerCase();
-  if(tag==='input'||tag==='textarea')return;
+  if(tag==='input'||tag==='textarea'||ev.target.isContentEditable)return;
   const s2Visible=!document.getElementById('s2')?.classList.contains('hidden');
   if(s2Visible)return;
   const s1Visible=!document.getElementById('s1')?.classList.contains('hidden');
@@ -10598,6 +10794,7 @@ document.addEventListener('keydown',function(ev){
   if(ev.key==='1'&&typeof openProjects==='function')openProjects();
   if(ev.key==='2'&&typeof window.openBible==='function')window.openBible();
   if(ev.key==='3'&&!s1Visible) toggleCmtPane();
+  if(ev.key==='4'&&!s1Visible) toggleStudyNotebook();
   if((ev.key==='t'||ev.key==='T')&&!s1Visible){
     setEditorView(EDITOR_VIEW==='diagram'?'phrasing':'diagram');
   }

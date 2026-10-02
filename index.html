@@ -215,6 +215,7 @@
         <div class="hm-row"><span class="hm-desc" data-i18n="help.save">Save to app</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">S</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.projects">Open Projects panel</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">1</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.bible">Bible Module</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">2</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="study.notebook.title">Study Notebook</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">4</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.export">Export as PDF or JSON</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">E</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.load">Load JSON from disk</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">O</span></div></div>
       </div>
@@ -476,6 +477,10 @@
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
           <span id="workspace-notes-count" class="workspace-count" style="display:none">0</span>
         </button>
+        <button class="ibtn" id="btn-study-notebook" data-i18n-title="study.notebook.toggle" title="Study Notebook (Alt+4)" onclick="toggleStudyNotebook()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h11a3 3 0 0 1 3 3v15H8a3 3 0 0 0-3 3z"/><path d="M5 3v18"/><path d="M9 8h6M9 12h6"/></svg>
+          <span id="workspace-notebook-count" class="workspace-count" style="display:none">0</span>
+        </button>
         <button class="workspace-export-btn" id="btn-workspace-export" data-i18n-title="bbar.export" title="Export as PDF or JSON (Ctrl+Shift+E)" onclick="toggleExportPopup(event)"><span data-i18n="workspace.export">Export</span><span class="workspace-export-caret" aria-hidden="true">▾</span></button>
         <button class="ibtn" id="btn-workspace-more" data-i18n-title="workspace.more" title="More actions" onclick="toggleWorkspaceMore(event)">
           <svg viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.7"/><circle cx="12" cy="12" r="1.7"/><circle cx="19" cy="12" r="1.7"/></svg>
@@ -591,6 +596,26 @@
         </div>
         <div id="cmt-list" aria-label="Notes"></div>
       </div>
+      <aside id="study-notebook" class="pane-hidden" aria-label="Study Notebook">
+        <header id="study-notebook-hdr">
+          <div><span class="cmargin-title" data-i18n="study.notebook.title">Study Notebook</span><span id="study-notebook-count" class="study-note-count">0</span></div>
+          <button type="button" onclick="studyNotebookFormat('bold')" title="Bold"><b>B</b></button>
+          <button type="button" onclick="studyNotebookFormat('italic')" title="Italic"><i>I</i></button>
+        </header>
+        <div class="study-notebook-tools">
+          <input id="study-notebook-search" type="search" data-i18n-ph="study.search" placeholder="Search notebook" oninput="renderStudyNotebook()"/>
+          <select id="study-notebook-filter" onchange="renderStudyNotebook()" data-i18n-aria-label="study.filter.aria" aria-label="Filter study notes">
+            <option value="all" data-i18n="study.filter.all">All stages</option>
+            <option value="observation" data-i18n="study.stage.observation">Observation</option>
+            <option value="question" data-i18n="study.stage.question">Question</option>
+            <option value="cross-reference" data-i18n="study.stage.cross-reference">Cross-reference</option>
+            <option value="insight" data-i18n="study.stage.insight">Insight</option>
+            <option value="application" data-i18n="study.stage.application">Application</option>
+          </select>
+          <button type="button" class="study-note-add" onclick="addStudyNote()" data-i18n="study.add">Add entry</button>
+        </div>
+        <div id="study-notebook-list"></div>
+      </aside>
     </div>
 
     <!-- ══ BRACKET EDIT POPUP ══ -->
@@ -784,6 +809,7 @@
 
 <!-- ══ EXPORT POPUP ══ -->
 <div id="export-popup">
+  <label class="export-study-option"><input id="export-study-notebook" type="checkbox"/> <span data-i18n="study.export.include">Include Study Notebook</span></label>
   <button id="export-pdf-btn"        onclick="doExportPDF();closeExportPopup()"           data-i18n="export.pdf"        style="display:none">Export as PDF</button>
   <button id="export-diag-pdf-btn"   onclick="openDiagPdfModal();closeExportPopup()"      data-i18n="export.diag-pdf"   style="display:none">Export Diagram as PDF</button>
   <button                            onclick="doExportJSON();closeExportPopup()"           data-i18n="export.json">Export as JSON</button>
