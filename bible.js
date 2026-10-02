@@ -181,17 +181,32 @@ async function bGetChapter(version,corpus,bookIdx,chapter){
   if(!data[idx])return null;
   return data[idx].c[chapter-1]||null;
 }
+
+async function bFetchNetJson(url){
+  const r=await fetch(url,{headers:{Accept:'application/json'}});
+  if(!r.ok)throw new Error('NET API request failed');
+  const body=await r.text();
+  if(!body.trim())throw new Error('NET API returned an empty response');
+  try{return JSON.parse(body);}
+  catch(_){throw new Error('NET API returned an invalid response');}
+}
+
 async function bGetNetChapter(corpus,bookIdx,chapter){
   if(!bOnline)throw new Error('offline');
   const books=corpus==='nt'?NT_BOOKS:OT_BOOKS;
   const book=books[bookIdx];if(!book)return null;
   const q=encodeURIComponent(`${book} ${chapter}`);
-  // Use plain text + footnotes array (include_footnotes=1 gives us positions+content)
-  const r=await fetch(NET_API_FN+q);
-  if(!r.ok)throw new Error('NET API error');
-  const j=await r.json();
-  if(!Array.isArray(j))return null;
-  return j.map(v=>bBuildNetVerse(v));
+  // Prefer plain text plus footnotes, but the legacy endpoint occasionally
+  // returns an empty body for that optional parameter. Fall back to its plain
+  // response so the passage remains usable even when notes are unavailable.
+  let verses;
+  try{
+    verses=await bFetchNetJson(NET_API_FN+q);
+  }catch(_){
+    verses=await bFetchNetJson(NET_API+q);
+  }
+  if(!Array.isArray(verses))throw new Error('NET API returned an invalid response');
+  return verses.map(v=>bBuildNetVerse(v));
 }
 
 /* Build a NET verse with inline footnote markers.
@@ -350,7 +365,12 @@ async function bLoadPassageInfinite(section, corpus, bookIdx, chapter, anchorVer
     bRewireScrollSync();
 
   }catch(err){
-    pane.innerHTML=`<div class="bpane-error">${err.message==='offline'?'⚠ NET Bible requires internet.':escH(err.message)}</div>`;
+    const message=err.message==='offline'
+      ?'⚠ NET Bible requires internet.'
+      :version==='net'
+        ?'⚠ NET Bible is temporarily unavailable. Please try again shortly.'
+        :escH(err.message);
+    pane.innerHTML=`<div class="bpane-error">${message}</div>`;
   }
 }
 
