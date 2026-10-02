@@ -95,8 +95,7 @@ CURRENT_FILENAME    // .json filename if loaded from disk
 | `toast(msg)` | Small notification at bottom of screen |
 | `openHelp()` / `closeHelp()` | Help modal |
 | `openSettings()` / `closeSettings()` | Settings modal |
-| `applySettings()` | Applies CSS custom property color changes |
-| `resetColors()` | Resets to DCOLORS defaults |
+| `setThemeMode(mode)` | Applies and persists the `light` or `dark` appearance |
 
 ### CSS custom properties (colors)
 Defined on `:root`:
@@ -337,7 +336,7 @@ bPicker = {
 ### Modals
 ```
 #help-modal      Help modal (keyboard shortcuts)
-#set-modal       Settings modal (colors, cache)
+#set-modal       Settings modal (appearance, cache)
 #export-popup    Export options popup
 ```
 
@@ -431,7 +430,7 @@ Key CSS variables (set on `:root`):
 
 9. **Projects are stored in IndexedDB** (database `exeg-proj-v1`, object store `projdata`) — migrated from localStorage to lift the old ~5MB per-site ceiling. The small index/folders metadata (`exeg-proj-index`, `exeg-proj-folders`) stays in localStorage, unchanged. A separate DB from the Bible text cache (`exeg-bible-v3`, bible.js) so cache-clearing code there can never touch project data. Optional cloud sync (see below) mirrors project JSON to Supabase — IndexedDB remains the primary, authoritative local store either way.
 
-10. **Color theme** persists in localStorage key `exeg-colors`. On load, `applySettings()` reads it and sets CSS custom properties.
+10. **Appearance mode** persists in localStorage key `exeg-theme` as `light` or `dark`. On load, legacy Midnight preferences migrate to Dark mode and other retired/custom palettes reset to Light mode.
 
 ---
 

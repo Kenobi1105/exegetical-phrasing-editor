@@ -35,7 +35,7 @@ function _hlToRgba(hex, alpha){
   return 'rgba('+r+','+g+','+b+','+alpha+')';
 }
 // The 0.55 alpha used to blend highlight marks is tuned for a light page
-// background (a translucent "marker on paper" look) — over Midnight's dark
+// background (a translucent "marker on paper" look) — over Dark mode's
 // --bg it blends into a solid mid-brown patch instead, which both pops
 // against the near-black canvas and leaves the theme's light --ink text
 // low-contrast on top. A lower alpha blends closer to the dark background,
@@ -44,7 +44,7 @@ function _hlToRgba(hex, alpha){
 // adjust if the theme changes later, matching how the rest of the color
 // system already works.
 function _hlAlpha(){
-  return typeof _currentThemeId==='function' && _currentThemeId()==='midnight' ? 0.3 : 0.55;
+  return typeof _currentThemeId==='function' && _currentThemeId()==='dark' ? 0.3 : 0.55;
 }
 let activeEl=null, savedRange=null;
 let RC=0, CC=0;
@@ -65,43 +65,18 @@ let COMMENT_HTML_CACHE={};
 // Tracks user-adjusted column widths (null = use flex/default)
 const COL_WIDTHS={v:null, o:null, t:null};
 
-const DCOLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',crit:'#1E6AFE',surface:'#FFFFFF',alt:'#EEE8DC','bg-rgb':'247,243,233','ink-rgb':'31,30,30'};
+const LIGHT_COLORS={bg:'#F7F3E9',accent:'#F0D08F',ink:'#1F1E1E',sig:'#493548',label:'#F7F3E9',active:'#C8A84B',muted:'#A89F90',crit:'#1E6AFE',surface:'#FFFFFF',alt:'#EEE8DC','bg-rgb':'247,243,233','ink-rgb':'31,30,30'};
 
-// Named color presets for the Settings > Themes gallery. 'default' reuses
-// DCOLORS directly (not a copy) so the two never drift out of sync. Every
-// preset keeps --sig/--active dark-to-mid tone and --label light, matching
-// the handful of spots elsewhere that hardcode white text against those
-// two variables (the Present/Add-Content buttons, toolbar hover overlays) —
-// Midnight is the one deliberate light-ink-on-dark-bg exception.
-// `surface` (card/panel/diagram-block background — .dblock, .ccard, modals,
-// side panels) stays white for every light-bg theme, matching :root's own
-// hardcoded fallback. Midnight is the one theme where it must move too:
-// --ink there is light (for legibility against the dark --bg), so leaving
-// --surface white would put light ink text on white cards — unreadable.
-// Giving Midnight its own dark, slightly-elevated --surface keeps the
-// existing ink/surface pairing coherent instead of only patching --ink.
-const THEMES={
-  default:{name:'Default',colors:DCOLORS},
-  midnight:{name:'Midnight',colors:{bg:'#1B1A20',accent:'#E8C97A',ink:'#EDE7DD',sig:'#2C2438',label:'#EDE7DD',active:'#C9A64E',crit:'#6FA8FF',surface:'#252030',alt:'#211F29','bg-rgb':'27,26,32','ink-rgb':'237,231,221'}},
-  papyrus:{name:'Papyrus',colors:{bg:'#EFE0BF',accent:'#D9A55C',ink:'#3B2A1A',sig:'#5C3A2E',label:'#F3E8D0',active:'#B8763A',crit:'#A13A2A',surface:'#FFFFFF',alt:'#E6D5B2','bg-rgb':'239,224,191','ink-rgb':'59,42,26'}},
-  scriptorium:{name:'Scriptorium',colors:{bg:'#EEF1F3',accent:'#9FC1D9',ink:'#1E2530',sig:'#2E4057',label:'#EEF1F3',active:'#4A7A9E',crit:'#C2542D',surface:'#FFFFFF',alt:'#E5E6E6','bg-rgb':'238,241,243','ink-rgb':'30,37,48'}},
-  olive:{name:'Olive',colors:{bg:'#EFEEDD',accent:'#B9C98B',ink:'#26301F',sig:'#3A4A2C',label:'#F3F2E4',active:'#748C4A',crit:'#B0542E',surface:'#FFFFFF',alt:'#E6E3D0','bg-rgb':'239,238,221','ink-rgb':'38,48,31'}},
-};
+const DARK_COLORS={bg:'#1B1A20',accent:'#E8C97A',ink:'#EDE7DD',sig:'#2C2438',label:'#EDE7DD',active:'#C9A64E',muted:'#B9B1AA',crit:'#6FA8FF',surface:'#252030',alt:'#211F29','bg-rgb':'27,26,32','ink-rgb':'237,231,221'};
 const THEME_KEY='exeg-theme';
+const LEGACY_COLORS_KEY='exeg-colors';
 
-// Applies a {bg,accent,ink,sig,label,active,crit} color set as CSS custom
-// properties on <html>, and keeps the (still-present, now Customize-only)
-// swatch <input>s in sync — the single shared implementation used by boot
-// restore, applySettings(), resetColors(), and selectTheme() below, so
-// there's exactly one place that knows how to apply a color set instead of
-// several near-duplicate copies.
+// Applies one curated appearance palette as CSS custom properties.
 function _applyColorSet(colors){
   const R=document.documentElement;
   Object.entries(colors).forEach(([k,v])=>{
     if(!v) return;
     R.style.setProperty('--'+k,v);
-    const inp=document.getElementById('sc-'+k);
-    if(inp) inp.value=v;
   });
 }
 
@@ -5318,57 +5293,21 @@ function helpSwitchTab(tab){
 }
 
 function _currentThemeId(){
-  try{ return localStorage.getItem(THEME_KEY) || 'default'; }catch(_){ return 'default'; }
+  try{
+    const saved=localStorage.getItem(THEME_KEY);
+    return saved==='dark'||saved==='midnight' ? 'dark' : 'light';
+  }catch(_){ return 'light'; }
 }
-function renderThemeGallery(){
-  const el=document.getElementById('theme-gallery');
-  if(!el) return;
-  const activeId=_currentThemeId();
-  el.innerHTML = Object.entries(THEMES).map(([id,th])=>{
-    const c=th.colors;
-    const name=typeof t==='function'?t('theme.'+id+'.name'):th.name;
-    return `<button type="button" class="theme-tile${id===activeId?' active':''}" onclick="selectTheme('${id}')">
-      <span class="theme-swatch-row">
-        <span class="theme-swatch" style="background:${c.bg}"></span>
-        <span class="theme-swatch" style="background:${c.sig}"></span>
-        <span class="theme-swatch" style="background:${c.accent}"></span>
-        <span class="theme-swatch" style="background:${c.active}"></span>
-      </span>
-      <span class="theme-tile-name">${name}</span>
-    </button>`;
-  }).join('') + `
-    <button type="button" class="theme-tile theme-tile-customize" onclick="showCustomize()">
-      <span class="theme-tile-customize-icon">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/><circle cx="6.5" cy="11.5" r="1.5"/><circle cx="9.5" cy="7.5" r="1.5"/><circle cx="14.5" cy="7.5" r="1.5"/><circle cx="17.5" cy="11.5" r="1.5"/></svg>
-      </span>
-      <span class="theme-tile-name">${typeof t==='function'?t('settings.customize'):'Customize'}</span>
-    </button>`;
-}
-// Instant apply+persist — a real live preview, unlike the gated Customize
-// flow below (matches conventional theme-picker behavior: pick a finished
-// look and see it immediately, vs. deliberately mixing your own and
-// confirming via Apply). Safe to "try on" freely: the Cancel/click-outside
-// discard path (settingsEscOrClickOutside) reverts both the live vars and
-// localStorage back to whatever was active when Settings was opened.
-function selectTheme(id){
-  const th=THEMES[id]; if(!th) return;
-  _applyColorSet(th.colors);
-  try{ localStorage.setItem('exeg-colors', JSON.stringify(th.colors)); }catch(_){}
-  try{ localStorage.setItem(THEME_KEY, id); }catch(_){}
-  renderThemeGallery();
-}
-function showCustomize(){
-  document.getElementById('theme-gallery')?.classList.add('hidden');
-  document.getElementById('theme-customize')?.classList.remove('hidden');
-  document.getElementById('theme-back-btn')?.classList.remove('hidden');
-  document.getElementById('theme-reset-btn')?.classList.remove('hidden');
-}
-function showThemeGallery(){
-  document.getElementById('theme-customize')?.classList.add('hidden');
-  document.getElementById('theme-gallery')?.classList.remove('hidden');
-  document.getElementById('theme-back-btn')?.classList.add('hidden');
-  document.getElementById('theme-reset-btn')?.classList.add('hidden');
-  renderThemeGallery();
+function setThemeMode(mode){
+  const normalized=mode==='dark'?'dark':'light';
+  _applyColorSet(normalized==='dark'?DARK_COLORS:LIGHT_COLORS);
+  document.documentElement.dataset.theme=normalized;
+  const toggle=document.getElementById('dark-mode-toggle');
+  if(toggle) toggle.checked=normalized==='dark';
+  try{
+    localStorage.setItem(THEME_KEY,normalized);
+    localStorage.removeItem(LEGACY_COLORS_KEY);
+  }catch(_){}
 }
 function openSettings(){
   const m=document.getElementById('set-modal');
@@ -5376,63 +5315,20 @@ function openSettings(){
   // Close sidebars so they don't overlap the modal
   if(typeof closeProjects==='function')closeProjects();
   if(typeof closeBible==='function')closeBible();
-  // Snapshot current values (+ active theme id) for change detection.
-  // `surface` has no Customize swatch of its own (see THEMES comment above)
-  // so it's read from the live computed style rather than an sc- input.
-  window._settingsSnapshot={
-    theme:_currentThemeId(),
-    bg:document.getElementById('sc-bg')?.value,
-    accent:document.getElementById('sc-accent')?.value,
-    ink:document.getElementById('sc-ink')?.value,
-    sig:document.getElementById('sc-sig')?.value,
-    label:document.getElementById('sc-label')?.value,
-    active:document.getElementById('sc-active')?.value,
-    crit:document.getElementById('sc-crit')?.value,
-    surface:getComputedStyle(document.documentElement).getPropertyValue('--surface').trim(),
-  };
-  showThemeGallery(); // always reopen on the gallery, not wherever Customize was left last time
-  // Click outside to close (with change detection)
+  const toggle=document.getElementById('dark-mode-toggle');
+  if(toggle) toggle.checked=_currentThemeId()==='dark';
+  // Appearance changes apply immediately, so closing Settings never needs a
+  // discard confirmation.
   setTimeout(()=>{
     const handler=e=>{
       const card=document.querySelector('#set-modal .mcard');
-      if(card&&!card.contains(e.target)){settingsEscOrClickOutside();document.removeEventListener('mousedown',handler);}
+      if(card&&!card.contains(e.target)){closeSettings();}
     };
     document.addEventListener('mousedown',handler);
     document._settingsOutsideHandler=handler;
   },50);
 }
-function settingsHasChanges(){
-  const snap=window._settingsSnapshot;
-  if(!snap)return false;
-  if(_currentThemeId()!==snap.theme) return true;
-  return ['bg','accent','ink','sig','label','active','crit'].some(k=>{
-    const el=document.getElementById('sc-'+k);
-    return el&&el.value!==snap[k];
-  });
-}
-function settingsEscOrClickOutside(){
-  if(settingsHasChanges()){
-    if(!confirm(typeof t==='function'?t('confirm.discard-colors'):'You have unsaved color changes. Discard them?'))return;
-    // Restore snapshot values — both the live vars AND localStorage, since
-    // selectTheme() may have already persisted a different theme mid-session.
-    const snap=window._settingsSnapshot;
-    if(snap){
-      // Prefer THEMES[snap.theme].colors (canonical, all 10 keys) over
-      // hand-rebuilding from the 8 snapshotted swatch fields — otherwise
-      // previewing another theme's tile (which sets alt/bg-rgb/ink-rgb via
-      // selectTheme()) and then cancelling would revert bg/ink/etc. but
-      // leave those three stuck on the previewed theme. 'custom' has no
-      // canonical entry, so it keeps the original snapshot-rebuild path.
-      const th=THEMES[snap.theme];
-      const colors=th?th.colors:{};
-      if(!th) ['bg','accent','ink','sig','label','active','crit','surface'].forEach(k=>{ if(snap[k]) colors[k]=snap[k]; });
-      _applyColorSet(colors);
-      try{ localStorage.setItem('exeg-colors', JSON.stringify(colors)); }catch(_){}
-      try{ localStorage.setItem(THEME_KEY, snap.theme); }catch(_){}
-    }
-  }
-  closeSettings();
-}
+function settingsEscOrClickOutside(){ closeSettings(); }
 function closeSettings(){
   const m=document.getElementById('set-modal');
   if(m)m.classList.add('hidden');
@@ -5440,39 +5336,6 @@ function closeSettings(){
     document.removeEventListener('mousedown',document._settingsOutsideHandler);
     document._settingsOutsideHandler=null;
   }
-}
-function resetColors(){
-  _applyColorSet(DCOLORS);
-  toast(typeof t==='function'?t('toast.cleared-short'):'Colors reset');
-}
-function cssHex(css){
-  if(!css)return'#000000';
-  if(css.startsWith('#')){if(css.length===4)return'#'+css[1]+css[1]+css[2]+css[2]+css[3]+css[3];return css;}
-  const m=css.match(/\d+/g);if(!m)return'#000000';
-  return'#'+m.slice(0,3).map(x=>(+x).toString(16).padStart(2,'0')).join('');
-}
-// Persists whatever's currently live as the new baseline and closes. If the
-// user was in Customize, read+apply+persist the swatch values (marking the
-// theme 'custom'); if they only picked a gallery tile, selectTheme() above
-// already applied+persisted it — Apply is then just a formal confirm+close.
-function applySettings(){
-  const inCustomize=!document.getElementById('theme-customize')?.classList.contains('hidden');
-  if(inCustomize){
-    const colors={};
-    ['bg','accent','ink','sig','label','active','crit'].forEach(k=>{
-      const el=document.getElementById('sc-'+k);
-      if(el) colors[k]=el.value;
-    });
-    // No Customize swatch controls --surface (see THEMES comment) — carry
-    // forward whatever's currently live so a custom edit on top of e.g.
-    // Midnight doesn't silently drop back to a white surface on reload.
-    colors.surface=getComputedStyle(document.documentElement).getPropertyValue('--surface').trim();
-    _applyColorSet(colors);
-    try{localStorage.setItem('exeg-colors',JSON.stringify(colors));}catch(_){}
-    try{localStorage.setItem(THEME_KEY,'custom');}catch(_){}
-  }
-  closeSettings();
-  toast(typeof t==='function'?t('toast.saved'):' Settings applied');
 }
 
 /* ════════════════════════════════════════
@@ -10356,32 +10219,15 @@ function _splitInlineVerses(html,currentVerse){
 }
 
 document.addEventListener('DOMContentLoaded',async()=>{
+  // Normalize legacy saved palettes once: Midnight becomes Dark; every
+  // retired or custom palette becomes the default Light appearance.
+  setThemeMode(_currentThemeId());
   initWorkspaceChrome();
   // Runs once, blocking, before anything below touches project data (in
   // particular renderS1Recent() further down) — see projMigrateToIdbOnce
   // for why this is safe to await here (idempotent, resumable, leaves
   // localStorage untouched on any failure).
   try{ await projMigrateToIdbOnce(); }catch(_e){}
-  // Restore saved colors — the global theme, not any per-project snapshot
-  // (see loadData()/collectData()); routes through the same _applyColorSet
-  // that applySettings()/resetColors()/selectTheme() use, instead of a
-  // second copy of the same logic.
-  // Prefer the CURRENT, canonical THEMES[id].colors over the raw stored
-  // 'exeg-colors' object when the id names a real theme — new theme-var
-  // keys have been added to THEMES a few times since this app shipped
-  // (surface, then bg-rgb/ink-rgb, then alt), and a browser that persisted
-  // 'exeg-colors' before one of those additions would otherwise keep
-  // replaying that now-incomplete snapshot forever (_applyColorSet only
-  // sets keys present on the object it's given, never clears absent ones).
-  // 'custom' has no canonical THEMES entry, so it still falls back to
-  // whatever was actually stored.
-  try{
-    const themeId=_currentThemeId();
-    const th=THEMES[themeId];
-    const saved=th?th.colors:JSON.parse(localStorage.getItem('exeg-colors')||'{}');
-    _applyColorSet(saved);
-    if(th){ try{ localStorage.setItem('exeg-colors', JSON.stringify(th.colors)); }catch(_){} }
-  }catch(_){}
   try{
     const savedCmtFs=parseInt(localStorage.getItem('exeg-cmt-fontsize'));
     _setCmtFontSize(isNaN(savedCmtFs)?CMT_FONT_SIZE:savedCmtFs);

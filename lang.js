@@ -28,8 +28,6 @@ const LANGS = {
     's1.no-projects':      'No saved projects yet.',
     's1.app-version':      'Version',
     /* ── Critical apparatus marks (NA28) ── */
-    'settings.crit':       'Critical Marks',
-    'settings.crit.desc':  'Apparatus and discourse markers in imported text.',
     'crit.omit-word':      'The word following this sign is omitted by the witnesses cited.',
     'crit.omit-words':     'The words between these signs are omitted by the witnesses cited.',
     'crit.replace-word':   'The word following this sign is replaced with one or more words by the witnesses cited.',
@@ -145,7 +143,7 @@ const LANGS = {
     'help.load':           'Load JSON from disk',
     'help.interface':      'Interface',
     'help.help':           'Open this help panel',
-    'help.colors':         'Color settings',
+    'help.colors':         'Appearance settings',
     'help.restart':        'Restart session',
     'help.clear':          'Clear all content',
     'help.view-toggle':    'Toggle Phrasing / Diagram View',
@@ -156,30 +154,13 @@ const LANGS = {
 
     /* ── Settings modal ── */
     'settings.title':      'Settings',
-    'settings.subtitle':   'Customize the editor palette.',
-    'settings.bg':         'Background',
-    'settings.bg.desc':    'Page and canvas background.',
-    'settings.accent':     'Accent',
-    'settings.accent.desc':'Highlights and active indicators.',
-    'settings.ink':        'Ink',
-    'settings.ink.desc':   'Primary body text color.',
-    'settings.sig':        'Signature',
-    'settings.sig.desc':   'Toolbar, comment headers, buttons.',
-    'settings.label':      'Label',
-    'settings.label.desc': 'Text on Signature-colored surfaces.',
-    'settings.active':     'Active State',
-    'settings.active.desc':'Line IDs and interactive emphasis.',
-    'settings.reset':      'Reset to default',
+    'settings.subtitle':   'Choose a light or dark appearance.',
+    'settings.appearance': 'Appearance',
+    'settings.appearance.desc':'Use the default light palette or a low-light dark palette.',
+    'settings.dark-mode':  'Dark mode',
     'settings.clear-cache':'Clear Bible Cache',
     'settings.cancel':     'Cancel',
-    'settings.apply':      'Apply',
-    'settings.customize':  'Customize',
-    'settings.back':       '← Back to Themes',
-    'theme.default.name':      'Default',
-    'theme.midnight.name':     'Midnight',
-    'theme.papyrus.name':      'Papyrus',
-    'theme.scriptorium.name':  'Scriptorium',
-    'theme.olive.name':        'Olive',
+    'settings.close':      'Close',
 
     /* ── Toolbar / editor ── */
     'toolbar.undo':        'Undo (Ctrl+Z)',
@@ -526,8 +507,6 @@ const LANGS = {
     's1.no-projects':      '还没有已保存的项目。',
     's1.app-version':      '版本',
     /* ── 校勘符号（NA28）── */
-    'settings.crit':       '校勘符号',
-    'settings.crit.desc':  '导入经文中校勘与语篇符号的颜色。',
     'crit.omit-word':      '所引证的抄本省略此符号后的单词。',
     'crit.omit-words':     '所引证的抄本省略这两个符号之间的词语。',
     'crit.replace-word':   '所引证的抄本以一个或多个词替换此符号后的单词。',
@@ -643,7 +622,7 @@ const LANGS = {
     'help.load':           '从磁盘载入 JSON',
     'help.interface':      '界面',
     'help.help':           '打开本帮助面板',
-    'help.colors':         '颜色设置',
+    'help.colors':         '外观设置',
     'help.restart':        '重新开始工作',
     'help.clear':          '清除所有内容',
     'help.view-toggle':    '切换分句/图示视图',
@@ -654,30 +633,13 @@ const LANGS = {
 
     /* ── Settings modal ── */
     'settings.title':      '设置',
-    'settings.subtitle':   '自定义编辑器配色。',
-    'settings.bg':         '背景',
-    'settings.bg.desc':    '页面和画布的背景颜色。',
-    'settings.accent':     '强调色',
-    'settings.accent.desc':'高亮及活动指示。',
-    'settings.ink':        '墨色',
-    'settings.ink.desc':   '正文主色。',
-    'settings.sig':        '主题色',
-    'settings.sig.desc':   '工具栏、批注标题、按钮。',
-    'settings.label':      '标签色',
-    'settings.label.desc': '主题色表面上的文字颜色。',
-    'settings.active':     '激活色',
-    'settings.active.desc':'行号标识及交互强调。',
-    'settings.reset':      '恢复默认',
+    'settings.subtitle':   '选择浅色或深色外观。',
+    'settings.appearance': '外观',
+    'settings.appearance.desc':'使用默认浅色调色板或低亮度深色调色板。',
+    'settings.dark-mode':  '深色模式',
     'settings.clear-cache':'清除圣经缓存',
     'settings.cancel':     '取消',
-    'settings.apply':      '应用',
-    'settings.customize':  '自定义',
-    'settings.back':       '← 返回主题',
-    'theme.default.name':      '默认',
-    'theme.midnight.name':     '午夜',
-    'theme.papyrus.name':      '莎草纸',
-    'theme.scriptorium.name':  '书斋',
-    'theme.olive.name':        '橄榄',
+    'settings.close':      '关闭',
 
     /* ── Toolbar / editor ── */
     'toolbar.undo':        '撤销 (Ctrl+Z)',
@@ -1057,13 +1019,6 @@ function applyLang() {
   // Update dynamically-rendered project empty state
   const projEmpty = document.getElementById('proj-list-empty');
   if (projEmpty) projEmpty.innerHTML = t('proj.empty');
-
-  // Theme tile names are interpolated at render time (t('theme.'+id+'.name')),
-  // not tagged with data-i18n, so a re-render is needed if Settings happens
-  // to already be open when the language is toggled.
-  if (typeof renderThemeGallery === 'function' && document.getElementById('theme-gallery')) {
-    renderThemeGallery();
-  }
 
   // Comment card headers ("Comment") are interpolated at render time
   // (t('comment.label')) rather than tagged with data-i18n, since they're
