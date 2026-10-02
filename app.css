@@ -11,6 +11,10 @@
   --alt:     #EEE8DC;
   --bg-rgb:  247,243,233;
   --ink-rgb: 31,30,30;
+  --surface-interactive-fg: var(--sig);
+  --surface-interactive-hover-bg: rgba(73,53,72,.08);
+  --surface-interactive-hover-border: rgba(73,53,72,.34);
+  --surface-interactive-active-bg: rgba(73,53,72,.12);
   --ind:     32px;
   --r:       8px;
   --rs:      5px;
@@ -4663,6 +4667,143 @@ body.hide-sections #section-strips{display:none}
 :root[data-theme='dark'] #dcard-surfaces .dcard-surface{fill:var(--surface);stroke:rgba(237,231,221,.22);filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
 :root[data-theme='dark'] .dra-handle{background:#252030;border-color:rgba(237,231,221,.3);color:var(--label);box-shadow:0 2px 5px rgba(0,0,0,.3)}
 :root[data-theme='dark'] #dzone>.cep{background:var(--sig)}
+
+/* ── Dark-mode interactive contrast ──
+   --sig remains the dark brand fill.  Controls displayed on dark surfaces use
+   these tokens for their foreground and transient interactive states instead. */
+:root[data-theme='dark']{
+  --surface-interactive-fg:var(--label);
+  --surface-interactive-hover-bg:rgba(255,255,255,.10);
+  --surface-interactive-hover-border:rgba(237,231,221,.32);
+  --surface-interactive-active-bg:rgba(232,201,122,.18);
+}
+
+:root[data-theme='dark'] #workspace-tools-popover,
+:root[data-theme='dark'] #workspace-more-popover{
+  border-color:rgba(237,231,221,.16);
+  box-shadow:0 16px 42px rgba(0,0,0,.42);
+}
+:root[data-theme='dark'] .workspace-tools-section{
+  background:#211f29;
+  border-color:rgba(237,231,221,.11);
+}
+:root[data-theme='dark'] #workspace-tools-popover .tbtn{
+  color:var(--surface-interactive-fg);
+  background:rgba(255,255,255,.055);
+}
+:root[data-theme='dark'] #workspace-tools-popover .tbtn:hover,
+:root[data-theme='dark'] #workspace-tools-popover .tbtn:focus-visible,
+:root[data-theme='dark'] #workspace-tools-popover .tbtn.on{
+  background:var(--surface-interactive-active-bg);
+  color:var(--surface-interactive-fg);
+  outline:0;
+}
+:root[data-theme='dark'] #workspace-tools-popover .tsw{
+  border-color:rgba(237,231,221,.22);
+}
+:root[data-theme='dark'] .workspace-more-section + .workspace-more-section{
+  border-top-color:rgba(237,231,221,.12);
+}
+:root[data-theme='dark'] .workspace-more-section > p{
+  color:#b9b1aa;
+}
+:root[data-theme='dark'] #workspace-more-popover .ibtn:hover,
+:root[data-theme='dark'] #workspace-more-popover .ibtn:focus-visible,
+:root[data-theme='dark'] #workspace-more-popover .bbtn:hover,
+:root[data-theme='dark'] #workspace-more-popover .bbtn:focus-visible,
+:root[data-theme='dark'] #workspace-more-popover .lang-pill:hover,
+:root[data-theme='dark'] #workspace-more-popover .lang-pill:focus-visible{
+  background:var(--surface-interactive-hover-bg);
+  color:var(--surface-interactive-fg);
+  outline:2px solid var(--surface-interactive-hover-border);
+  outline-offset:-2px;
+}
+:root[data-theme='dark'] #workspace-more-popover #lang-toggle-label{
+  background:rgba(255,255,255,.09);
+  color:#d7d0c8;
+}
+
+/* Project and Bible panels share a dark surface.  Override only the states
+   that previously used --sig as foreground text or an icon color. */
+:root[data-theme='dark'] #proj-panel .proj-rename:hover,
+:root[data-theme='dark'] #proj-panel .proj-rename:focus-visible,
+:root[data-theme='dark'] #proj-panel .proj-folder-dots:hover,
+:root[data-theme='dark'] #proj-panel .proj-folder-dots:focus-visible,
+:root[data-theme='dark'] #proj-panel .proj-folder-hdr:hover,
+:root[data-theme='dark'] #proj-panel #proj-new-folder-btn:hover,
+:root[data-theme='dark'] #proj-panel #proj-new-folder-btn:focus-visible,
+:root[data-theme='dark'] #bible-panel .bpanel-hbtn.on,
+:root[data-theme='dark'] #bible-panel .bpanel-hbtn.active,
+:root[data-theme='dark'] #bible-panel #bpanel-pin-btn.on,
+:root[data-theme='dark'] #bible-panel #b-scroll-lock-btn.on,
+:root[data-theme='dark'] #bible-panel #bpanel-split-btn.on,
+:root[data-theme='dark'] #bible-panel .b-lock-btn.on,
+:root[data-theme='dark'] #bible-panel .sp-tab.active,
+:root[data-theme='dark'] #bible-panel #sp-pin-btn.on{
+  background:var(--surface-interactive-active-bg);
+  color:var(--surface-interactive-fg);
+  border-color:var(--accent);
+}
+:root[data-theme='dark'] #proj-panel .proj-folder-hdr,
+:root[data-theme='dark'] #proj-panel #proj-new-folder-btn,
+:root[data-theme='dark'] #proj-panel #proj-export-all-btn{
+  color:var(--surface-interactive-fg);
+}
+:root[data-theme='dark'] #proj-panel #proj-export-all-btn{
+  border-color:var(--surface-interactive-hover-border);
+}
+:root[data-theme='dark'] #proj-panel #proj-export-all-btn:hover,
+:root[data-theme='dark'] #proj-panel #proj-export-all-btn:focus-visible,
+:root[data-theme='dark'] #proj-panel .proj-card:hover{
+  background:var(--surface-interactive-hover-bg);
+  border-color:var(--surface-interactive-hover-border);
+  color:var(--surface-interactive-fg);
+}
+:root[data-theme='dark'] #bible-panel .btab.active{
+  color:var(--surface-interactive-fg);
+  border-bottom-color:var(--accent);
+  background:var(--surface-interactive-active-bg);
+  box-shadow:inset 0 -2px 0 var(--accent);
+}
+:root[data-theme='dark'] #bible-panel .btab:hover:not(.active),
+:root[data-theme='dark'] #bible-panel .btab:focus-visible:not(.active),
+:root[data-theme='dark'] #bible-panel .btab-add:hover,
+:root[data-theme='dark'] #bible-panel .btab-add:focus-visible,
+:root[data-theme='dark'] #bible-panel .bver-opt:hover:not(.disabled),
+:root[data-theme='dark'] #bible-panel .bver-opt:focus-visible:not(.disabled),
+:root[data-theme='dark'] #bible-panel .bpg-sq:hover,
+:root[data-theme='dark'] #bible-panel .bpg-sq:focus-visible,
+:root[data-theme='dark'] #bible-panel .bpane-nav-btn:hover:not(:disabled),
+:root[data-theme='dark'] #bible-panel .bpane-nav-btn:focus-visible:not(:disabled){
+  background:var(--surface-interactive-hover-bg);
+  border-color:var(--surface-interactive-hover-border);
+  color:var(--surface-interactive-fg);
+  outline:0;
+}
+:root[data-theme='dark'] #bible-panel .bpg-sq.active{
+  background:var(--surface-interactive-active-bg);
+  border-color:var(--accent);
+  color:var(--surface-interactive-fg);
+}
+:root[data-theme='dark'] .dcmt-badge:hover,
+:root[data-theme='dark'] .dcmt-badge:focus-visible{
+  background:var(--surface-interactive-active-bg);
+  color:var(--surface-interactive-fg);
+  outline:2px solid var(--surface-interactive-hover-border);
+  outline-offset:-2px;
+}
+
+/* Other dark-surface popovers and modal actions with the same hover pattern. */
+:root[data-theme='dark'] #set-modal .smb.rst:hover,
+:root[data-theme='dark'] #set-modal .smb.rst:focus-visible,
+:root[data-theme='dark'] .diag-pdf-cancel:hover,
+:root[data-theme='dark'] .diag-pdf-cancel:focus-visible,
+:root[data-theme='dark'] .ann-popup-close:hover,
+:root[data-theme='dark'] .ann-popup-close:focus-visible{
+  color:var(--surface-interactive-fg);
+  border-color:var(--surface-interactive-hover-border);
+  background:var(--surface-interactive-hover-bg);
+}
 
 @media (max-width:760px),(pointer:coarse){
   #diagram-canvas-header{padding:7px 12px;min-height:unset;align-items:flex-start;flex-direction:column;gap:7px}
