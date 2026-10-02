@@ -2445,67 +2445,6 @@ function _outerAt(node, other){
 ════════════════════════════════════════ */
 const _DEM_WORD=/[\u0370-\u03FF\u1F00-\u1FFF\u0590-\u05FF\u00E0-\u00FF]|[a-z]/i;
 let _demAltTemp=false; // retained for the Escape/reset lifecycle
-let _demGhostRaf=0;
-
-/* Split Words deliberately has just one visual card.  The ordinary card
-   surfaces disappear while the mode is active; this lightweight, canvas-level
-   outline previews the portion that would remain before the hovered slash. */
-function _demGhostCard(canvas){
-  let ghost=canvas?.querySelector(':scope > .dem-ghost-card');
-  if(!ghost&&canvas){
-    ghost=document.createElement('div');
-    ghost.className='dem-ghost-card';
-    ghost.setAttribute('aria-hidden','true');
-    canvas.appendChild(ghost);
-  }
-  return ghost;
-}
-
-function _demHideGhostCard(canvas=document.getElementById('dcanvas')){
-  if(_demGhostRaf){ cancelAnimationFrame(_demGhostRaf); _demGhostRaf=0; }
-  const ghost=canvas?.querySelector(':scope > .dem-ghost-card');
-  if(ghost) ghost.classList.remove('visible');
-}
-
-function _demShowGhostCard(wordEl){
-  const canvas=document.getElementById('dcanvas');
-  const block=wordEl?.closest('.dblock');
-  const marker=wordEl?.querySelector('.dedit-split-marker');
-  if(!DIAGRAM_EDIT_MODE||!canvas||!block||!marker){
-    _demHideGhostCard(canvas);
-    return;
-  }
-  if(_demGhostRaf) cancelAnimationFrame(_demGhostRaf);
-  // Read geometry after :hover has revealed the slash, letting the dashed
-  // outline grow in lockstep with that inline gap rather than jump ahead.
-  _demGhostRaf=requestAnimationFrame(()=>{
-    _demGhostRaf=0;
-    if(!DIAGRAM_EDIT_MODE||!wordEl.matches(':hover')) return;
-    const canvasRect=canvas.getBoundingClientRect();
-    const blockRect=block.getBoundingClientRect();
-    const markerRect=marker.getBoundingClientRect();
-    const rtl=block.closest('.drow')?.classList.contains('rtl');
-    const left=rtl ? markerRect.left-canvasRect.left : blockRect.left-canvasRect.left;
-    const right=rtl ? blockRect.right-canvasRect.left : markerRect.right-canvasRect.left;
-    const ghost=_demGhostCard(canvas);
-    if(!ghost||right<=left) return;
-    ghost.style.left=left+'px';
-    ghost.style.top=(blockRect.top-canvasRect.top)+'px';
-    ghost.style.width=(right-left)+'px';
-    ghost.style.height=blockRect.height+'px';
-    ghost.classList.add('visible');
-  });
-}
-
-function _demQueueGhostHide(canvas=document.getElementById('dcanvas')){
-  if(_demGhostRaf) cancelAnimationFrame(_demGhostRaf);
-  _demGhostRaf=requestAnimationFrame(()=>{
-    _demGhostRaf=0;
-    const hovered=canvas?.querySelector('.dedit-word:hover');
-    if(hovered) _demShowGhostCard(hovered);
-    else _demHideGhostCard(canvas);
-  });
-}
 
 function _demTokenize(blockEl){
   const textEl=blockEl?.querySelector('.dblock-text');
@@ -2551,8 +2490,6 @@ function _demTokenize(blockEl){
     marker.dataset.demIndex=String(index);
     marker.setAttribute('aria-hidden','true');
     word.prepend(marker);
-    word.addEventListener('pointerenter',()=>_demShowGhostCard(word));
-    word.addEventListener('pointerleave',()=>_demQueueGhostHide());
   });
 }
 
@@ -2594,7 +2531,6 @@ function _applyDiagramEditMode(on){
       const row=labelCell.closest('.drow'); if(row) _demAddMergeBtn(labelCell,row.dataset.rid);
     });
   } else {
-    _demHideGhostCard(canvas);
     canvas.querySelectorAll('.dem-merge-btn').forEach(button=>button.remove());
     canvas.querySelectorAll('.dblock').forEach(_demUntokenize);
   }

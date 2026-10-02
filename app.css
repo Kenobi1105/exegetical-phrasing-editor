@@ -4601,30 +4601,16 @@ body.hide-sections #section-strips{display:none}
 .dblock.dconn-source::before{border-color:#6c527b;box-shadow:0 0 0 3px rgba(108,82,123,.2)}
 .dblock.dconn-target::before{border-color:#a47b28;box-shadow:0 0 0 3px rgba(200,168,75,.25)}
 
-/* Split Words is intentionally a temporary, click-first mode. The regular
-   paper cards are hidden so the single dashed preview card can make the
-   prospective split boundary unmistakable. */
+/* Split Words replaces each phrase's paper card with a transparent dashed
+   outline. The outline belongs to the fit-content block itself, so it grows
+   naturally when a hovered slash reserves its inline gap between words. */
 #dcanvas.dem-active #dcard-surfaces{opacity:0}
-#dcanvas .dem-ghost-card{
-  position:absolute;
-  z-index:1;
-  box-sizing:border-box;
-  border:1.5px dashed rgba(164,123,40,.82);
-  border-radius:8px;
-  background:rgba(240,208,143,.06);
-  box-shadow:0 2px 8px rgba(164,123,40,.09);
-  pointer-events:none;
-  opacity:0;
-  transition:left .13s ease,width .13s ease,height .13s ease,opacity .1s ease;
-}
-#dcanvas .dem-ghost-card.visible{opacity:1}
 #dcanvas.dem-active .dedit-word{cursor:crosshair}
 #dcanvas.dem-active .dblock::before,
 #dcanvas.dem-active .dblock:hover::before,
 #dcanvas.dem-active .dblock:focus-visible::before{
   background:transparent;
-  border-color:transparent;
-  border-style:solid;
+  border:1.5px dashed rgba(164,123,40,.82);
   box-shadow:none;
 }
 #dcanvas.dem-active .dedit-word:hover{
