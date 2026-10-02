@@ -193,7 +193,7 @@ async function acctSyncNow(){
 // () => Array<object>|Promise<Array<object>> and awaits it.
 async function acctListLocalProjects(){
   if(typeof projIndex!=='function') return [];
-  const results=await Promise.all(projIndex().map(async e=>{
+  const results=await Promise.all(projIndex().filter(e=>!(typeof projIsTrashed==='function'&&projIsTrashed(e))).map(async e=>{
     let data=null;
     try{ data=JSON.parse((typeof pIdbGet==='function'?await pIdbGet(e.id):null)||'null'); }catch(_e){}
     if(!data) return null;
@@ -244,6 +244,10 @@ async function acctPull(){
     const id=String(row.id);
     if(deleteQueue.includes(id)) continue; // pending delete — don't resurrect
     const entry=idx.find(e=>e.id===id);
+    // Trash is device-local and recoverable for its full retention period.
+    // Do not refresh its payload from the cloud or let an absent cloud row
+    // remove it before the user restores or permanently deletes it here.
+    if(entry&&typeof projIsTrashed==='function'&&projIsTrashed(entry)) continue;
     if(typeof CURRENT_PROJECT_ID!=='undefined' && id===CURRENT_PROJECT_ID){
       // Only warn if the cloud row is actually AHEAD of what we last saved —
       // matches the same-or-newer check below. Without this, any project
@@ -299,6 +303,7 @@ async function acctPull(){
   for(const entry of idx.slice()){
     const id=entry.id;
     if(cloudIds.has(id)) continue;
+    if(typeof projIsTrashed==='function'&&projIsTrashed(entry)) continue;
     if(typeof entry.cloudAt!=='number') continue;
     if(deleteQueue.includes(id)) continue;
     if(ACCT.dirty.has(id)) continue;

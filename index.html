@@ -27,7 +27,7 @@
 
 <!-- ══ SCREEN 1: LANGUAGE ══ -->
 <div class="screen" id="s1">
-  <div class="mcard" style="width:720px;padding:40px 44px">
+  <div class="mcard s1-card">
     <div class="book-icon">
       <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 6C2 6 8 4 16 6C24 4 30 6 30 6V26C30 26 24 24 16 26C8 24 2 26 2 26V6Z"/>
@@ -37,13 +37,27 @@
         <path d="M18 14.5C21 13.5 24 13.5 26 14"/><path d="M18 18.5C21 17.5 24 17.5 26 18"/>
       </svg>
     </div>
-    <h1 data-i18n="s1.title">Exegetical Phrasing Editor</h1>
-    <p data-i18n="s1.subtitle">Choose the original language for this session. This sets text direction and canvas layout.</p>
+    <div class="s1-heading">
+      <h1 data-i18n="s1.title">Exegetical Phrasing Editor</h1>
+      <p data-i18n="s1.subtitle">Choose the original language for this session. This sets text direction and canvas layout.</p>
+    </div>
+    <section id="s1-returning" class="s1-returning" hidden>
+      <div class="s1-section-kicker" data-i18n="s1.continue.kicker">Continue working</div>
+      <button id="s1-continue-card" class="s1-continue-card" type="button"></button>
+      <div class="s1-recent-heading">
+        <span class="s1-section-kicker" data-i18n="s1.recent">Recent Projects</span>
+        <button onclick="openProjects()" id="btn-projects-s1" class="s1-all-projects" type="button" data-i18n="s1.all-projects">All projects</button>
+      </div>
+      <div id="s1-recent" class="s1-recent-list"></div>
+    </section>
+    <section class="s1-new-project">
+      <div class="s1-section-kicker" data-i18n="s1.new.kicker">Start a new project</div>
+      <p class="s1-local-note" data-i18n="s1.local-note">Projects save privately in this browser until you choose to back them up or sync.</p>
     
-    <div style="display:flex;gap:24px;margin-top:8px;align-items:flex-start">
+    <div class="s1-start-grid">
       <!-- Left: language + actions -->
-      <div style="flex:1;min-width:0">
-        <div class="sblist">
+      <div class="s1-start-main">
+        <div class="sblist s1-language-list">
           <button class="sbtn hb" onclick="chooseLang('hebrew')">
             <div class="sbi">א</div>
             <div class="sbt"><div class="st" style="font-family:var(--serif)" data-i18n="s1.hebrew.label">עברית Hebrew</div><div class="ss" data-i18n="s1.hebrew.sub">RTL · Original + Translation columns</div></div>
@@ -58,29 +72,22 @@
           </button>
 
         </div>
-        <div style="display:flex;gap:8px;margin-top:14px">
-          <button title="Load JSON (Ctrl+O)" onclick="document.getElementById('s1-load-file').click()" style="display:flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:99px;background:transparent;color:var(--ink);border:1.5px solid rgba(var(--ink-rgb),.25);font-family:var(--ui);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s" onmouseover="this.style.background='var(--sig)';this.style.color='var(--label)'" onmouseout="this.style.background='transparent';this.style.color='var(--ink)'">
-            <span data-i18n="s1.load-json">Load JSON</span> <span style="opacity:.55;font-weight:400;font-size:10px" data-i18n="s1.load-json.hint">(Ctrl+O)</span>
+        <div class="s1-support-actions">
+          <button class="s1-action-btn" type="button" onclick="openProjects()" data-i18n="s1.all-projects">All projects</button>
+          <button class="s1-action-btn" type="button" onclick="document.getElementById('s1-load-file').click()">
+            <span data-i18n="s1.import">Import project or backup</span>
           </button>
-          <input type="file" id="s1-load-file" accept=".json" style="display:none" onchange="loadFromScreen1(event)"/>
-          <button title="Account &amp; Sync" onclick="openAccount()" style="position:relative;display:flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:99px;background:transparent;color:var(--ink);border:1.5px solid rgba(var(--ink-rgb),.25);font-family:var(--ui);font-size:11px;font-weight:600;cursor:pointer;transition:all .15s" onmouseover="this.style.background='var(--sig)';this.style.color='var(--label)'" onmouseout="this.style.background='transparent';this.style.color='var(--ink)'">
+          <input type="file" id="s1-load-file" accept=".json,.zip,application/json,application/zip" hidden onchange="s1ImportFile(event)"/>
+          <button class="s1-action-btn" type="button" onclick="openAccount()">
             <span data-i18n="account.title">Account &amp; Sync</span>
             <span id="s1-account-dot" class="acct-dot" style="display:none"></span>
           </button>
         </div>
       </div>
-      <!-- Right: recent projects -->
-      <div style="width:240px;flex-shrink:0">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-family:var(--ui);font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)" data-i18n="s1.recent">Recent Projects</span>
-          <button onclick="openProjects()" id="btn-projects-s1" data-i18n-title="toolbar.projects" title="My Projects (Alt+1)" style="width:28px;height:28px;border-radius:6px;background:rgba(var(--ink-rgb),.08);border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--ink);transition:background .13s;flex-shrink:0" onmouseover="this.style.background='var(--sig)';this.style.color='var(--label)'" onmouseout="this.style.background='rgba(var(--ink-rgb),.08)';this.style.color='var(--ink)'">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-          </button>
-        </div>
-        <div id="s1-recent"><div style="font-size:11px;color:var(--muted);font-family:var(--ui);padding:12px 0" data-i18n="s1.no-projects">No saved projects yet.</div></div>
       </div>
     </div>
-    <div style="margin-top:18px;text-align:right;font-family:var(--ui);font-size:10px;color:var(--muted);letter-spacing:.04em">
+    </section>
+    <div class="s1-version">
       <span data-i18n="s1.app-version">Version</span> <span id="s1-version-num"></span>
     </div>
   </div>
@@ -639,6 +646,11 @@
       <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     </button>
   </div>
+  <div class="proj-library-tabs" role="tablist" aria-label="Project library">
+    <button class="proj-library-tab active" type="button" data-view="all" onclick="projSetView('all')" role="tab" aria-selected="true"><span data-i18n="proj.view.all">All</span><span id="proj-count-all" class="proj-view-count">0</span></button>
+    <button class="proj-library-tab" type="button" data-view="pinned" onclick="projSetView('pinned')" role="tab" aria-selected="false"><span data-i18n="proj.view.pinned">Pinned</span><span id="proj-count-pinned" class="proj-view-count">0</span></button>
+    <button class="proj-library-tab" type="button" data-view="trash" onclick="projSetView('trash')" role="tab" aria-selected="false"><span data-i18n="proj.view.trash">Trash</span><span id="proj-count-trash" class="proj-view-count">0</span></button>
+  </div>
   <div id="proj-panel-search-row">
     <input type="text" id="proj-search" oninput="projSetSearch(this.value)" data-i18n-ph="proj.search-ph" placeholder="Search projects…"/>
     <select id="proj-sort" onchange="projSetSort(this.value)">
@@ -657,10 +669,19 @@
   </div>
   <div id="proj-panel-footer">
     <div id="proj-storage-indicator" title=""></div>
+    <div id="proj-trash-actions" class="proj-trash-actions" hidden>
+      <span data-i18n="proj.trash.retention">Items are kept for 30 days.</span>
+      <button type="button" onclick="projEmptyTrash()" data-i18n="proj.trash.empty">Empty Trash</button>
+    </div>
     <button id="proj-save-btn" onclick="projSave()">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
       <span data-i18n="proj.save-btn">Save current project</span>
     </button>
+    <div class="proj-backup-actions">
+      <button type="button" onclick="projCreateBackup()" data-i18n="proj.backup.create">Create backup</button>
+      <button type="button" onclick="document.getElementById('proj-backup-input').click()" data-i18n="proj.backup.restore">Restore backup</button>
+      <input id="proj-backup-input" type="file" accept=".zip,application/zip" hidden onchange="projRestoreBackupInput(event)"/>
+    </div>
     <div id="proj-export-all-wrap">
       <div id="export-all-popup">
         <div class="exp-all-header" data-i18n="export.all.title">Export all projects</div>

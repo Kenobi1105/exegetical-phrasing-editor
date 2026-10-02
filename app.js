@@ -5678,7 +5678,7 @@ async function projSave(showPanel){
   // Matches on verseRef, not name — name can now diverge intentionally after
   // a rename (see projRename), so it's no longer a reliable duplicate signal.
   if(isNewProject && ref){
-    const dupe=projIndex().find(e=>(e.verseRef||'').trim().toLowerCase()===ref.toLowerCase());
+    const dupe=projActiveEntries().find(e=>(e.verseRef||'').trim().toLowerCase()===ref.toLowerCase());
     if(dupe){
       const msg=(typeof t==='function'?t('confirm.dup-project'):'A project with this verse reference already exists ("{name}"). Save as a new, separate project anyway?').replace('{name}',dupe.name||'Untitled');
       if(!confirm(msg)){ toast(typeof t==='function'?t('toast.save-cancel'):'Save cancelled'); return; }
@@ -5719,6 +5719,7 @@ async function projSave(showPanel){
 
 async function projLoad(id){
   try{
+    if(projIsTrashed(projIndex().find(entry=>entry.id===id))) return;
     // IndexedDB is the primary store; fall back to legacy localStorage if
     // a specific id somehow wasn't migrated (or IDB is unreachable) —
     // costs nothing in the normal case, real safety net for "my project
@@ -5769,20 +5770,86 @@ async function projLoad(id){
   }catch(_){ toast(typeof t==='function'?t('toast.proj-error'):'Could not open project'); }
 }
 
-async function projDelete(id,e){
-  e.stopPropagation();
-  if(!confirm(typeof t==='function'?t('confirm.delete-proj'):'Delete this project from the app?\n\nThis cannot be undone.')) return;
+function projTogglePin(id,e){
+  e?.stopPropagation?.();
+  const idx=projIndex(), entry=idx.find(item=>item.id===id);
+  if(!entry||projIsTrashed(entry)) return;
+  entry.pinned=!entry.pinned;
+  projStoreIndex(idx); renderProjPanel(); renderS1Recent();
+}
+
+async function projDuplicate(id,e){
+  e?.stopPropagation?.();
+  const entry=projIndex().find(item=>item.id===id);
+  if(!entry||projIsTrashed(entry)) return;
+  let raw=null;
+  try{raw=await pIdbGet(id);}catch(_e){}
+  if(!raw) raw=localStorage.getItem(PROJ_DATA_KEY(id));
+  if(!raw){toast(typeof t==='function'?t('toast.proj-error'):'Could not open project');return;}
+  const copyId=projNewId();
+  try{await pIdbSet(copyId,raw);}catch(_e){toast(typeof t==='function'?t('toast.storage-full'):'Storage full — please export and clear some projects');return;}
+  const idx=projIndex();
+  idx.unshift({...entry,id:copyId,name:(typeof t==='function'?t('proj.copy.prefix'):'Copy of ') +(entry.name||'Untitled'),savedAt:Date.now(),pinned:false,trashedAt:undefined,renamed:true});
+  projStoreIndex(idx); renderProjPanel(); renderS1Recent();
+  toast(typeof t==='function'?t('proj.copy.done'):'Project copied');
+}
+
+async function projMoveToTrash(id,e){
+  e?.stopPropagation?.();
+  const idx=projIndex(), entry=idx.find(item=>item.id===id);
+  if(!entry||projIsTrashed(entry)) return;
+  if(!confirm(typeof t==='function'?t('confirm.trash-proj'):'Move this project to Trash? You can restore it for 30 days.')) return;
+  entry.trashedAt=Date.now();
+  entry.trashedFolderId=entry.folderId||null;
+  entry.pinned=false;
+  projStoreIndex(idx);
+  if(CURRENT_PROJECT_ID===id){CURRENT_PROJECT_ID=null;if(typeof syncWorkspaceChrome==='function')syncWorkspaceChrome('draft');}
+  renderProjPanel(); renderS1Recent();
+  toast(typeof t==='function'?t('proj.trash.moved'):'Moved to Trash');
+}
+
+async function projRestore(id,e){
+  e?.stopPropagation?.();
+  const idx=projIndex(), entry=idx.find(item=>item.id===id);
+  if(!entry||!projIsTrashed(entry)) return;
+  const folderExists=projFolders().some(folder=>folder.id===entry.trashedFolderId);
+  entry.folderId=folderExists?entry.trashedFolderId:null;
+  delete entry.trashedAt; delete entry.trashedFolderId;
+  projStoreIndex(idx); renderProjPanel(); renderS1Recent();
+  toast(typeof t==='function'?t('proj.trash.restored'):'Project restored');
+}
+
+async function projPermanentRemove(id){
   try{ await pIdbDelete(id); }catch(_e){}
   localStorage.removeItem(PROJ_DATA_KEY(id)); // also clear any un-migrated legacy copy
   const idx=projIndex().filter(e=>e.id!==id);
-  localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx));
+  projStoreIndex(idx);
   if(CURRENT_PROJECT_ID===id) CURRENT_PROJECT_ID=null;
   renderProjPanel();
   renderS1Recent();
-  // Queues a cloud delete (retried later if offline) so a later cloud pull
-  // can't resurrect a project just deleted locally.
+  // Cloud deletion is intentionally deferred until the item leaves Trash.
   if(typeof acctQueueDelete==='function') acctQueueDelete(id);
 }
+async function projDeletePermanently(id,e){
+  e?.stopPropagation?.();
+  if(!confirm(typeof t==='function'?t('confirm.delete-proj'):'Delete this project permanently?\n\nThis cannot be undone.')) return;
+  await projPermanentRemove(id);
+  toast(typeof t==='function'?t('proj.trash.deleted'):'Project deleted permanently');
+}
+async function projPurgeTrash(){
+  const expired=projIndex().filter(entry=>projIsTrashed(entry)&&Date.now()-entry.trashedAt>=PROJ_TRASH_RETENTION_MS);
+  for(const entry of expired) await projPermanentRemove(entry.id);
+  return expired.length;
+}
+async function projEmptyTrash(){
+  const entries=projIndex().filter(projIsTrashed);
+  if(!entries.length) return;
+  if(!confirm(typeof t==='function'?t('confirm.empty-trash'):'Delete every project in Trash permanently? This cannot be undone.')) return;
+  for(const entry of entries) await projPermanentRemove(entry.id);
+  toast(typeof t==='function'?t('proj.trash.emptied'):'Trash emptied');
+}
+// Compatibility entry point for older controls and shortcuts.
+function projDelete(id,e){ return projMoveToTrash(id,e); }
 async function projRename(id,ev){
   if(ev) ev.stopPropagation();
   const idx=projIndex();
@@ -5800,6 +5867,97 @@ async function projRename(id,ev){
   // is deliberately local-only, see PROJ_FOLDERS_KEY's comment above.
   if(typeof acctMarkDirty==='function') acctMarkDirty(id);
 }
+
+// A backup may contain projects created by an older compatible release, so
+// validation is intentionally structural rather than tied to every optional
+// field. It still rejects arbitrary JSON before anything reaches IndexedDB.
+function projValidPayload(data){
+  return !!data&&typeof data==='object'&&!Array.isArray(data)&&typeof data.lang==='string'&&
+    (!Object.prototype.hasOwnProperty.call(data,'rows')||Array.isArray(data.rows))&&
+    (!Object.prototype.hasOwnProperty.call(data,'cmts')||Array.isArray(data.cmts));
+}
+
+async function projCreateBackup(){
+  const entries=projIndex();
+  if(!entries.length){toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');return;}
+  try{
+    await _loadJSZip();
+    const zip=new JSZip();
+    const manifest={kind:PROJ_BACKUP_KIND,version:PROJ_BACKUP_VERSION,createdAt:Date.now(),folders:projFolders(),projects:[]};
+    for(const entry of entries){
+      let raw=null;
+      try{raw=await pIdbGet(entry.id);}catch(_e){}
+      if(!raw) raw=localStorage.getItem(PROJ_DATA_KEY(entry.id));
+      if(!raw) throw new Error('missing-project');
+      let data=null; try{data=JSON.parse(raw);}catch(_e){}
+      if(!projValidPayload(data)) throw new Error('invalid-project');
+      const path='projects/'+entry.id+'.json';
+      zip.file(path,raw);
+      manifest.projects.push({entry,path});
+    }
+    if(!manifest.projects.length) throw new Error('empty-backup');
+    zip.file('manifest.json',JSON.stringify(manifest,null,2));
+    const blob=await zip.generateAsync({type:'blob'});
+    _downloadBlob(blob,'ExegProjectBackup_'+_dateStamp()+'.zip');
+    toast(typeof t==='function'?t('proj.backup.created'):'Backup created');
+  }catch(_e){toast(typeof t==='function'?t('proj.backup.error'):'Could not create backup');}
+}
+
+async function projRestoreBackupInput(ev){
+  const file=ev?.target?.files?.[0]; if(!file) return;
+  try{await projRestoreBackupFile(file);}finally{ev.target.value='';}
+}
+
+async function projRestoreBackupFile(file){
+  try{
+    await _loadJSZip();
+    const zip=await JSZip.loadAsync(file);
+    const manifestFile=zip.file('manifest.json');
+    if(!manifestFile) throw new Error('missing-manifest');
+    const manifest=JSON.parse(await manifestFile.async('string'));
+    if(!manifest||manifest.kind!==PROJ_BACKUP_KIND||manifest.version!==PROJ_BACKUP_VERSION||!Array.isArray(manifest.projects)||!Array.isArray(manifest.folders)) throw new Error('unsupported-backup');
+    const staged=[];
+    const seenIds=new Set();
+    for(const item of manifest.projects){
+      const entry=item?.entry, path=item?.path;
+      if(!entry||typeof entry.id!=='string'||!path||seenIds.has(entry.id)) throw new Error('invalid-project');
+      seenIds.add(entry.id);
+      const source=zip.file(path); if(!source) throw new Error('missing-project');
+      const raw=await source.async('string');
+      const data=JSON.parse(raw);
+      if(!projValidPayload(data)) throw new Error('invalid-project');
+      staged.push({entry,raw});
+    }
+    if(!staged.length) throw new Error('empty-backup');
+
+    const folders=projFolders().slice(), folderIds=new Set(folders.map(folder=>folder.id)), folderMap=new Map(), seenFolderIds=new Set();
+    for(const sourceFolder of manifest.folders){
+      if(!sourceFolder||typeof sourceFolder.id!=='string'||typeof sourceFolder.name!=='string') throw new Error('invalid-folder');
+      if(seenFolderIds.has(sourceFolder.id)) throw new Error('invalid-folder');
+      seenFolderIds.add(sourceFolder.id);
+      const nextId=folderIds.has(sourceFolder.id)?projNewId('fold'):sourceFolder.id;
+      folderIds.add(nextId); folderMap.set(sourceFolder.id,nextId);
+      folders.push({id:nextId,name:sourceFolder.name.trim()||'Restored folder',order:folders.length+1});
+    }
+    const existingIds=new Set(projIndex().map(entry=>entry.id));
+    const now=Date.now(), imported=[];
+    for(const source of staged){
+      const conflict=existingIds.has(source.entry.id);
+      const id=conflict?projNewId():source.entry.id;
+      existingIds.add(id);
+      const folderId=source.entry.folderId?folderMap.get(source.entry.folderId)||null:null;
+      const trashedFolderId=source.entry.trashedFolderId?folderMap.get(source.entry.trashedFolderId)||null:null;
+      imported.push({id,raw:source.raw,entry:{...source.entry,id,name:(conflict?(typeof t==='function'?t('proj.restored.prefix'):'Restored ') :'')+(source.entry.name||'Untitled'),folderId,trashedFolderId,pinned:!!source.entry.pinned,trashedAt:Number.isFinite(source.entry.trashedAt)?source.entry.trashedAt:undefined,cloudAt:undefined,renamed:true,restoredAt:now}});
+    }
+    const written=[];
+    try{for(const item of imported){await pIdbSet(item.id,item.raw);written.push(item.id);}}
+    catch(err){for(const id of written){try{await pIdbDelete(id);}catch(_e){}}throw err;}
+    const idx=projIndex(); idx.unshift(...imported.map(item=>item.entry));
+    projSaveFolders(folders); projStoreIndex(idx); renderProjPanel(); renderS1Recent();
+    toast((typeof t==='function'?t('proj.backup.restored'):'Restored ')+imported.length+' '+(typeof t==='function'?t('proj.backup.projects'):'project(s)'));
+  }catch(_e){toast(typeof t==='function'?t('proj.backup.invalid'):'That backup could not be restored. No projects were changed.');}
+}
+
 /* ════════════════════════════════════════
    EXPORT ALL PROJECTS
    Bundles all saved projects as a ZIP of
@@ -5808,7 +5966,7 @@ async function projRename(id,ev){
 /* ── Export All popup toggle ── */
 function toggleExportAllPopup(e){
   e.stopPropagation();
-  const idx=projIndex();
+  const idx=projActiveEntries();
   if(!idx.length){
     toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');
     return;
@@ -5830,23 +5988,23 @@ function closeExportAllPopup(){
 }
 function projExportAll(){
   // Legacy entry point — just open the popup if called directly
-  const idx=projIndex();
+  const idx=projActiveEntries();
   if(!idx.length){toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');return;}
   document.getElementById('export-all-popup')?.classList.add('show');
 }
 function projExportAllPDF(){
-  const idx=projIndex();
+  const idx=projActiveEntries();
   if(!idx.length){toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');return;}
   _exportAllPDF(idx);
 }
 function projExportAllJSON(){
-  const idx=projIndex();
+  const idx=projActiveEntries();
   if(!idx.length){toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');return;}
   _exportAllJSON(idx);
 }
 
 function projExportAllDiagPDF(){
-  const idx=projIndex();
+  const idx=projActiveEntries();
   if(!idx.length){toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');return;}
   _exportAllDiagPDF(idx);
 }
@@ -6344,9 +6502,21 @@ function _dateStamp(){
 
 let PROJ_SEARCH_Q='';
 let PROJ_SORT='date-desc';
+let PROJ_VIEW='all';
+const PROJ_TRASH_RETENTION_MS=30*24*60*60*1000;
+const PROJ_BACKUP_KIND='exeg-project-library';
+const PROJ_BACKUP_VERSION=1;
 
 function projSetSearch(v){ PROJ_SEARCH_Q=v||''; renderProjPanel(); }
 function projSetSort(v){ PROJ_SORT=v||'date-desc'; renderProjPanel(); }
+function projSetView(view){
+  PROJ_VIEW=['all','pinned','trash'].includes(view)?view:'all';
+  renderProjPanel();
+}
+function projIsTrashed(entry){ return Number.isFinite(entry?.trashedAt)&&entry.trashedAt>0; }
+function projActiveEntries(){ return projIndex().filter(entry=>!projIsTrashed(entry)); }
+function projNewId(prefix='proj'){ return prefix+'-'+Date.now()+'-'+Math.random().toString(36).slice(2,7); }
+function projStoreIndex(idx){ localStorage.setItem(PROJ_INDEX_KEY,JSON.stringify(idx)); }
 
 function _projFilterSort(idx){
   let out=idx;
@@ -6360,29 +6530,39 @@ function _projFilterSort(idx){
   });
 }
 
+function _projViewEntries(idx){
+  if(PROJ_VIEW==='trash') return idx.filter(projIsTrashed);
+  if(PROJ_VIEW==='pinned') return idx.filter(entry=>!projIsTrashed(entry)&&entry.pinned);
+  return idx.filter(entry=>!projIsTrashed(entry));
+}
+
+function _projTrashDaysRemaining(entry){
+  return Math.max(0,Math.ceil((PROJ_TRASH_RETENTION_MS-(Date.now()-entry.trashedAt))/(24*60*60*1000)));
+}
+
 function _projCardHTML(e){
   const d=new Date(e.savedAt);
   const when=d.toLocaleDateString([],{month:'short',day:'numeric'})+' · '+
               d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
   const active=e.id===CURRENT_PROJECT_ID?' style="border-color:var(--sig);background:rgba(73,53,72,.04)"':'';
   const cloudBadge=typeof acctBadgeHTML==='function'?acctBadgeHTML(e):'';
-  return `<div class="proj-card" data-proj-id="${e.id}" onclick="projLoad('${e.id}')"${active}>
+  if(projIsTrashed(e)){
+    const days=_projTrashDaysRemaining(e);
+    return `<div class="proj-card is-trashed" data-proj-id="${e.id}">
+  <div class="proj-card-name">${escH(e.name||'Untitled')}</div>
+  <div class="proj-card-actions"><button class="proj-card-restore" onclick="projRestore('${e.id}',event)" title="Restore">↶</button><button class="proj-card-permanent" onclick="projDeletePermanently('${e.id}',event)" title="Delete permanently">×</button></div>
+  <div class="proj-card-meta proj-trash-meta"><span>${escH(e.verseRef||'')}</span><span>·</span><span>${days} ${typeof t==='function'?t('proj.trash.days'):'days left'}</span></div>
+</div>`;
+  }
+  const pin=e.pinned?'<span class="proj-pin-marker" title="Pinned">★</span>':'';
+  return `<div class="proj-card${e.pinned?' is-pinned':''}" data-proj-id="${e.id}" role="button" tabindex="0" onclick="projLoad('${e.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();projLoad('${e.id}')}"${active}>
   <div class="proj-card-name">${escH(e.name||'Untitled')}${cloudBadge}</div>
+  <div class="proj-card-actions"><button class="proj-card-pin" onclick="projTogglePin('${e.id}',event)" title="${e.pinned?'Unpin':'Pin'}">${e.pinned?'★':'☆'}</button><button class="proj-card-more" onclick="projOpenCardMenu('${e.id}',event)" title="Project options">⋯</button></div>
   <div class="proj-card-meta">
-    <span class="proj-lang-badge">${escH(e.lang||'—')}</span>
+    <span class="proj-lang-badge">${escH(e.lang||'—')}</span>${pin}
     <span>${escH(e.verseRef||'')}</span>
     <span>·</span><span>${when}</span>
   </div>
-  <button class="proj-rename" onclick="projRename('${e.id}',event)" title="Rename project">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/>
-    </svg>
-  </button>
-  <button class="proj-del" onclick="projDelete('${e.id}',event)" title="Delete project">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
-      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/>
-    </svg>
-  </button>
 </div>`;
 }
 
@@ -6425,19 +6605,25 @@ function renderProjPanel(){
   const list=document.getElementById('proj-list');
   const idxAll=projIndex();
   const folders=projFolders().slice().sort((a,b)=>(a.order||0)-(b.order||0));
+  const counts={all:idxAll.filter(e=>!projIsTrashed(e)).length,pinned:idxAll.filter(e=>!projIsTrashed(e)&&e.pinned).length,trash:idxAll.filter(projIsTrashed).length};
+  Object.entries(counts).forEach(([view,count])=>{
+    const countEl=document.getElementById('proj-count-'+view); if(countEl) countEl.textContent=count;
+    const tab=document.querySelector('.proj-library-tab[data-view="'+view+'"]');
+    if(tab){const active=view===PROJ_VIEW;tab.classList.toggle('active',active);tab.setAttribute('aria-selected',String(active));}
+  });
   if(typeof projUpdateStorageIndicator==='function') projUpdateStorageIndicator();
   const hint=document.getElementById('proj-folders-hint');
-  if(hint) hint.hidden=folders.length===0;
-  if(!idxAll.length){
-    list.innerHTML='<div id="proj-list-empty" data-i18n-html="proj.empty">'+(typeof t==='function'?t('proj.empty'):'No saved projects yet.<br>Press <b>Ctrl+S</b> to save your current work.')+'</div>';
-    return;
-  }
-  const idx=_projFilterSort(idxAll);
+  if(hint) hint.hidden=folders.length===0||PROJ_VIEW!=='all';
+  const trashActions=document.getElementById('proj-trash-actions'); if(trashActions) trashActions.hidden=PROJ_VIEW!=='trash'||!counts.trash;
+  const folderButton=document.getElementById('proj-new-folder-btn'); if(folderButton) folderButton.disabled=PROJ_VIEW==='trash';
+  const scoped=_projViewEntries(idxAll);
+  const idx=_projFilterSort(scoped);
   if(!idx.length){
-    list.innerHTML='<div id="proj-list-empty">'+(typeof t==='function'?t('proj.search-empty'):'No projects match your search.')+'</div>';
+    const empty=PROJ_SEARCH_Q.trim()&&scoped.length?(typeof t==='function'?t('proj.search-empty'):'No projects match your search.'):(typeof t==='function'?t('proj.empty'):'No saved projects yet.<br>Press <b>Ctrl+S</b> to save your current work.');
+    list.innerHTML='<div id="proj-list-empty">'+empty+'</div>';
     return;
   }
-  if(!folders.length){
+  if(PROJ_VIEW!=='all'||!folders.length){
     // No folders exist at all — skip the grouped layout entirely, render
     // exactly as before this feature (cheapest path, zero visual change
     // for anyone who never creates a folder).
@@ -6455,7 +6641,8 @@ function renderProjPanel(){
   list.innerHTML=html;
 }
 
-function openProjects(){
+async function openProjects(){
+  try{await projPurgeTrash();}catch(_e){}
   if(typeof window.spOpen==='function')window.spOpen('projects');else{const p=document.getElementById('proj-panel');if(p)p.classList.add('open');}
   projUpdateStorageIndicator();
 }
@@ -6540,7 +6727,7 @@ function projMoveToFolder(id,folderId){
 
 document.getElementById('proj-list')?.addEventListener('pointerdown', ev=>{
   if(ev.button!==0) return;
-  if(ev.target.closest('.proj-del')||ev.target.closest('.proj-rename')||ev.target.closest('.proj-folder-hdr')) return;
+  if(PROJ_VIEW==='trash'||ev.target.closest('.proj-card-actions')||ev.target.closest('.proj-folder-hdr')) return;
   const card=ev.target.closest('.proj-card');
   if(!card) return;
   projStartCardDrag(ev, card.dataset.projId, card);
@@ -6573,7 +6760,7 @@ document.addEventListener('pointerdown',ev=>{ if(!ev.target.closest('#proj-ctx-m
 function projShowCardCtxMenu(projId, clientX, clientY){
   const idx=projIndex();
   const entry=idx.find(e=>e.id===projId);
-  if(!entry) return;
+  if(!entry||projIsTrashed(entry)) return;
   const folders=projFolders();
   const folderItems=folders.map(f=>
     `<button class="proj-ctx-item"${entry.folderId===f.id?' disabled':''} onclick="projHideCtxMenu();projMoveToFolder('${projId}','${f.id}')">${escH(f.name)}</button>`
@@ -6581,11 +6768,17 @@ function projShowCardCtxMenu(projId, clientX, clientY){
   const unfiledItem=`<button class="proj-ctx-item"${!entry.folderId?' disabled':''} onclick="projHideCtxMenu();projMoveToFolder('${projId}',null)">${typeof t==='function'?t('proj.folder.unfiled'):'Unfiled'}</button>`;
   const menu=document.getElementById('proj-ctx-menu'); if(!menu) return;
   menu.innerHTML=`
+    <button class="proj-ctx-item" onclick="projHideCtxMenu();projTogglePin('${projId}')">${entry.pinned?(typeof t==='function'?t('proj.unpin'):'Unpin'):(typeof t==='function'?t('proj.pin'):'Pin')}</button>
+    <button class="proj-ctx-item" onclick="projHideCtxMenu();projDuplicate('${projId}')">${typeof t==='function'?t('proj.duplicate'):'Duplicate'}</button>
     <button class="proj-ctx-item" onclick="projHideCtxMenu();projRename('${projId}')">${typeof t==='function'?t('proj.rename.title'):'Rename'}</button>
     <div class="proj-ctx-sep"></div>
     ${folders.length?`<div class="proj-ctx-label">${typeof t==='function'?t('proj.ctx.move-to'):'Move to folder'}</div>${unfiledItem}${folderItems}<div class="proj-ctx-sep"></div>`:''}
-    <button class="proj-ctx-item proj-ctx-del" onclick="projHideCtxMenu();projDelete('${projId}',{stopPropagation:()=>{}})">${typeof t==='function'?t('proj.delete-btn'):'Delete'}</button>`;
+    <button class="proj-ctx-item proj-ctx-del" onclick="projHideCtxMenu();projMoveToTrash('${projId}')">${typeof t==='function'?t('proj.trash.move'):'Move to Trash'}</button>`;
   projShowCtxMenu(clientX,clientY);
+}
+function projOpenCardMenu(projId,ev){
+  ev?.stopPropagation?.();
+  projShowCardCtxMenu(projId,ev?.clientX||0,ev?.clientY||0);
 }
 
 async function projFolderRename(folderId){
@@ -6677,28 +6870,23 @@ async function projUpdateStorageIndicator(){
   }
 }
 
-/* Render up to 4 recent projects on Screen 1 */
 function renderS1Recent(){
   const el=document.getElementById('s1-recent');
-  if(!el) return;
-  const idx=projIndex();
-  if(!idx.length){
-    el.innerHTML='<div style="font-size:11px;color:var(--muted);font-family:var(--ui);padding:12px 0">'+(typeof t==='function'?t('s1.no-projects'):'No saved projects yet.')+'</div>';
-    return;
-  }
-  const recent=idx.slice(0,4);
-  el.innerHTML=recent.map(e=>{
-    const d=new Date(e.savedAt);
-    const when=d.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
-    const cloudBadge=typeof acctBadgeHTML==='function'?acctBadgeHTML(e):'';
-    return `<div class="s1-proj-row" onclick="projLoad('${e.id}')">
-  <span class="proj-lang-badge">${escH(e.lang||'—')}</span>
-  <span class="s1-proj-name">${escH(e.name||'Untitled')}${cloudBadge}</span>
-  <span class="s1-proj-meta">${when}</span>
-  <button class="s1-proj-del" onclick="projDelete('${e.id}',event)" title="Delete project">
-    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
-  </button>
-</div>`;
+  const returning=document.getElementById('s1-returning');
+  const continueCard=document.getElementById('s1-continue-card');
+  if(!el||!returning||!continueCard) return;
+  const active=projActiveEntries().slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+  returning.hidden=!active.length;
+  if(!active.length){el.innerHTML='';return;}
+  const latest=active[0], latestDate=new Date(latest.savedAt||Date.now());
+  const latestWhen=latestDate.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})+' · '+latestDate.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
+  const cloudBadge=typeof acctBadgeHTML==='function'?acctBadgeHTML(latest):'';
+  continueCard.onclick=()=>projLoad(latest.id);
+  continueCard.innerHTML=`<span class="s1-continue-title">${escH(latest.name||'Untitled')}${cloudBadge}</span><span class="s1-continue-meta"><span class="proj-lang-badge">${escH(latest.lang||'—')}</span><span>${escH(latest.verseRef||'')}</span><span>·</span><span>${latestWhen}</span></span><span class="s1-continue-action">${typeof t==='function'?t('s1.continue.action'):'Continue project →'}</span>`;
+  el.innerHTML=active.slice(1,4).map(e=>{
+    const when=new Date(e.savedAt).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+    const badge=typeof acctBadgeHTML==='function'?acctBadgeHTML(e):'';
+    return `<button class="s1-proj-row" type="button" onclick="projLoad('${e.id}')"><span class="proj-lang-badge">${escH(e.lang||'—')}</span><span class="s1-proj-name">${escH(e.name||'Untitled')}${badge}</span><span class="s1-proj-meta">${when}</span></button>`;
   }).join('');
 }
 
@@ -7220,6 +7408,14 @@ function loadFromScreen1(e){
     }catch(_){toast(typeof t==='function'?t('toast.load-error'):'Could not read file');}
   };
   reader.readAsText(f);e.target.value='';
+}
+function s1ImportFile(e){
+  const file=e?.target?.files?.[0]; if(!file) return;
+  if(/\.zip$/i.test(file.name)||file.type==='application/zip'){
+    projRestoreBackupInput(e);
+    return;
+  }
+  loadFromScreen1(e);
 }
 function clearAll(){
   if(!confirm(typeof t==='function'?t('confirm.clear'):'Clear all content?'))return;
@@ -10217,6 +10413,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // for why this is safe to await here (idempotent, resumable, leaves
   // localStorage untouched on any failure).
   try{ await projMigrateToIdbOnce(); }catch(_e){}
+  try{ await projPurgeTrash(); }catch(_e){}
   try{
     const savedCmtFs=parseInt(localStorage.getItem('exeg-cmt-fontsize'));
     _setCmtFontSize(isNaN(savedCmtFs)?CMT_FONT_SIZE:savedCmtFs);
