@@ -4575,7 +4575,6 @@ body.hide-sections #section-strips{display:none}
 .dblock.dragging{transform:translateY(-1px)}
 .dblock.dragging::before{border-color:#a47b28;box-shadow:0 0 0 3px rgba(200,168,75,.24),0 7px 18px rgba(43,30,42,.16)}
 .dblock-text{line-height:1.55;text-shadow:none}
-.dblock:has(+.dblock-trans)::before{border-radius:8px;border-bottom-color:transparent}
 .dblock-trans{max-width:min(660px,calc(100% - 24px));margin:3px 0 7px;padding:0 4px;background:transparent;border:0;border-radius:0;color:#746e66;font-size:12px;font-style:normal;line-height:1.45;box-shadow:none}
 .dblock-trans:hover{border-color:transparent;color:#514b45}
 .dblock-trans:focus{border-color:transparent;background:transparent;color:var(--ink);box-shadow:0 1px 0 rgba(164,123,40,.7);outline:0}
