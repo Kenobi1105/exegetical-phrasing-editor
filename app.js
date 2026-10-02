@@ -2069,8 +2069,9 @@ function renderDiagramConnectors(){
   }
   canvas.appendChild(hitSvg);
   const canvasRect=canvas.getBoundingClientRect();
-  cardSurfaceSvg.setAttribute('width', canvas.scrollWidth);
-  cardSurfaceSvg.setAttribute('height', canvas.scrollHeight);
+  // Previous renders painted a permanent SVG card behind every block here.
+  // It duplicated the block interaction treatment, so the mount is retained
+  // only to clear legacy content while .dblock::before owns card feedback.
   cardSurfaceSvg.innerHTML='';
   svg.setAttribute('width', canvas.scrollWidth);
   svg.setAttribute('height', canvas.scrollHeight);
@@ -2081,18 +2082,6 @@ function renderDiagramConnectors(){
   hitSvg.setAttribute('width', canvas.scrollWidth);
   hitSvg.setAttribute('height', canvas.scrollHeight);
   hitSvg.innerHTML='';
-  canvas.querySelectorAll('.dblock').forEach(block=>{
-    const rect=block.getBoundingClientRect();
-    const surface=document.createElementNS('http://www.w3.org/2000/svg','rect');
-    surface.setAttribute('class','dcard-surface');
-    surface.setAttribute('x',rect.left-canvasRect.left);
-    surface.setAttribute('y',rect.top-canvasRect.top);
-    surface.setAttribute('width',rect.width);
-    surface.setAttribute('height',rect.height);
-    surface.setAttribute('rx','8');
-    surface.setAttribute('ry','8');
-    cardSurfaceSvg.appendChild(surface);
-  });
   const trunkX=_rightAngleTrunkX(canvas, canvasRect);
 
   // Safety net: if the selected connector no longer exists (e.g. an undo

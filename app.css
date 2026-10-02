@@ -4586,9 +4586,9 @@ body.hide-sections #section-strips{display:none}
 .diagram-empty-legend .semantic{color:#6c527b}.diagram-empty-legend .structural{color:#8c681e}
 
 #dcard-surfaces,#dconns,#dconns-back{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;overflow:visible}
-#dcard-surfaces{z-index:0}
+/* Legacy mount only: .dblock::before is the one visual card layer. */
+#dcard-surfaces{display:none}
 #dconns,#dconns-back{z-index:1}
-#dcard-surfaces .dcard-surface{fill:#fffdf9;stroke:rgba(73,53,72,.18);stroke-width:1;filter:drop-shadow(0 1px 1px rgba(43,30,42,.05))}
 #dconns-hit{z-index:4}
 .dconn-curve .dconn-line{stroke-linecap:round;stroke-linejoin:round;opacity:.9}
 .dconn-rightangle .dconn-line{stroke-linecap:square;stroke-linejoin:round;opacity:.84}
@@ -4599,7 +4599,6 @@ body.hide-sections #section-strips{display:none}
 /* Split Words replaces each phrase's paper card with a transparent dashed
    outline. The outline belongs to the fit-content block itself, so it grows
    naturally when a hovered slash reserves its inline gap between words. */
-#dcanvas.dem-active #dcard-surfaces{opacity:0}
 #dcanvas.dem-active .dedit-word{cursor:crosshair}
 #dcanvas.dem-active .dblock::before,
 #dcanvas.dem-active .dblock:hover::before,
@@ -4664,7 +4663,6 @@ body.hide-sections #section-strips{display:none}
 :root[data-theme='dark'] .dblock-trans:hover{color:var(--label)}
 :root[data-theme='dark'] .diagram-empty-state{background:rgba(37,32,48,.86);border-color:rgba(237,231,221,.22)}
 :root[data-theme='dark'] .diagram-empty-legend span{background:rgba(255,255,255,.08)}
-:root[data-theme='dark'] #dcard-surfaces .dcard-surface{fill:var(--surface);stroke:rgba(237,231,221,.22);filter:drop-shadow(0 1px 2px rgba(0,0,0,.28))}
 :root[data-theme='dark'] .dra-handle{background:#252030;border-color:rgba(237,231,221,.3);color:var(--label);box-shadow:0 2px 5px rgba(0,0,0,.3)}
 :root[data-theme='dark'] #dzone>.cep{background:var(--sig)}
 
@@ -4816,6 +4814,9 @@ body.hide-sections #section-strips{display:none}
 .bpanel-compare-btn:hover,.bpanel-compare-btn.on{background:rgba(73,53,72,.1);border-color:var(--sig);color:var(--sig)}
 .bpane-section{position:relative}
 .breader-toolbar{display:flex;align-items:center;gap:5px;padding:10px 12px 8px;flex-shrink:0;position:relative;z-index:2}
+/* Comparison focus remains functional without enclosing a reader in a box. */
+#bpanel-body.is-comparing .bpane-section.is-focused .breader-toolbar{background:rgba(199,157,53,.07)}
+#bpanel-body.is-comparing .bpane-section.is-focused .breader-reference{border-color:rgba(165,122,20,.5)}
 .bpane-nav-btn,.breader-browse-btn{
   width:28px;height:30px;border:1px solid rgba(73,53,72,.16);border-radius:6px;background:var(--bg);color:var(--ink);
   display:grid;place-items:center;font:700 14px var(--ui);cursor:pointer;flex:none;transition:all .14s;
@@ -4866,6 +4867,8 @@ body.hide-sections #section-strips{display:none}
 
 :root[data-theme='dark'] #bible-panel{background:#211f29}
 :root[data-theme='dark'] .breader-toolbar,:root[data-theme='dark'] .bpane,:root[data-theme='dark'] .bpane-picker-container{background:#211f29}
+:root[data-theme='dark'] #bpanel-body.is-comparing .bpane-section.is-focused .breader-toolbar{background:rgba(237,198,100,.09)}
+:root[data-theme='dark'] #bpanel-body.is-comparing .bpane-section.is-focused .breader-reference{border-color:var(--accent)}
 :root[data-theme='dark'] .breader-reference,:root[data-theme='dark'] .breader-version,:root[data-theme='dark'] .bpane-nav-btn,:root[data-theme='dark'] .breader-browse-btn,:root[data-theme='dark'] .bpicker-search{background:#252030;border-color:rgba(237,231,221,.17);color:var(--label)}
 :root[data-theme='dark'] .breader-browse-btn span{color:var(--label)}
 :root[data-theme='dark'] .breader-open-passages,:root[data-theme='dark'] .breader-tabs-panel{border-color:rgba(237,231,221,.1)}
@@ -4877,13 +4880,6 @@ body.hide-sections #section-strips{display:none}
 :root[data-theme='dark'] .bpane-nav-btn:hover:not(:disabled),:root[data-theme='dark'] .breader-browse-btn:hover,:root[data-theme='dark'] .breader-browse-btn:focus-visible{background:rgba(255,255,255,.1);border-color:var(--accent);color:var(--label)}
 :root[data-theme='dark'] .bpane-error{background:rgba(220,60,60,.1);border-color:rgba(246,150,140,.24);color:#ffafa5}
 
-/* Floating picker and comparison focus must follow the reader shell's rounded geometry. */
-#bpanel-body{overflow:hidden;border-radius:0 0 18px 18px}
-#bpanel-body.is-comparing .bpane-section{overflow:hidden}
-#bpanel-body.is-comparing .bpane-section.is-focused{z-index:3;box-shadow:inset 0 0 0 2px var(--sig)}
-#bpanel-body.is-comparing #bpane-bottom-section{border-radius:0 0 18px 18px}
-#bpanel-body.is-comparing #bpane-bottom-section.is-focused{border-radius:0 0 18px 18px}
-:root[data-theme='dark'] #bpanel-body.is-comparing .bpane-section.is-focused{box-shadow:inset 0 0 0 2px var(--accent)}
 
 @media (max-width:760px),(pointer:coarse){
   #diagram-canvas-header{padding:7px 12px;min-height:unset;align-items:flex-start;flex-direction:column;gap:7px}
