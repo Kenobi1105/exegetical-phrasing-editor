@@ -372,6 +372,14 @@ const LANGS = {
     'bible.nt':            'NEW TESTAMENT',
     'bible.switch-ver':    'Switch version',
     'bible.no-passage':    'No passage selected yet.<br>Click "Select passage…" above to begin.',
+    'bible.compare':       'Compare',
+    'bible.browse':        'Browse books, chapters, and verses',
+    'bible.reference':     'Passage reference',
+    'bible.reference.placeholder':'Genesis 18:1',
+    'bible.open-passages': 'Open passages',
+    'bible.search-books':  'Search books',
+    'bible.retry':         'Try again',
+    'bible.use-local':     'Use local text',
 
     /* ── Export popup ── */
     'export.pdf':              'Export as PDF',
@@ -851,6 +859,14 @@ const LANGS = {
     'bible.nt':            '新约',
     'bible.switch-ver':    '切换版本',
     'bible.no-passage':    '尚未选择经文。<br>请点击上方"选择经文…"开始。',
+    'bible.compare':       '对照',
+    'bible.browse':        '浏览书卷、章节和经文',
+    'bible.reference':     '经文引用',
+    'bible.reference.placeholder':'例如：创世记 18:1',
+    'bible.open-passages': '已打开的经文',
+    'bible.search-books':  '搜索书卷',
+    'bible.retry':         '重试',
+    'bible.use-local':     '使用本地经文',
 
     /* ── Export popup ── */
     'export.pdf':              '导出为 PDF',

@@ -112,8 +112,8 @@ window.bToggleFocusedPanelLock=function(){if(typeof bToggleFocusedPanelLock_==='
    and are already global — do NOT shadow them with window assignments here */
 
 /* ── Online ─────────────────────────────────────────── */
-window.addEventListener('online', ()=>{bOnline=true; bUpdateOfflineBar();});
-window.addEventListener('offline',()=>{bOnline=false;bUpdateOfflineBar();});
+window.addEventListener('online', ()=>{bOnline=true; bUpdateOfflineBar();bRefreshPaneChrome('top');bRefreshPaneChrome('bottom');});
+window.addEventListener('offline',()=>{bOnline=false;bUpdateOfflineBar();bRefreshPaneChrome('top');bRefreshPaneChrome('bottom');});
 function bUpdateOfflineBar(){
   const el=document.getElementById('bpanel-offline-bar');
   if(el)el.style.display=bOnline?'none':'block';
@@ -256,6 +256,90 @@ function bMaxVerses(corpus,bookIdx,chapter){
   return 30;
 }
 
+function bDefaultVersion(){
+  const isChinese=(typeof LANG_UI!=='undefined'&&LANG_UI==='zh');
+  return isChinese?'cuv_s':(bOnline?'net':'wlc');
+}
+function bReferenceLabel(corpus,bookIdx,chapter,verse){
+  const isChinese=(typeof LANG_UI!=='undefined'&&LANG_UI==='zh');
+  const books=corpus==='nt'?(isChinese?NT_BOOKS_ZH:NT_BOOKS):(isChinese?OT_BOOKS_ZH:OT_BOOKS);
+  return `${books[bookIdx]||''} ${chapter}:${verse||1}`;
+}
+function bRefreshPaneChrome(section){
+  const tab=bTabs[section]?.[bActiveTab[section]];
+  const input=document.getElementById('bref-'+section);
+  const select=document.getElementById('bversion-'+section);
+  const count=document.getElementById('bopen-count-'+section);
+  if(input)input.value=tab&&!tab.cleared?bReferenceLabel(tab.corpus,tab.bookIdx,tab.chapter,tab.verse):'';
+  if(count)count.textContent=bTabs[section]?.length?String(bTabs[section].length):'';
+  if(!select)return;
+  const corpus=tab?.corpus;
+  const selected=tab?.version||bDefaultVersion();
+  select.innerHTML='';
+  Object.entries(BVERSIONS).forEach(([key,meta])=>{
+    const option=document.createElement('option');
+    const compatible=!corpus||meta.corpus==='all'||meta.corpus===corpus;
+    option.value=key;option.textContent=meta.label+(meta.offline?'':' · online');
+    option.disabled=!compatible||(!bOnline&&!meta.offline);
+    option.selected=key===selected;
+    select.appendChild(option);
+  });
+  select.value=selected;
+}
+function bUpdatePickerBtn(section){bRefreshPaneChrome(section||bFocusedSection);}
+
+function bParseReference(raw){
+  const source=String(raw||'').trim().replace(/[–—]/g,'-');
+  if(!source)return null;
+  const entries=[];
+  [[OT_BOOKS,OT_ABBR,OT_BOOKS_ZH,OT_ABBR_ZH,'ot'],[NT_BOOKS,NT_ABBR,NT_BOOKS_ZH,NT_ABBR_ZH,'nt']].forEach(([books,abbrs,zhBooks,zhAbbrs,corpus])=>{
+    books.forEach((book,index)=>{
+      const aliases=[book,abbrs[index],zhBooks[index],zhAbbrs[index]];
+      if(!/^\d/.test(book))aliases.push(book.slice(0,3));
+      aliases.filter(Boolean).forEach(alias=>entries.push({alias,corpus,index}));
+    });
+  });
+  entries.sort((a,b)=>b.alias.length-a.alias.length);
+  for(const entry of entries){
+    const prefix=entry.alias.toLocaleLowerCase();
+    if(!source.toLocaleLowerCase().startsWith(prefix))continue;
+    const match=source.slice(entry.alias.length).trim().match(/^(\d+)(?:\s*[:.]\s*(\d+))?$/);
+    if(!match)continue;
+    return {corpus:entry.corpus,bookIdx:entry.index,chapter:Number(match[1]),verse:Number(match[2]||1)};
+  }
+  return null;
+}
+function bShowReferenceError(section){
+  const pane=document.getElementById('bpane-'+section);
+  if(pane)pane.innerHTML='<div class="bpane-error">⚠ Enter a reference such as Genesis 18:1.</div>';
+}
+async function bSubmitReference(section){
+  const input=document.getElementById('bref-'+section);
+  try{await bLoadIndex();}catch(_){}
+  const ref=bParseReference(input?.value);
+  if(!ref||ref.chapter<1||ref.chapter>bMaxChapters(ref.corpus,ref.bookIdx)||ref.verse<1||ref.verse>bMaxVerses(ref.corpus,ref.bookIdx,ref.chapter)){
+    bShowReferenceError(section);return;
+  }
+  Object.assign(bPicker,{...ref,targetSection:section,openSection:section,open:false,state:'closed'});
+  await bPickerConfirm(ref.verse);
+}
+function bReferenceKeydown(event,section){
+  if(event.key==='Enter'){event.preventDefault();bSubmitReference(section);}
+}
+function bChangePaneVersion(section,version){
+  let tab=bTabs[section]?.[bActiveTab[section]];
+  if(!tab){
+    tab={version,corpus:'ot',bookIdx:0,chapter:1,verse:1,label:BVERSIONS[version]?.label||version,cleared:true};
+    bTabs[section].push(tab);bActiveTab[section]=bTabs[section].length-1;
+  } else tab.version=version;
+  bRenderTabBar(section);bRefreshPaneChrome(section);
+  if(!tab.cleared)bLoadPassageInfinite(section,tab.corpus,tab.bookIdx,tab.chapter,tab.verse||1);
+}
+function bToggleOpenPassages(section){
+  const panel=document.getElementById('bpane-'+section+'-tab-panel');
+  if(panel)panel.hidden=!panel.hidden;
+}
+
 /* ── Font size ──────────────────────────────────────── */
 function bSetFontSize(val){
   bFontSize=parseInt(val)||12;
@@ -339,7 +423,7 @@ async function bLoadPassageInfinite(section, corpus, bookIdx, chapter, anchorVer
 
     // Build pane
     pane.innerHTML='';
-    pane.appendChild(bBuildVerseList(corpus,bookIdx,chapter,verses));
+    pane.appendChild(bBuildVerseList(section,corpus,bookIdx,chapter,verses));
 
     // Update prev/next buttons
     bUpdateNavBtns(section,version,corpus,bookIdx,chapter);
@@ -370,14 +454,20 @@ async function bLoadPassageInfinite(section, corpus, bookIdx, chapter, anchorVer
       :version==='net'
         ?'⚠ NET Bible is temporarily unavailable. Please try again shortly.'
         :escH(err.message);
-    pane.innerHTML=`<div class="bpane-error">${message}</div>`;
+    const actions=`<div class="bpane-error-actions"><button onclick="bRetrySection('${section}')">${typeof t==='function'?t('bible.retry'):'Try again'}</button>${version==='net'?`<button onclick="bUseLocalVersion('${section}')">${typeof t==='function'?t('bible.use-local'):'Use local text'}</button>`:''}</div>`;
+    pane.innerHTML=`<div class="bpane-error">${message}${actions}</div>`;
   }
 }
 
-function bBuildVerseList(corpus, bookIdx, chapter, verses){
+function bBuildVerseList(section, corpus, bookIdx, chapter, verses){
   const cnt=document.createElement('div');
   cnt.className='bpane-content';
   cnt.style.cssText=`font-size:${bFontSize}px;line-height:1.85;font-family:var(--serif)`;
+  const tab=bTabs[section]?.[bActiveTab[section]];
+  const meta=document.createElement('div');
+  meta.className='breader-passage-meta';
+  meta.innerHTML=`<span class="breader-passage-title">${escH(bReferenceLabel(corpus,bookIdx,chapter,1).replace(':1',''))}</span><span class="breader-version-badge">${escH(BVERSIONS[tab?.version]?.label||'')}</span>`;
+  cnt.appendChild(meta);
   verses.forEach((v,i)=>{
     const row=document.createElement('div');
     row.className='bpane-verse';
@@ -490,8 +580,37 @@ async function bNavChapter(section,dir){
   await bLoadPassageInfinite(section,ref.corpus,ref.bookIdx,ref.chapter,1);
 }
 
+function bRetrySection(section){
+  const tab=bTabs[section]?.[bActiveTab[section]];
+  if(tab&&!tab.cleared)bLoadPassageInfinite(section,tab.corpus,tab.bookIdx,tab.chapter,tab.verse||1);
+}
+function bUseLocalVersion(section){
+  const tab=bTabs[section]?.[bActiveTab[section]];
+  if(!tab)return;
+  tab.version=tab.corpus==='nt'?'sblgnt':'wlc';
+  bRenderTabBar(section);bRefreshPaneChrome(section);
+  bLoadPassageInfinite(section,tab.corpus,tab.bookIdx,tab.chapter,tab.verse||1);
+}
+function bSuggestedCompareVersion(tab){
+  if(tab.version==='net')return tab.corpus==='nt'?'sblgnt':'wlc';
+  return bOnline?'net':(tab.corpus==='nt'?'byz':'wlc');
+}
+function bCompareCurrent(){
+  if(bSplitOpen){bToggleSplit_();return;}
+  const source=bTabs.top?.[bActiveTab.top];
+  bOpenSplit();
+  if(!source||source.cleared){
+    document.getElementById('bref-bottom')?.focus();return;
+  }
+  const compared={...source,version:bSuggestedCompareVersion(source)};
+  compared.label=`${BVERSIONS[compared.version]?.label||compared.version} · ${bReferenceLabel(compared.corpus,compared.bookIdx,compared.chapter,compared.verse)}`;
+  bTabs.bottom=[compared];bActiveTab.bottom=0;
+  bRenderTabBar('bottom');bRefreshPaneChrome('bottom');
+  bLoadPassageInfinite('bottom',compared.corpus,compared.bookIdx,compared.chapter,compared.verse||1);
+}
+
 /* Placeholder to prevent errors from old preload calls */
-function bBuildChapterBlock(c,b,ch,v){return bBuildVerseList(c,b,ch,v);}
+function bBuildChapterBlock(c,b,ch,v){return bBuildVerseList(bFocusedSection,c,b,ch,v);}
 
 /* Stub — no longer needed */
 async function bInfiniteScroll(){return;}
@@ -646,6 +765,7 @@ function bRenderTabBar(section){
     });
     tabsEl.appendChild(btn);
   });
+  bRefreshPaneChrome(section);
 }
 
 function bShowTabVersionPopup(e, section, tabIdx){
@@ -800,27 +920,27 @@ function bPickerCollapseToBooks(){
   bPicker.state='books';bPicker.chapter=1;bPicker.verse=1;
   bPickerRenderFor(bPicker.openSection||bFocusedSection);
 }
-function bUpdatePickerBtn(section){
-  if(!section)section=bFocusedSection;
-  const btn=document.getElementById('bpicker-btn-'+section);
-  if(!btn)return;
-  const tab=bTabs[section]?.[bActiveTab[section]];
-  if(tab&&!tab.cleared){
-    const isChinese=(typeof LANG_UI!=='undefined'&&LANG_UI==='zh');
-    const books=tab.corpus==='nt'
-      ?(isChinese?NT_BOOKS_ZH:NT_BOOKS)
-      :(isChinese?OT_BOOKS_ZH:OT_BOOKS);
-    btn.textContent=(books[tab.bookIdx]||'')+' '+tab.chapter+':'+(tab.verse||1);
-  } else btn.textContent=typeof t==='function'?t('bible.select'):'Select passage…';
-}
 function bPickerRenderFor(section){
   const container=document.getElementById('bpicker-container-'+section);
   if(!container)return;
   container.innerHTML='';
+  const search=document.createElement('input');
+  search.className='bpicker-search';search.type='search';
+  search.placeholder=typeof t==='function'?t('bible.search-books'):'Search books';
+  search.setAttribute('aria-label',search.placeholder);
+  search.addEventListener('input',()=>bFilterPickerBooks(container,search.value));
+  container.appendChild(search);
   container.appendChild(bBuildAccordion());
   container.style.display='block';
+  search.focus();
 }
 function bPickerRender(){bPickerRenderFor(bPicker.openSection||bFocusedSection);}
+function bFilterPickerBooks(container,query){
+  const term=String(query||'').trim().toLocaleLowerCase();
+  container.querySelectorAll('[data-book-name]').forEach(button=>{
+    button.hidden=!!term&&!button.dataset.bookName.toLocaleLowerCase().includes(term);
+  });
+}
 
 /* ── Accordion: books in rows, expansion after selected row ── */
 function bBuildAccordion(){
@@ -856,6 +976,8 @@ function bBuildAccordion(){
         const sq=document.createElement('button');
         const isActive=bPicker.corpus===corpusKey&&bPicker.bookIdx===idx;
         sq.className='bpg-sq'+(isActive?' active':'');
+        const localizedBook=isChinese?(corpusKey==='nt'?NT_BOOKS_ZH[idx]:OT_BOOKS_ZH[idx]):'';
+        sq.dataset.bookName=`${book} ${abbr} ${localizedBook}`;
         sq.textContent=abbr;sq.title=book;
         sq.addEventListener('click',()=>{
           if(isActive&&(bPicker.state==='chapters'||bPicker.state==='verses')){
@@ -1045,6 +1167,7 @@ function bToggleSplit_(){
     const bpaneBot=document.getElementById('bpane-bottom');
     if(bpaneBot){bpaneBot.innerHTML=(typeof t==="function"?'<div class="bpane-empty">'+t('bible.no-passage')+'</div>':'<div class="bpane-empty">No passage selected yet.<br>Click "Select passage\u2026" above to begin.</div>');bpaneBot.onscroll=null;}
     document.getElementById('bpanel-split-btn')?.classList.remove('on');
+    document.getElementById('bpanel-body')?.classList.remove('is-comparing');
     bFocusSection('top');
   } else {
     bOpenSplit();
@@ -1054,6 +1177,7 @@ function bToggleSplit_(){
 function bOpenSplit(){
   if(bSplitOpen)return;
   bSplitOpen=true;
+  document.getElementById('bpanel-body')?.classList.add('is-comparing');
   // Reset bottom state
   bTabs.bottom=[];bActiveTab.bottom=-1;
   bLoadedChapters.bottom=[];bLoadedBook.bottom=null;
@@ -1076,13 +1200,15 @@ function bStartSplitDrag(e){
   const topSec=document.getElementById('bpane-top-section');
   const botSec=document.getElementById('bpane-bottom-section');
   if(!body||!topSec||!botSec)return;
-  const startY=e.clientY,startTopH=topSec.offsetHeight;
-  const totalH=body.offsetHeight;
+  const horizontal=getComputedStyle(body).flexDirection==='row';
+  const startPos=horizontal?e.clientX:e.clientY;
+  const startSize=horizontal?topSec.offsetWidth:topSec.offsetHeight;
+  const totalSize=horizontal?body.offsetWidth:body.offsetHeight;
   const mm=ev=>{
-    const delta=ev.clientY-startY;
-    const newH=Math.max(80,Math.min(totalH-80-5,startTopH+delta));
-    topSec.style.flex=`0 0 ${newH}px`;
-    botSec.style.flex=`0 0 ${totalH-newH-5}px`;
+    const delta=(horizontal?ev.clientX:ev.clientY)-startPos;
+    const next=Math.max(160,Math.min(totalSize-160-5,startSize+delta));
+    topSec.style.flex=`0 0 ${next}px`;
+    botSec.style.flex=`0 0 ${totalSize-next-5}px`;
   };
   const mu=()=>{document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);};
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
@@ -1294,6 +1420,7 @@ async function bFullReset(){
   const bot=document.getElementById('bpane-bottom-section');
   if(bot)bot.style.display='none';
   document.getElementById('bpanel-split-btn')?.classList.remove('on');
+  document.getElementById('bpanel-body')?.classList.remove('is-comparing');
   document.getElementById('b-scroll-lock-btn')?.classList.remove('on');
   // Clear pane content
   ['top','bottom'].forEach(s=>{
@@ -1301,8 +1428,6 @@ async function bFullReset(){
     if(p){p.innerHTML=(typeof t==="function"?'<div class="bpane-empty">'+t('bible.no-passage')+'</div>':'<div class="bpane-empty">No passage selected yet.<br>Click "Select passage\u2026" above to begin.</div>');p.onscroll=null;}
     const c=document.getElementById('bpicker-container-'+s);
     if(c){c.innerHTML='';c.style.display='none';}
-    const btn=document.getElementById('bpicker-btn-'+s);
-    if(btn)btn.textContent=typeof t==='function'?t('bible.select'):'Select passage…';
     bRenderTabBar(s);
   });
   // Clear IDB Bible text cache
@@ -1362,9 +1487,13 @@ function bClearPane(section){
     p.innerHTML=(typeof t==="function"?'<div class="bpane-empty">'+t('bible.no-passage')+'</div>':'<div class="bpane-empty">No passage selected yet.<br>Click "Select passage…" above to begin.</div>');
     p.onscroll=null;
   }
-  const btn=document.getElementById('bpicker-btn-'+section);
-  if(btn)btn.textContent=typeof t==='function'?t('bible.select'):'Select passage…';
-  bUpdateNavBtns(section,'sblgnt','nt',0,1);
+  const tab=bTabs[section]?.[bActiveTab[section]];
+  if(tab)tab.cleared=true;
+  ['bprev-','bnext-'].forEach(prefix=>{
+    const control=document.getElementById(prefix+section);
+    if(control)control.disabled=true;
+  });
+  bRenderTabBar(section);bRefreshPaneChrome(section);
 }
 
 // bOpenPickerForSection — alias for bPickerOpenFor

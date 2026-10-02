@@ -693,9 +693,7 @@
     <button class="bpanel-hbtn" id="b-scroll-lock-btn" title="Sync scroll between panes" onclick="bToggleScrollLock()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
     </button>
-    <button class="bpanel-hbtn" id="bpanel-split-btn" title="Split pane (Ctrl+\)" onclick="window.bToggleSplit?.()">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="12" x2="21" y2="12"/></svg>
-    </button>
+    <button class="bpanel-compare-btn" id="bpanel-split-btn" title="Compare passages" onclick="bCompareCurrent()" data-i18n="bible.compare" data-i18n-title="bible.compare">Compare</button>
     <button class="bpanel-hbtn" id="bpanel-pin-btn" title="Pin panel to right side (Ctrl+Shift+\)" onclick="bTogglePin()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"/><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17z"/></svg>
     </button>
@@ -706,17 +704,22 @@
   <div id="bpanel-offline-bar" data-i18n="bible.offline">⚠ Offline — NET Bible unavailable.</div>
   <div id="bpanel-body">
     <div class="bpane-section" id="bpane-top-section">
-      <div class="bpane-picker-row">
+      <div class="breader-toolbar">
         <button class="bpane-nav-btn" id="bprev-top" title="Previous chapter (Ctrl+Shift+[)" onclick="bNavChapter('top','prev')" disabled>&#8592;</button>
-        <button class="bpane-picker-btn" id="bpicker-btn-top" onclick="bPickerOpenFor('top')" data-i18n="bible.select">Select passage…</button>
+        <input class="breader-reference" id="bref-top" type="text" autocomplete="off" spellcheck="false" placeholder="Genesis 18:1" data-i18n-ph="bible.reference.placeholder" aria-label="Passage reference" data-i18n-aria-label="bible.reference" onkeydown="bReferenceKeydown(event,'top')">
+        <button class="breader-browse-btn" type="button" onclick="bPickerOpenFor('top')" data-i18n-title="bible.browse" title="Browse books, chapters, and verses" aria-label="Browse passage" data-i18n-aria-label="bible.browse">⌄</button>
+        <select class="breader-version" id="bversion-top" onchange="bChangePaneVersion('top',this.value)" aria-label="Bible version" data-i18n-aria-label="bible.switch-ver"></select>
         <button class="bpane-nav-btn" id="bnext-top" title="Next chapter (Ctrl+Shift+])" onclick="bNavChapter('top','next')" disabled>&#8594;</button>
       </div>
       <div id="bpicker-container-top" class="bpane-picker-container" style="display:none"></div>
-      <div class="bpane-tabbar">
-        <div class="bpane-tabs" id="bpane-top-tabs"></div>
-        <div class="bpane-tabactions">
-          <button class="btab-add" data-i18n-title="bible.add-tab" title="Add tab" onclick="bAddTab('top')">+</button>
-          <button class="btab-clear" data-i18n-title="bible.clear-tab" title="Clear passage" onclick="bClearPane('top')">✕</button>
+      <div class="breader-open-passages">
+        <button class="breader-open-passages-btn" type="button" onclick="bToggleOpenPassages('top')"><span data-i18n="bible.open-passages">Open passages</span><span class="breader-open-count" id="bopen-count-top"></span></button>
+        <div class="bpane-tabbar breader-tabs-panel" id="bpane-top-tab-panel" hidden>
+          <div class="bpane-tabs" id="bpane-top-tabs"></div>
+          <div class="bpane-tabactions">
+            <button class="btab-add" data-i18n-title="bible.add-tab" title="Add tab" onclick="bAddTab('top')">+</button>
+            <button class="btab-clear" data-i18n-title="bible.clear-tab" title="Clear passage" onclick="bClearPane('top')">✕</button>
+          </div>
         </div>
       </div>
       <div class="bpane" id="bpane-top"
@@ -729,17 +732,22 @@
     </div>
     <div id="bpane-divider" onmousedown="bStartSplitDrag(event)"></div>
     <div class="bpane-section" id="bpane-bottom-section" style="display:none">
-      <div class="bpane-picker-row">
+      <div class="breader-toolbar">
         <button class="bpane-nav-btn" id="bprev-bottom" title="Previous chapter (Ctrl+Shift+[)" onclick="bNavChapter('bottom','prev')" disabled>&#8592;</button>
-        <button class="bpane-picker-btn" id="bpicker-btn-bottom" onclick="bPickerOpenFor('bottom')" data-i18n="bible.select">Select passage…</button>
+        <input class="breader-reference" id="bref-bottom" type="text" autocomplete="off" spellcheck="false" placeholder="Genesis 18:1" data-i18n-ph="bible.reference.placeholder" aria-label="Passage reference" data-i18n-aria-label="bible.reference" onkeydown="bReferenceKeydown(event,'bottom')">
+        <button class="breader-browse-btn" type="button" onclick="bPickerOpenFor('bottom')" data-i18n-title="bible.browse" title="Browse books, chapters, and verses" aria-label="Browse passage" data-i18n-aria-label="bible.browse">⌄</button>
+        <select class="breader-version" id="bversion-bottom" onchange="bChangePaneVersion('bottom',this.value)" aria-label="Bible version" data-i18n-aria-label="bible.switch-ver"></select>
         <button class="bpane-nav-btn" id="bnext-bottom" title="Next chapter (Ctrl+Shift+])" onclick="bNavChapter('bottom','next')" disabled>&#8594;</button>
       </div>
       <div id="bpicker-container-bottom" class="bpane-picker-container" style="display:none"></div>
-      <div class="bpane-tabbar">
-        <div class="bpane-tabs" id="bpane-bottom-tabs"></div>
-        <div class="bpane-tabactions">
-          <button class="btab-add" data-i18n-title="bible.add-tab" title="Add tab" onclick="bAddTab('bottom')">+</button>
-          <button class="btab-clear" data-i18n-title="bible.clear-tab" title="Clear passage" onclick="bClearPane('bottom')">✕</button>
+      <div class="breader-open-passages">
+        <button class="breader-open-passages-btn" type="button" onclick="bToggleOpenPassages('bottom')"><span data-i18n="bible.open-passages">Open passages</span><span class="breader-open-count" id="bopen-count-bottom"></span></button>
+        <div class="bpane-tabbar breader-tabs-panel" id="bpane-bottom-tab-panel" hidden>
+          <div class="bpane-tabs" id="bpane-bottom-tabs"></div>
+          <div class="bpane-tabactions">
+            <button class="btab-add" data-i18n-title="bible.add-tab" title="Add tab" onclick="bAddTab('bottom')">+</button>
+            <button class="btab-clear" data-i18n-title="bible.clear-tab" title="Clear passage" onclick="bClearPane('bottom')">✕</button>
+          </div>
         </div>
       </div>
       <div class="bpane" id="bpane-bottom"
