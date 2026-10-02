@@ -226,6 +226,21 @@ const LANGS = {
     'view.diagram.title':  'Diagram View (Alt+T)',
     'diagram.empty-block': '(empty)',
     'diagram.empty-trans': '(translation)',
+    'diagram.workspace': 'Diagram workspace',
+    'diagram.empty.title': 'Build a visual reading of the passage',
+    'diagram.empty.body': 'Add phrasing rows, then connect semantic or structural relationships here.',
+    'diagram.selection.none': 'Select a block or relationship',
+    'diagram.selection.block': 'Selected block',
+    'diagram.block.label': 'Diagram block',
+    'diagram.link.handle': 'Draw relationship',
+    'diagram.link.semantic': 'Semantic',
+    'diagram.link.semantic.title': 'Semantic relationship',
+    'diagram.link.structural': 'Structural',
+    'diagram.link.structural.title': 'Structural relationship',
+    'diagram.link.draw.semantic': 'Drag from a word to create a semantic relationship. Use a block link handle to connect whole blocks.',
+    'diagram.link.draw.structural': 'Drag from a block or its link handle to create a structural relationship.',
+    'diagram.inspector.relationship': 'Relationship',
+    'diagram.inspector.type': 'Relationship type',
     'diagram.rightangle-handle': 'Draw right-angle line',
     'diagram.jump-to-comment': 'Jump to comment',
     'diagram.zoom-in':     'Zoom in (Ctrl++)',
@@ -706,6 +721,21 @@ const LANGS = {
     'view.diagram.title':  '图示视图 (Alt+T)',
     'diagram.empty-block': '（空）',
     'diagram.empty-trans': '（译文）',
+    'diagram.workspace': '图示工作区',
+    'diagram.empty.title': '建立经文的视觉阅读结构',
+    'diagram.empty.body': '先添加分句行，然后在这里连接语义或结构关系。',
+    'diagram.selection.none': '选择一个词块或关系线',
+    'diagram.selection.block': '已选择词块',
+    'diagram.block.label': '图示词块',
+    'diagram.link.handle': '绘制关系线',
+    'diagram.link.semantic': '语义',
+    'diagram.link.semantic.title': '语义关系',
+    'diagram.link.structural': '结构',
+    'diagram.link.structural.title': '结构关系',
+    'diagram.link.draw.semantic': '从单词拖动以创建语义关系；使用词块连接手柄可连接整个词块。',
+    'diagram.link.draw.structural': '从词块或其连接手柄拖动以创建结构关系。',
+    'diagram.inspector.relationship': '关系线',
+    'diagram.inspector.type': '关系类型',
     'diagram.rightangle-handle': '绘制直角连接线',
     'diagram.jump-to-comment': '跳转到批注',
     'diagram.zoom-in':     '放大 (Ctrl++)',
@@ -996,6 +1026,9 @@ function applyLang() {
   // Update title attributes
   document.querySelectorAll('[data-i18n-title]').forEach(el => {
     el.title = t(el.getAttribute('data-i18n-title'));
+  });
+  document.querySelectorAll('[data-i18n-aria-label]').forEach(el => {
+    el.setAttribute('aria-label', t(el.getAttribute('data-i18n-aria-label')));
   });
 
   // Update placeholder-only elements

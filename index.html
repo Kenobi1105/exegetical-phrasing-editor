@@ -555,6 +555,22 @@
         </div>
       </div>
       <div id="dzone" style="display:none">
+        <div id="diagram-canvas-header" role="toolbar" data-i18n-aria-label="diagram.workspace" aria-label="Diagram workspace">
+          <div class="diagram-header-context">
+            <span class="diagram-header-eyebrow" data-i18n="diagram.workspace">Diagram workspace</span>
+            <span id="diagram-selection-status" aria-live="polite" data-i18n="diagram.selection.none">Select a block or relationship</span>
+          </div>
+          <div class="diagram-link-picker" data-i18n-aria-label="diagram.inspector.type" aria-label="Relationship type">
+            <button type="button" class="diagram-link-type active" data-kind="curve" onclick="setDiagramNewConnectorKind('curve')" data-i18n-title="diagram.link.semantic.title" title="Semantic relationship">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M5 5c0 7 14 7 14 14"/><path d="m15 16 4 3-4 2"/></svg>
+              <span data-i18n="diagram.link.semantic">Semantic</span>
+            </button>
+            <button type="button" class="diagram-link-type" data-kind="rightangle" onclick="setDiagramNewConnectorKind('rightangle')" data-i18n-title="diagram.link.structural.title" title="Structural relationship">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v14h14"/><path d="m15 16 4 3-4 2"/></svg>
+              <span data-i18n="diagram.link.structural">Structural</span>
+            </button>
+          </div>
+        </div>
         <div id="dcanvas-scroll">
           <div id="dcanvas">
             <svg id="dconns" preserveAspectRatio="none"></svg>
@@ -790,6 +806,16 @@
 
 <!-- ══ DIAGRAM VIEW: CONNECTOR EDIT POPUP ══ -->
 <div id="conn-edit-popup" class="cep" style="display:none">
+  <span class="cep-status" data-i18n="diagram.inspector.relationship">Relationship</span>
+  <div class="cep-type-group" role="group" data-i18n-aria-label="diagram.inspector.type" aria-label="Relationship type">
+    <button class="cep-type-btn" data-kind="curve" onclick="setConnectorKind('curve')" data-i18n-title="diagram.link.semantic.title" title="Semantic relationship">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M5 5c0 7 14 7 14 14"/><path d="m15 16 4 3-4 2"/></svg>
+    </button>
+    <button class="cep-type-btn" data-kind="rightangle" onclick="setConnectorKind('rightangle')" data-i18n-title="diagram.link.structural.title" title="Structural relationship">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5v14h14"/><path d="m15 16 4 3-4 2"/></svg>
+    </button>
+  </div>
+  <div class="cep-sep"></div>
   <!-- Pattern: solid / dotted -->
   <button class="cep-style-btn" data-pattern="solid" onclick="setConnectorPattern('solid')" data-i18n-title="conn.pattern.solid" title="Solid line">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>

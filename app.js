@@ -114,13 +114,11 @@ function _applyColorSet(colors){
    SELECTED_CNX_ID: the currently-selected connector's id (or null), used
    to highlight it and show the style/color/delete edit popup.
    A connector's shape is `kind: 'curve' | 'rightangle'`:
-   - 'curve': the original freeform Shift+drag connector, hooked S-curve,
-     top/bottom-edge snapped anchors, rendered IN FRONT of block content.
-   - 'rightangle': drawn from the small "+" at a block's left-edge midpoint
-     (right-edge in RTL), always a single 90° bend, both ends fixed at the
-     left-edge midpoint (mirrored in RTL) of their block, rendered BEHIND
-     block content — for tracing clause/subordination logic without
-     obscuring text.
+   - 'curve': a smooth semantic relationship, with top/bottom-edge snapped
+     anchors for word-level relationships or direct block-handle links.
+   - 'rightangle': a structural/dependency relationship, routed through a
+     shared outer trunk so it traces clause logic without obscuring text.
+   Both render below the diagram cards.
    Both kinds share the same style system: `pattern: 'solid'|'dotted'`,
    `arrowMode: 'none'|'single'|'double'`, and `weight` (one of 1, 1.25,
    1.5, 1.75 — px stroke width), all independent of each other, plus
@@ -140,6 +138,10 @@ let DIAGRAM_DATA={connectors:[], labels:[]};
 let CNX=0; // connector ID counter, same idiom as RC (row counter) / CC (comment counter)
 let LBL=0; // floating label ID counter
 let SELECTED_CNX_ID=null;
+// New relationships use the currently chosen scholarly visual grammar.
+// Connector kind is still the existing persisted field, so legacy projects
+// round-trip without a schema change.
+let DIAGRAM_NEW_CONNECTOR_KIND='curve';
 let DIAGRAM_ZOOM=100;
 const DIAGRAM_ZOOM_MIN=50, DIAGRAM_ZOOM_MAX=200, DIAGRAM_ZOOM_STEP=10;
 let _dzoomRefreshRAF=null; // pending requestAnimationFrame id for the debounced connector/label refresh in setDiagramZoom
@@ -809,6 +811,7 @@ function setEditorView(view){
     cancelRightAngleArm();
   }
   if(isDiagram) renderDiagram();
+  if(isDiagram) syncDiagramWorkspaceUI();
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
   if(typeof _refreshMobilePanelSections==='function') _refreshMobilePanelSections();
   if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
@@ -1037,6 +1040,9 @@ function makeDiagramRowEl(row){
   const block=document.createElement('div');
   block.className='dblock';
   block.dataset.rid=rid;
+  block.tabIndex=0;
+  block.setAttribute('role','button');
+  block.setAttribute('aria-label', (typeof t==='function'?t('diagram.block.label'):'Diagram block')+' '+(lid?.textContent||''));
   const cid=row.dataset.cid;
   if(cid) block.dataset.cid=cid;
   // Read block.dataset.cid live (not the closed-over cid) so this stays
@@ -1077,10 +1083,10 @@ function makeDiagramRowEl(row){
   const raHandle=document.createElement('button');
   raHandle.type='button';
   raHandle.className='dra-handle'+(IS_RTL?' rtl':'');
-  raHandle.setAttribute('aria-label', typeof t==='function'?t('diagram.rightangle-handle'):'Draw right-angle line');
-  raHandle.innerHTML='+';
+  raHandle.setAttribute('aria-label', typeof t==='function'?t('diagram.link.handle'):'Draw relationship');
+  raHandle.innerHTML='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 13a5 5 0 0 0 7.1.1l2-2a5 5 0 0 0-7.1-7.1l-1.1 1.1"/><path d="M14 11a5 5 0 0 0-7.1-.1l-2 2A5 5 0 0 0 12 20l1.1-1.1"/></svg>';
   raHandle.style.touchAction='none';
-  raHandle.addEventListener('pointerdown', ev=>{ startRightAngleDraw(ev, rid); });
+  raHandle.addEventListener('pointerdown', ev=>{ startDiagramHandleDraw(ev, rid); });
   block.appendChild(raHandle);
 
   lane.appendChild(block);
@@ -1092,6 +1098,10 @@ function makeDiagramRowEl(row){
     if(ev.shiftKey||ev.ctrlKey) return;
     ev.stopPropagation(); // don't bubble to canvas deselect listener
     selectDiagBlock(rid);
+  });
+  block.addEventListener('keydown', ev=>{
+    if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); selectDiagBlock(rid); }
+    if((ev.key==='l'||ev.key==='L')&&!ev.metaKey&&!ev.ctrlKey){ ev.preventDefault(); raHandle.focus(); }
   });
 
   // Translation line: a SIBLING of the block (not nested inside it), so the
@@ -1345,6 +1355,13 @@ function renderDiagram(){
   backSvg.setAttribute('preserveAspectRatio','none');
   canvas.appendChild(backSvg);
 
+  // Both relationship layers sit beneath the rows. This makes every line
+  // readable as structure while ensuring it can never cross over the text.
+  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  svg.id='dconns';
+  svg.setAttribute('preserveAspectRatio','none');
+  canvas.appendChild(svg);
+
   // Labels layer — kept as a structural placeholder but labels and brackets
   // are now appended directly to #dcanvas (position:relative), not here.
   // This avoids any counter-zoom % resolution complexity.
@@ -1370,17 +1387,16 @@ function renderDiagram(){
     if(endSec) canvas.appendChild(_makeDiagramSectionEl(endSec,'end'));
   });
 
-  // Front connector SVG layer is created fresh each render (innerHTML=''
-  // above wiped any previous one) and appended LAST, after every block, so
-  // curve connector lines paint IN FRONT of block content via normal DOM
-  // stacking order — no z-index trickery needed. Same idiom as
-  // drawConns()/#svgl.
-  const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
-  svg.id='dconns';
-  svg.setAttribute('preserveAspectRatio','none');
-  canvas.appendChild(svg);
-
-  if(!rows.length) return;
+  const hasDiagramContent=rows.some(row=>row.querySelector('.cedit')?.innerText.trim());
+  if(!rows.length || !hasDiagramContent){
+    canvas.querySelectorAll('.drow,.dsec-divider').forEach(el=>el.remove());
+    const empty=document.createElement('div');
+    empty.className='diagram-empty-state';
+    empty.innerHTML=`<strong>${escH(typeof t==='function'?t('diagram.empty.title'):'Build a visual reading of the passage')}</strong><span>${escH(typeof t==='function'?t('diagram.empty.body'):'Add phrasing rows, then connect semantic or structural relationships here.')}</span><div class="diagram-empty-legend"><span class="semantic">⌒ ${escH(typeof t==='function'?t('diagram.link.semantic'):'Semantic')}</span><span class="structural">⌟ ${escH(typeof t==='function'?t('diagram.link.structural'):'Structural')}</span></div>`;
+    canvas.appendChild(empty);
+    syncDiagramWorkspaceUI();
+    return;
+  }
   // Curve connectors can anchor to a specific word (fromWordIdx/toWordIdx),
   // resolved by looking up the Nth .ann-word span in the target block —
   // but .ann-word spans only get created lazily (Ctrl-press or entering
@@ -1612,7 +1628,8 @@ function startBlockDrag(ev, rid){
   if(ev.ctrlKey || _connectorModeActive){
     ev.preventDefault();
     ev.stopPropagation();
-    startConnectorDraw(ev, rid);
+    if(DIAGRAM_NEW_CONNECTOR_KIND==='rightangle') startRightAngleDraw(ev, rid);
+    else startConnectorDraw(ev, rid);
     return;
   }
   ev.preventDefault();
@@ -1627,6 +1644,7 @@ function startBlockDrag(ev, rid){
   const startIndent=parseInt(ce.dataset.indent||'0');
   const startX=ev.clientX;
   const rtl=IS_RTL;
+  const dRow=block.closest('.drow');
   let liveIndent=startIndent;
   let dragged=false;
 
@@ -1645,6 +1663,7 @@ function startBlockDrag(ev, rid){
     const offsetPx=liveIndent*INDENT_PX;
     if(rtl){ block.style.marginRight=offsetPx+'px'; }
     else   { block.style.marginLeft=offsetPx+'px'; }
+    if(dRow){ dRow.classList.add('indent-preview'); dRow.style.setProperty('--indent-preview',offsetPx+'px'); }
     // Connectors attached to this block must reroute LIVE during the drag,
     // not just snap-and-recalculate after drop.
     refreshDiagramConnectors();
@@ -1656,6 +1675,7 @@ function startBlockDrag(ev, rid){
     document.removeEventListener('pointermove',onMove);
     document.removeEventListener('pointerup',onUp);
     block.classList.remove('dragging');
+    if(dRow){ dRow.classList.remove('indent-preview'); dRow.style.removeProperty('--indent-preview'); }
     if(dragged && liveIndent!==startIndent){
       setRowIndent(rid, liveIndent); // commits + pushes to ROW_STACK + re-renders (which redraws connectors too)
     } else {
@@ -1977,7 +1997,7 @@ function _makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg, hitSvg){
 
   const isSelected=(SELECTED_CNX_ID===cnx.id);
   const g=document.createElementNS('http://www.w3.org/2000/svg','g');
-  g.setAttribute('class','dconn-group'+(isSelected?' selected':''));
+  g.setAttribute('class','dconn-group dconn-curve'+(isSelected?' selected':''));
   g.setAttribute('data-cnx-id',cnx.id);
 
   const path=document.createElementNS('http://www.w3.org/2000/svg','path');
@@ -2004,8 +2024,12 @@ function _connectorPathDTight(p1,p2,fromY,toY){
    (behind block content), otherwise structurally identical to a curve
    connector (same hit path, same style system). */
 function _makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, svg, trunkX, hitSvg){
-  const p1=_connectorPoint(fromEl, cnx.fromX??0, cnx.fromY??0.5, canvasRect);
-  const p2=_connectorPoint(toEl, cnx.toX??0, cnx.toY??0.5, canvasRect);
+  // Structural links always enter and leave their logical outer edge. This
+  // also makes a semantic link converted in the inspector immediately read
+  // as a clean structural dependency rather than retaining word fractions.
+  const edgeX=IS_RTL?1:0;
+  const p1=_connectorPoint(fromEl, edgeX, 0.5, canvasRect);
+  const p2=_connectorPoint(toEl, edgeX, 0.5, canvasRect);
   const d=_rightAnglePathD(p1,p2,trunkX);
   const isSelected=(SELECTED_CNX_ID===cnx.id);
 
@@ -2050,18 +2074,8 @@ function renderDiagramConnectors(){
   // already wrapped), so this is a no-op in the common case and only
   // does real work exactly where the gap used to bite.
   canvas.querySelectorAll('.dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
-  // Place #dconns as the LAST child of #dcanvas so it paints ABOVE the block
-  // ::before backgrounds. .dblock-text has position:relative; z-index:1 which
-  // keeps text above the connector lines. #dconns-back stays first (right-angle
-  // connectors remain behind blocks as structural lines).
-  canvas.appendChild(svg);
-  // .dblock-text's z-index:1 is intentional for the VISIBLE line (text stays
-  // readable via its halo, see .dblock-text's own CSS comment) — but the
-  // invisible .dconn-hit paths lived in the same layer and inherited that
-  // same disadvantage, silently losing every click to the text wherever a
-  // connector crosses over it. #dconns-hit is a dedicated, always-topmost
-  // (z-index:5, app.css) overlay used purely for hit-testing, kept
-  // completely separate from the visual painting order above.
+  // Visible connector layers stay beneath rows; the separate hit layer stays
+  // on top purely for pointer targeting and never paints a visible stroke.
   let hitSvg=document.getElementById('dconns-hit');
   if(!hitSvg){
     hitSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
@@ -2109,6 +2123,7 @@ function renderDiagramConnectors(){
       svg.appendChild(_makeCurveConnectorEl(cnx, fromEl, toEl, canvasRect, svg, hitSvg));
     }
   });
+  syncDiagramWorkspaceUI();
 }
 
 /* Lightweight reroute used during a live block drag — recomputes line
@@ -2156,7 +2171,8 @@ function startConnectorMode(){
     // Pre-wrap all blocks so .ann-word spans exist for word-level detection
     document.querySelectorAll('#dcanvas .dblock').forEach(blk=>_wrapBlockTextWords_single(blk));
     document.getElementById('dcanvas')?.classList.add('ann-connector-mode');
-    toast(typeof t==='function'?t('ann.connector.hint'):'Ctrl+drag from any block or word to draw a connector. Drag to a word for word-level anchoring.');
+    const hintKey=DIAGRAM_NEW_CONNECTOR_KIND==='rightangle'?'diagram.link.draw.structural':'diagram.link.draw.semantic';
+    toast(typeof t==='function'?t(hintKey):'Drag from a block to draw a relationship.');
   }
 }
 
@@ -2177,7 +2193,13 @@ function _exitConnectorMode(){
    first place, already behaved this way — each new mousedown while Ctrl
    stays down starts a fresh connector — so this brings locked mode in
    line with that, rather than introducing a new pattern.) */
-function _onConnectorCommitted(){}
+function _onConnectorCommitted(connectorId){
+  if(!connectorId) return;
+  SELECTED_CNX_ID=connectorId;
+  selectDiagBlock(null);
+  renderDiagramConnectors();
+  openConnEditPopup();
+}
 
 /* Pre-wrap + visual connector mode on Ctrl keydown/keyup ─────────────────
    When Ctrl is held in diagram view:
@@ -2499,13 +2521,13 @@ function startConnectorDraw(ev, fromRid){
         kind:'curve',
         fromX:fromFracX, fromY:fromFracY, toX:toFracX, toY:toFracY,
         fromWordIdx, toWordIdx,
-        pattern:'solid', startCap:'none', endCap:'arrow', weight:1.5, color:'#C8A84B'
+        pattern:'solid', startCap:'none', endCap:'arrow', weight:1.5, color:'#6c527b'
       };
       DIAGRAM_DATA.connectors.push(newConnector);
       rowPush({type:'connector-add', connector:newConnector});
       autoSave();
       renderDiagramConnectors();
-      _onConnectorCommitted();
+      _onConnectorCommitted(newConnector.id);
     }
   };
 
@@ -2661,13 +2683,13 @@ function _commitConnectorTap(armed, toRid, toEl, toWordEl, toWordIdx){
     kind:'curve',
     fromX:armed.fromFracX, fromY:armed.fromFracY, toX:toFracX, toY:toFracY,
     fromWordIdx:armed.fromWordIdx, toWordIdx,
-    pattern:'solid', startCap:'none', endCap:'arrow', weight:1.5, color:'#C8A84B'
+    pattern:'solid', startCap:'none', endCap:'arrow', weight:1.5, color:'#6c527b'
   };
   DIAGRAM_DATA.connectors.push(newConnector);
   rowPush({type:'connector-add', connector:newConnector});
   autoSave();
   renderDiagramConnectors();
-  _onConnectorCommitted();
+  _onConnectorCommitted(newConnector.id);
 }
 
 /* Right-angle connectors support TWO gestures:
@@ -2698,12 +2720,75 @@ function _commitRightAngleConnector(fromRid, toRid, attachFracX, attachFracY){
     id:'cnx'+CNX, fromRid:String(fromRid), toRid:String(toRid),
     kind:'rightangle',
     fromX:attachFracX, fromY:attachFracY, toX:attachFracX, toY:attachFracY,
-    pattern:'solid', startCap:'none', endCap:'arrow', weight:1, color:'#F0D08F'
+    pattern:'solid', startCap:'none', endCap:'arrow', weight:1.25, color:'#a98233'
   };
   DIAGRAM_DATA.connectors.push(newConnector);
   rowPush({type:'connector-add', connector:newConnector});
   autoSave();
   renderDiagramConnectors();
+  _onConnectorCommitted(newConnector.id);
+}
+
+/* The visible link handle creates the currently selected relationship type.
+   The kind is persisted using the existing curve/rightangle field only. */
+function startDiagramHandleDraw(ev, fromRid){
+  if(DIAGRAM_NEW_CONNECTOR_KIND==='rightangle') startRightAngleDraw(ev, fromRid);
+  else startSemanticHandleDraw(ev, fromRid);
+}
+
+function startSemanticHandleDraw(ev, fromRid){
+  ev.preventDefault(); ev.stopPropagation();
+  if(ev.button!==0) return;
+  const canvas=document.getElementById('dcanvas');
+  const svg=document.getElementById('dconns');
+  const fromEl=document.querySelector(`.dblock[data-rid="${fromRid}"]`);
+  if(!canvas||!svg||!fromEl) return;
+  const fromX=IS_RTL?0:1;
+  const startY=ev.clientY;
+  let dragged=false, hoverTarget=null;
+  const rubber=document.createElementNS('http://www.w3.org/2000/svg','path');
+  rubber.setAttribute('class','dconn-rubberband'); rubber.setAttribute('fill','none');
+  rubber.setAttribute('stroke','#6c527b'); rubber.setAttribute('stroke-width','1.5');
+  rubber.setAttribute('stroke-dasharray','4,4'); svg.appendChild(rubber);
+  fromEl.classList.add('dconn-source');
+  const update=(x,y)=>{
+    const rect=canvas.getBoundingClientRect();
+    const sourceY=y>startY?1:0;
+    const p1=_connectorPoint(fromEl,fromX,sourceY,rect);
+    rubber.setAttribute('d',_connectorPathD(p1,{x:x-rect.left,y:y-rect.top+(canvas.scrollTop||0)},sourceY,null));
+  };
+  const cleanup=()=>{
+    document.removeEventListener('pointermove',onMove); document.removeEventListener('pointerup',onUp);
+    rubber.remove(); fromEl.classList.remove('dconn-source');
+    if(hoverTarget) hoverTarget.classList.remove('dconn-target');
+  };
+  const onMove=mv=>{
+    if(_pinchActive) return;
+    if(Math.abs(mv.clientX-ev.clientX)>3||Math.abs(mv.clientY-ev.clientY)>3) dragged=true;
+    update(mv.clientX,mv.clientY);
+    const target=document.elementFromPoint?.(mv.clientX,mv.clientY)?.closest('.dblock');
+    if(hoverTarget&&hoverTarget!==target) hoverTarget.classList.remove('dconn-target');
+    hoverTarget=target&&target!==fromEl?target:null;
+    if(hoverTarget) hoverTarget.classList.add('dconn-target');
+  };
+  const onUp=up=>{
+    const target=document.elementFromPoint?.(up.clientX,up.clientY)?.closest('.dblock');
+    cleanup();
+    if(!dragged||!target||target===fromEl) return;
+    const fromRect=fromEl.getBoundingClientRect(), toRect=target.getBoundingClientRect();
+    const downward=toRect.top>=fromRect.top;
+    const targetWord=document.elementFromPoint?.(up.clientX,up.clientY)?.closest('.ann-word');
+    const toWordIdx=targetWord?_getWordIdx(target.querySelector('.dblock-text'),targetWord):null;
+    const connector={
+      id:'cnx'+(++CNX),fromRid:String(fromRid),toRid:String(target.dataset.rid),kind:'curve',
+      fromX,fromY:downward?1:0,toX:IS_RTL?0:1,toY:downward?0:1,
+      fromWordIdx:null,toWordIdx,pattern:'solid',startCap:'none',endCap:'arrow',weight:1.5,color:'#6c527b'
+    };
+    DIAGRAM_DATA.connectors.push(connector); rowPush({type:'connector-add',connector}); autoSave();
+    _onConnectorCommitted(connector.id);
+  };
+  update(ev.clientX,ev.clientY);
+  document.addEventListener('pointermove',onMove); document.addEventListener('pointerup',onUp);
 }
 
 function startRightAngleDraw(ev, fromRid){
@@ -2854,12 +2939,45 @@ function startRightAngleDraw(ev, fromRid){
    connector) deselects/closes the popup. */
 function selectConnector(id, ev){
   SELECTED_CNX_ID=id;
+  selectDiagBlock(null);
   renderDiagramConnectors(); // re-render so the selected line highlights
-  openConnEditPopup(ev.clientX, ev.clientY);
+  openConnEditPopup(ev?.clientX, ev?.clientY);
 }
 
 function _selectedConnector(){
   return DIAGRAM_DATA.connectors.find(c=>c.id===SELECTED_CNX_ID) || null;
+}
+
+function setDiagramNewConnectorKind(kind){
+  DIAGRAM_NEW_CONNECTOR_KIND=kind==='rightangle'?'rightangle':'curve';
+  document.querySelectorAll('.diagram-link-type').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.kind===DIAGRAM_NEW_CONNECTOR_KIND);
+  });
+  const key=DIAGRAM_NEW_CONNECTOR_KIND==='curve'?'diagram.link.semantic':'diagram.link.structural';
+  const status=document.getElementById('diagram-selection-status');
+  if(status && !SELECTED_CNX_ID && !SELECTED_DIAG_RID) status.textContent=typeof t==='function'?t(key):DIAGRAM_NEW_CONNECTOR_KIND;
+}
+
+function syncDiagramWorkspaceUI(){
+  document.querySelectorAll('.diagram-link-type').forEach(btn=>{
+    btn.classList.toggle('active',btn.dataset.kind===DIAGRAM_NEW_CONNECTOR_KIND);
+  });
+  const status=document.getElementById('diagram-selection-status');
+  if(!status) return;
+  const cnx=_selectedConnector();
+  if(cnx){
+    const from=document.querySelector(`.xrow[data-rid="${cnx.fromRid}"] .lid`)?.textContent||cnx.fromRid;
+    const to=document.querySelector(`.xrow[data-rid="${cnx.toRid}"] .lid`)?.textContent||cnx.toRid;
+    const kindKey=cnx.kind==='rightangle'?'diagram.link.structural':'diagram.link.semantic';
+    status.textContent=(typeof t==='function'?t(kindKey):cnx.kind)+' · '+from+' → '+to;
+    return;
+  }
+  if(SELECTED_DIAG_RID){
+    const line=document.querySelector(`.xrow[data-rid="${SELECTED_DIAG_RID}"] .lid`)?.textContent||SELECTED_DIAG_RID;
+    status.textContent=(typeof t==='function'?t('diagram.selection.block'):'Selected block')+' · '+line;
+    return;
+  }
+  status.textContent=typeof t==='function'?t('diagram.selection.none'):'Select a block or relationship';
 }
 
 /* Reflects the selected connector's CURRENT property values onto every
@@ -2878,6 +2996,9 @@ function _refreshConnEditPopupControls(){
   const endCap=cnx.endCap||'arrow';
   const weight=cnx.weight||1;
   const color=cnx.color||'#F0D08F';
+  popup.querySelectorAll('.cep-type-btn[data-kind]').forEach(b=>{
+    b.classList.toggle('on',b.dataset.kind===(cnx.kind||'curve'));
+  });
   // Pattern buttons (solid/dotted) — still direct toggle buttons
   popup.querySelectorAll('.cep-style-btn[data-pattern]').forEach(b=>{
     b.classList.toggle('on', b.dataset.pattern===pattern);
@@ -2908,7 +3029,8 @@ function _refreshConnEditPopupControls(){
 document.addEventListener('click', e=>{
   if(EDITOR_VIEW!=='diagram') return;
   if(e.target.closest('.dblock')||e.target.closest('.dlabel')||
-     e.target.closest('.dra-handle')) return;
+     e.target.closest('.dra-handle')||e.target.closest('#conn-edit-popup')) return;
+  if(SELECTED_CNX_ID!==null) closeConnEditPopup();
   selectDiagBlock(null);
 });
 
@@ -2928,29 +3050,24 @@ function openConnEditPopup(clientX, clientY){
   const cnx=_selectedConnector();
   const popup=document.getElementById('conn-edit-popup');
   if(!cnx || !popup) return;
-
-  // Must be visible BEFORE measuring offsetWidth/Height for positioning.
+  const zone=document.getElementById('dzone');
+  if(zone&&popup.parentNode!==zone) zone.insertBefore(popup,zone.firstChild);
   popup.style.display='flex';
+  popup.setAttribute('aria-hidden','false');
   _refreshConnEditPopupControls();
-
-  // Position near the click, clamped so it never renders off-screen.
-  const pw=popup.offsetWidth||260, ph=popup.offsetHeight||40;
-  let left=clientX-pw/2, top=clientY-ph-14;
-  left=Math.max(8, Math.min(window.innerWidth-pw-8, left));
-  top=Math.max(8, top);
-  popup.style.left=left+'px';
-  popup.style.top=top+'px';
+  syncDiagramWorkspaceUI();
 }
 
 function closeConnEditPopup(){
   const popup=document.getElementById('conn-edit-popup');
-  if(popup) popup.style.display='none';
+  if(popup){ popup.style.display='none'; popup.setAttribute('aria-hidden','true'); }
   closeCepDrops();
   closeColorPalette(); // a nested color palette shouldn't outlive its parent popup
   if(SELECTED_CNX_ID!==null){
     SELECTED_CNX_ID=null;
     renderDiagramConnectors(); // clear the selected-line highlight
   }
+  syncDiagramWorkspaceUI();
 }
 
 /* Generic undo-tracked style setter, shared by every style control
@@ -2978,6 +3095,10 @@ function _setConnectorStyleProp(prop, newValue){
 /* Line pattern — solid/dotted, mutually exclusive, independent of caps. */
 function setConnectorPattern(pattern){
   _setConnectorStyleProp('pattern', pattern);
+}
+
+function setConnectorKind(kind){
+  _setConnectorStyleProp('kind',kind==='rightangle'?'rightangle':'curve');
 }
 
 /* Sets the cap (none/arrow/dot) at one end of the connector. 'end' is
@@ -3015,6 +3136,7 @@ function removeConnectorById(id){
   closeColorPalette();
   if(SELECTED_CNX_ID===id) SELECTED_CNX_ID=null;
   renderDiagramConnectors();
+  syncDiagramWorkspaceUI();
 }
 
 function deleteSelectedConnector(){
@@ -4629,6 +4751,7 @@ function jumpToCmt(cid){
 
 /* Select a diagram block by rid — gold outline, deselects previous */
 function selectDiagBlock(rid){
+  if(rid && SELECTED_CNX_ID!==null) closeConnEditPopup();
   // Clear previous selection
   document.querySelectorAll('#dcanvas .dblock.selected')
     .forEach(b=>b.classList.remove('selected'));
@@ -4637,6 +4760,7 @@ function selectDiagBlock(rid){
     const blk=document.querySelector(`#dcanvas .dblock[data-rid="${rid}"]`);
     if(blk) blk.classList.add('selected');
   }
+  syncDiagramWorkspaceUI();
 }
 
 /* ════════════════════════════════════════
@@ -6700,6 +6824,11 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   // the clone itself renders at zoom:1, these would otherwise misalign the
   // connector lines relative to the diagram blocks.
   clone.querySelectorAll('#dconns,#dconns-back').forEach(el=>{ el.style.zoom='1'; el.style.transform=''; });
+  // The PDF represents the durable diagram, never its editing affordances.
+  clone.querySelectorAll('.dra-handle,#dconns-hit,.dbrk-pip,.dsec-del,.dsec-color,.dem-merge-btn')
+    .forEach(el=>el.style.display='none');
+  clone.querySelectorAll('.selected,.dragging,.dconn-source,.dconn-target,.indent-preview')
+    .forEach(el=>el.classList.remove('selected','dragging','dconn-source','dconn-target','indent-preview'));
 
   clone.querySelectorAll('.dcell.dv').forEach(el=>el.style.color='#A89F90');
   clone.querySelectorAll('.dcell.dl').forEach(el=>el.style.color='#C8A84B');
