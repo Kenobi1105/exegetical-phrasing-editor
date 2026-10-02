@@ -865,7 +865,7 @@ function _applyDiagramZoomTransform(dcanvas){
   // otherwise inherit its scale, diverging from _connectorPoint's
   // logical-pixel math.
   const counterFactor=1/factor;
-  ['dconns','dconns-back'].forEach(id=>{
+  ['dcard-surfaces','dconns','dconns-back'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){
       el.style.transformOrigin='0 0';
@@ -897,7 +897,7 @@ function setDiagramZoom(pct){
     // Without this, the SVGs inherit #dcanvas's zoom and their viewport
     // diverges from the path coordinates, distorting lines at non-100% zoom.
     const counterZoom=String(100/DIAGRAM_ZOOM);
-    ['dconns','dconns-back'].forEach(id=>{
+    ['dcard-surfaces','dconns','dconns-back'].forEach(id=>{
       const el=document.getElementById(id);
       if(el) el.style.zoom=counterZoom;
     });
@@ -1350,13 +1350,19 @@ function renderDiagram(){
   cancelRightAngleArm();
   canvas.innerHTML='';
 
+  const cardSurfaceSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  cardSurfaceSvg.id='dcard-surfaces';
+  cardSurfaceSvg.setAttribute('preserveAspectRatio','none');
+  canvas.appendChild(cardSurfaceSvg);
+
   const backSvg=document.createElementNS('http://www.w3.org/2000/svg','svg');
   backSvg.id='dconns-back';
   backSvg.setAttribute('preserveAspectRatio','none');
   canvas.appendChild(backSvg);
 
-  // Both relationship layers sit beneath the rows. This makes every line
-  // readable as structure while ensuring it can never cross over the text.
+  // Card surfaces, then relationship lines, then the transparent row/text
+  // layer form the Diagram's visual stack. Arrows visibly cross the paper
+  // cards without ever painting over words or controls.
   const svg=document.createElementNS('http://www.w3.org/2000/svg','svg');
   svg.id='dconns';
   svg.setAttribute('preserveAspectRatio','none');
@@ -1625,6 +1631,9 @@ function addDiagramLabel(){
    startConnectorDraw below) rather than moving the block. */
 function startBlockDrag(ev, rid){
   if(ev.button!==0) return; // left mouse button only
+  // Split Words owns presses on its temporary word tokens. Do not begin an
+  // indent drag before that click has had a chance to create a new row.
+  if(DIAGRAM_EDIT_MODE && ev.target.closest('.dedit-word')) return;
   if(ev.ctrlKey || _connectorModeActive){
     ev.preventDefault();
     ev.stopPropagation();
@@ -2063,8 +2072,9 @@ function _makeRightAngleConnectorEl(cnx, fromEl, toEl, canvasRect, svg, trunkX, 
 function renderDiagramConnectors(){
   const svg=document.getElementById('dconns');
   const backSvg=document.getElementById('dconns-back');
+  const cardSurfaceSvg=document.getElementById('dcard-surfaces');
   const canvas=document.getElementById('dcanvas');
-  if(!svg||!backSvg||!canvas) return;
+  if(!svg||!backSvg||!cardSurfaceSvg||!canvas) return;
   // Guarantee every block has .ann-word wrapping before any word-anchored
   // connector's endpoint gets computed — a block rebuilt by any OTHER
   // trigger (switching views, editing a row, etc.) loses that wrapping,
@@ -2084,6 +2094,9 @@ function renderDiagramConnectors(){
   }
   canvas.appendChild(hitSvg);
   const canvasRect=canvas.getBoundingClientRect();
+  cardSurfaceSvg.setAttribute('width', canvas.scrollWidth);
+  cardSurfaceSvg.setAttribute('height', canvas.scrollHeight);
+  cardSurfaceSvg.innerHTML='';
   svg.setAttribute('width', canvas.scrollWidth);
   svg.setAttribute('height', canvas.scrollHeight);
   svg.innerHTML='';
@@ -2093,6 +2106,18 @@ function renderDiagramConnectors(){
   hitSvg.setAttribute('width', canvas.scrollWidth);
   hitSvg.setAttribute('height', canvas.scrollHeight);
   hitSvg.innerHTML='';
+  canvas.querySelectorAll('.dblock').forEach(block=>{
+    const rect=block.getBoundingClientRect();
+    const surface=document.createElementNS('http://www.w3.org/2000/svg','rect');
+    surface.setAttribute('class','dcard-surface');
+    surface.setAttribute('x',rect.left-canvasRect.left);
+    surface.setAttribute('y',rect.top-canvasRect.top);
+    surface.setAttribute('width',rect.width);
+    surface.setAttribute('height',rect.height);
+    surface.setAttribute('rx','8');
+    surface.setAttribute('ry','8');
+    cardSurfaceSvg.appendChild(surface);
+  });
   const trunkX=_rightAngleTrunkX(canvas, canvasRect);
 
   // Safety net: if the selected connector no longer exists (e.g. an undo
@@ -2412,6 +2437,155 @@ function _outerAt(node, other){
   while(n.parentNode && !n.parentNode.contains(other)) n=n.parentNode;
   return n.parentNode ? n : null;
 }
+
+/* ════════════════════════════════════════
+   DIAGRAM — SPLIT WORDS MODE
+   Temporary word wrappers are applied only to the Diagram clone. The saved
+   Phrasing cells receive clean, original HTML when a split is committed.
+════════════════════════════════════════ */
+const _DEM_WORD=/[\u0370-\u03FF\u1F00-\u1FFF\u0590-\u05FF\u00E0-\u00FF]|[a-z]/i;
+let _demAltTemp=false; // retained for the Escape/reset lifecycle
+
+function _demTokenize(blockEl){
+  const textEl=blockEl?.querySelector('.dblock-text');
+  if(!textEl||textEl.querySelector('.dedit-word')) return;
+  // Connector word wrappers are visual-only too; unwrap them before applying
+  // the splitter's own tokens so formatting remains intact.
+  textEl.querySelectorAll('.ann-word').forEach(word=>word.replaceWith(...word.childNodes));
+  textEl.normalize();
+  const walker=document.createTreeWalker(textEl,NodeFilter.SHOW_TEXT,{
+    acceptNode(node){
+      let parent=node.parentNode;
+      while(parent&&parent!==textEl){
+        if(parent.nodeName==='SUP'||parent.classList?.contains('crit-mark')) return NodeFilter.FILTER_REJECT;
+        parent=parent.parentNode;
+      }
+      return NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  const nodes=[]; let node;
+  while((node=walker.nextNode())) nodes.push(node);
+  nodes.forEach(textNode=>{
+    const fragment=document.createDocumentFragment();
+    textNode.nodeValue.split(/(\s+)/).forEach(part=>{
+      if(!part) return;
+      if(/^\s+$/.test(part)){ fragment.appendChild(document.createTextNode(part)); return; }
+      if(_DEM_WORD.test(part)){
+        const word=document.createElement('span');
+        word.className='dedit-word'; word.textContent=part;
+        fragment.appendChild(word);
+      } else fragment.appendChild(document.createTextNode(part));
+    });
+    textNode.replaceWith(fragment);
+  });
+  _mergeGluedWordSpans(textEl,'dedit-word');
+  [...textEl.querySelectorAll('.dedit-word')].forEach((word,index)=>{
+    word.dataset.demIndex=String(index);
+    const marker=document.createElement('span');
+    marker.className='dedit-sp'; marker.dataset.demIndex=String(index);
+    word.before(marker);
+  });
+}
+
+function _demUntokenize(blockEl){
+  const textEl=blockEl?.querySelector('.dblock-text');
+  if(!textEl) return;
+  textEl.querySelectorAll('.dedit-sp').forEach(marker=>marker.remove());
+  textEl.querySelectorAll('.dedit-word').forEach(word=>word.replaceWith(...word.childNodes));
+  textEl.normalize();
+}
+
+function _demAddMergeBtn(labelCell,rid){
+  if(labelCell.querySelector('.dem-merge-btn')) return;
+  const button=document.createElement('button');
+  button.type='button'; button.className='dem-merge-btn'; button.textContent='↑';
+  button.title=typeof t==='function'?t('merge-line'):'Merge line up';
+  button.addEventListener('click',event=>{
+    event.preventDefault(); event.stopPropagation();
+    if(!DIAGRAM_EDIT_MODE) return;
+    mergeRowUp(rid);
+    setTimeout(()=>{ if(EDITOR_VIEW==='diagram') renderDiagram(); },0);
+  });
+  labelCell.appendChild(button);
+}
+
+function _applyDiagramEditMode(on){
+  DIAGRAM_EDIT_MODE=!!on;
+  const canvas=document.getElementById('dcanvas');
+  const toolbarButton=document.getElementById('tb-dem');
+  const splitButton=document.getElementById('diagram-split-words');
+  if(!canvas) return;
+  canvas.classList.toggle('dem-active',DIAGRAM_EDIT_MODE);
+  toolbarButton?.classList.toggle('on',DIAGRAM_EDIT_MODE);
+  splitButton?.classList.toggle('active',DIAGRAM_EDIT_MODE);
+  splitButton?.setAttribute('aria-pressed',String(DIAGRAM_EDIT_MODE));
+  if(DIAGRAM_EDIT_MODE){
+    canvas.querySelectorAll('.dblock').forEach(_demTokenize);
+    canvas.querySelectorAll('.dl').forEach(labelCell=>{
+      const row=labelCell.closest('.drow'); if(row) _demAddMergeBtn(labelCell,row.dataset.rid);
+    });
+  } else {
+    canvas.querySelectorAll('.dem-merge-btn').forEach(button=>button.remove());
+    canvas.querySelectorAll('.dblock').forEach(_demUntokenize);
+    document.getElementById('dem-slash')?.remove();
+  }
+  syncDiagramWorkspaceUI();
+}
+
+function toggleDiagramEditMode(){
+  _applyDiagramEditMode(!DIAGRAM_EDIT_MODE);
+  if(DIAGRAM_EDIT_MODE) toast(typeof t==='function'?t('diagram.edit-hint'):'Split Words is on. Click a word to create a new row.');
+  autoSave();
+}
+
+function _demCleanHTML(root){
+  root.querySelectorAll('.dedit-sp').forEach(marker=>marker.remove());
+  root.querySelectorAll('.dedit-word').forEach(word=>word.replaceWith(...word.childNodes));
+  root.normalize();
+  return root.innerHTML.replace(/^\s+|\s+$/g,'');
+}
+
+function _demSplitWord(wordEl){
+  const block=wordEl.closest('.dblock');
+  const textEl=block?.querySelector('.dblock-text');
+  const row=block?.closest('.drow');
+  const rid=row?.dataset.rid;
+  const index=wordEl.dataset.demIndex;
+  if(!textEl||!rid||index==null) return;
+  const clone=textEl.cloneNode(true);
+  const marker=clone.querySelector(`.dedit-sp[data-dem-index="${CSS.escape(index)}"]`);
+  if(!marker) return;
+  const beforeRange=document.createRange();
+  beforeRange.selectNodeContents(clone); beforeRange.setEndBefore(marker);
+  const afterRange=document.createRange();
+  afterRange.setStartBefore(marker); afterRange.selectNodeContents(clone);
+  const before=document.createElement('div'); before.appendChild(beforeRange.cloneContents());
+  const after=document.createElement('div'); after.appendChild(afterRange.cloneContents());
+  const beforeHTML=_demCleanHTML(before), afterHTML=_demCleanHTML(after);
+  const sourceRow=document.querySelector(`.xrow[data-rid="${rid}"]`);
+  const source=sourceRow?.querySelector(`#oc-${rid} .cedit`);
+  if(!sourceRow||!source) return;
+  const originalHTML=source.innerHTML;
+  const verse=sourceRow.querySelector('.vin')?.value||'';
+  source.innerHTML=beforeHTML;
+  const newRid=++RC;
+  const newRow=makeRowEl(newRid,'','','',null);
+  sourceRow.insertAdjacentElement('afterend',newRow);
+  const newOriginal=newRow.querySelector(`#oc-${newRid} .cedit`);
+  if(newOriginal) newOriginal.innerHTML=afterHTML;
+  rowPush({type:'split',rid:String(rid),newRid:String(newRid),verse,origHTML:originalHTML,afterHTML:beforeHTML,newHTML:afterHTML,splitOffset:source.innerText.length});
+  recomputeIds(); autoSave();
+  setTimeout(()=>{ if(EDITOR_VIEW==='diagram') renderDiagram(); },0);
+  toast(typeof t==='function'?t('diagram.edit-split'):'Word split.');
+}
+
+document.addEventListener('click',event=>{
+  if(!DIAGRAM_EDIT_MODE) return;
+  const word=event.target.closest?.('.dedit-word');
+  if(!word) return;
+  event.preventDefault(); event.stopPropagation();
+  _demSplitWord(word);
+},true);
 
 function startConnectorDraw(ev, fromRid){
   ev.preventDefault();
@@ -2962,6 +3136,9 @@ function syncDiagramWorkspaceUI(){
   document.querySelectorAll('.diagram-link-type').forEach(btn=>{
     btn.classList.toggle('active',btn.dataset.kind===DIAGRAM_NEW_CONNECTOR_KIND);
   });
+  const splitButton=document.getElementById('diagram-split-words');
+  splitButton?.classList.toggle('active',DIAGRAM_EDIT_MODE);
+  splitButton?.setAttribute('aria-pressed',String(DIAGRAM_EDIT_MODE));
   const status=document.getElementById('diagram-selection-status');
   if(!status) return;
   const cnx=_selectedConnector();
@@ -2975,6 +3152,10 @@ function syncDiagramWorkspaceUI(){
   if(SELECTED_DIAG_RID){
     const line=document.querySelector(`.xrow[data-rid="${SELECTED_DIAG_RID}"] .lid`)?.textContent||SELECTED_DIAG_RID;
     status.textContent=(typeof t==='function'?t('diagram.selection.block'):'Selected block')+' · '+line;
+    return;
+  }
+  if(DIAGRAM_EDIT_MODE){
+    status.textContent=typeof t==='function'?t('diagram.split-status'):'Split Words is on — click a word to create a new row.';
     return;
   }
   status.textContent=typeof t==='function'?t('diagram.selection.none'):'Select a block or relationship';
@@ -6823,7 +7004,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   // connector SVGs (see setDiagramZoom / _applyDiagramZoomTransform) — once
   // the clone itself renders at zoom:1, these would otherwise misalign the
   // connector lines relative to the diagram blocks.
-  clone.querySelectorAll('#dconns,#dconns-back').forEach(el=>{ el.style.zoom='1'; el.style.transform=''; });
+  clone.querySelectorAll('#dcard-surfaces,#dconns,#dconns-back').forEach(el=>{ el.style.zoom='1'; el.style.transform=''; });
   // The PDF represents the durable diagram, never its editing affordances.
   clone.querySelectorAll('.dra-handle,#dconns-hit,.dbrk-pip,.dsec-del,.dsec-color,.dem-merge-btn')
     .forEach(el=>el.style.display='none');
