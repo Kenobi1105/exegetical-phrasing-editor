@@ -71,7 +71,7 @@ let bibleIndex=null, bibleCache={}, idb=null;
 let bPanelOpen=false, bLocked=false, bProjLocked=false;
 let bOnline=navigator.onLine;
 let bScrollLocked=false;
-let bFontSize=12;
+let bFontSize=18;
 let bFocusedSection='top';
 let bSplitOpen=false;
 let bLastFocusedPanel=null;
@@ -342,10 +342,15 @@ function bToggleOpenPassages(section){
 
 /* ── Font size ──────────────────────────────────────── */
 function bSetFontSize(val){
-  bFontSize=parseInt(val)||12;
+  bFontSize=parseInt(val)||18;
   document.querySelectorAll('.bpane-content').forEach(el=>{
     el.style.fontSize=bFontSize+'px';
   });
+}
+
+function bEmptyPaneHTML(message){
+  const copy=message||(typeof t==='function'?t('bible.no-passage'):'No passage selected yet.<br>Click "Select passage…" above to begin.');
+  return `<div class="bpane-empty"><div class="bpane-empty-copy"><span class="bpane-empty-icon" aria-hidden="true">▤</span><div>${copy}</div></div></div>`;
 }
 
 /* ════════════════════════════════════════════════════════
@@ -400,7 +405,7 @@ async function bLoadPassageInfinite(section, corpus, bookIdx, chapter, anchorVer
   if(!pane)return;
   const tab=bTabs[section][bActiveTab[section]];
   if(!tab){
-    pane.innerHTML=(typeof t==="function"?'<div class="bpane-empty">'+t('bible.no-passage')+'</div>':'<div class="bpane-empty">No passage selected yet.<br>Click "Select passage\u2026" above to begin.</div>');
+    pane.innerHTML=bEmptyPaneHTML();
     return;
   }
   const version=tab.version;
@@ -419,7 +424,7 @@ async function bLoadPassageInfinite(section, corpus, bookIdx, chapter, anchorVer
 
   try{
     const verses=await bGetChapter(version,corpus,bookIdx,chapter);
-    if(!verses||!verses.length){pane.innerHTML='<div class="bpane-empty">No text found for this passage.</div>';return;}
+    if(!verses||!verses.length){pane.innerHTML=bEmptyPaneHTML('No text found for this passage.');return;}
 
     // Build pane
     pane.innerHTML='';
@@ -871,12 +876,7 @@ function bFocusSection(section){
   ['top','bottom'].forEach(s=>{
     const sec=document.getElementById('bpane-'+s+'-section');
     if(!sec)return;
-    if(bSplitOpen){
-      sec.style.outline=s===section?'2px solid var(--sig)':'2px solid transparent';
-      sec.style.outlineOffset='-2px';
-    } else {
-      sec.style.outline='none';
-    }
+    sec.classList.toggle('is-focused',bSplitOpen&&s===section);
   });
 }
 
@@ -1165,7 +1165,7 @@ function bToggleSplit_(){
     if(bot){bot.style.display='none';}
     // Hard reset bottom pane DOM
     const bpaneBot=document.getElementById('bpane-bottom');
-    if(bpaneBot){bpaneBot.innerHTML=(typeof t==="function"?'<div class="bpane-empty">'+t('bible.no-passage')+'</div>':'<div class="bpane-empty">No passage selected yet.<br>Click "Select passage\u2026" above to begin.</div>');bpaneBot.onscroll=null;}
+    if(bpaneBot){bpaneBot.innerHTML=bEmptyPaneHTML();bpaneBot.onscroll=null;}
     document.getElementById('bpanel-split-btn')?.classList.remove('on');
     document.getElementById('bpanel-body')?.classList.remove('is-comparing');
     bFocusSection('top');
@@ -1425,7 +1425,7 @@ async function bFullReset(){
   // Clear pane content
   ['top','bottom'].forEach(s=>{
     const p=document.getElementById('bpane-'+s);
-    if(p){p.innerHTML=(typeof t==="function"?'<div class="bpane-empty">'+t('bible.no-passage')+'</div>':'<div class="bpane-empty">No passage selected yet.<br>Click "Select passage\u2026" above to begin.</div>');p.onscroll=null;}
+    if(p){p.innerHTML=bEmptyPaneHTML();p.onscroll=null;}
     const c=document.getElementById('bpicker-container-'+s);
     if(c){c.innerHTML='';c.style.display='none';}
     bRenderTabBar(s);
@@ -1484,7 +1484,7 @@ function applyProjLock(){ /* no-op */ }
 function bClearPane(section){
   const p=document.getElementById('bpane-'+section);
   if(p){
-    p.innerHTML=(typeof t==="function"?'<div class="bpane-empty">'+t('bible.no-passage')+'</div>':'<div class="bpane-empty">No passage selected yet.<br>Click "Select passage…" above to begin.</div>');
+    p.innerHTML=bEmptyPaneHTML();
     p.onscroll=null;
   }
   const tab=bTabs[section]?.[bActiveTab[section]];
