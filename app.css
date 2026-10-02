@@ -3800,15 +3800,13 @@ body.brk-locked .dbrk-pip:hover {
 }
 
 /* Split Words previews are real slash glyphs instead of a measured line.
-   Each is hidden until its following word is hovered, and is absolutely
-   anchored there so the preview never changes wrapping. */
+   Each is hidden until its following word is hovered. The active marker
+   temporarily reserves a narrow inline gap, keeping the slash between words
+   instead of laying it over the preceding one. */
 .dedit-word{position:relative}
 .dedit-split-marker{
-  position:absolute;
-  left:calc(-.52em - 3px);
-  top:50%;
-  z-index:2;
-  display:block;
+  display:inline-block;
+  width:0;
   color:#d12c2c;
   font-family:Arial,sans-serif;
   font-size:1.55em;
@@ -3818,16 +3816,15 @@ body.brk-locked .dbrk-pip:hover {
   pointer-events:none;
   user-select:none;
   direction:ltr;
+  unicode-bidi:isolate;
   opacity:0;
-  transform:translateY(-54%) rotate(-5deg);
-  transition:opacity .08s ease;
+  vertical-align:-.16em;
+  transform:rotate(-5deg);
+  transform-origin:center;
+  transition:width .09s ease,opacity .08s ease;
 }
-.dedit-split-marker::before{content:'/'}
-#dcanvas.dem-active .dedit-word:hover>.dedit-split-marker{opacity:1}
-.drow.rtl .dedit-split-marker{
-  left:auto;
-  right:calc(-.52em - 3px);
-}
+.dedit-split-marker::before{content:'/';display:inline-block;width:.58em;text-align:center}
+#dcanvas.dem-active .dedit-word:hover>.dedit-split-marker{width:.64em;opacity:1}
 
 /* ── Critical apparatus marks (NA28) — added 202607212200 ── */
 .crit-mark{color:var(--crit,#1E6AFE);cursor:help}
