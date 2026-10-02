@@ -3799,9 +3799,9 @@ body.brk-locked .dbrk-pip:hover {
   background: rgba(200,168,75,.35);
 }
 
-/* Split Words previews are persistent, actual slash glyphs rather than a
-   single measured line. Each lives absolutely inside its following word, so
-   the marker stays on the real split boundary without changing wrapping. */
+/* Split Words previews are real slash glyphs instead of a measured line.
+   Each is hidden until its following word is hovered, and is absolutely
+   anchored there so the preview never changes wrapping. */
 .dedit-word{position:relative}
 .dedit-split-marker{
   position:absolute;
@@ -3818,9 +3818,12 @@ body.brk-locked .dbrk-pip:hover {
   pointer-events:none;
   user-select:none;
   direction:ltr;
+  opacity:0;
   transform:translateY(-54%) rotate(-5deg);
+  transition:opacity .08s ease;
 }
 .dedit-split-marker::before{content:'/'}
+#dcanvas.dem-active .dedit-word:hover>.dedit-split-marker{opacity:1}
 .drow.rtl .dedit-split-marker{
   left:auto;
   right:calc(-.52em - 3px);

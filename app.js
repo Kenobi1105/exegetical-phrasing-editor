@@ -2481,9 +2481,9 @@ function _demTokenize(blockEl){
   _mergeGluedWordSpans(textEl,'dedit-word');
   [...textEl.querySelectorAll('.dedit-word')].forEach((word,index)=>{
     word.dataset.demIndex=String(index);
-    // Each eligible split boundary lives inside its following word.  This makes
-    // the red marker a reliable, zero-layout-shift visual anchored to the
-    // word's real rendered edge instead of to an empty sibling span.
+    // Each eligible split boundary lives inside its following word. This gives
+    // the hover preview a reliable, zero-layout-shift anchor at the word's
+    // real rendered edge instead of at an empty sibling span.
     if(index===0) return; // splitting before the first word would leave an empty row
     const marker=document.createElement('span');
     marker.className='dedit-split-marker';
