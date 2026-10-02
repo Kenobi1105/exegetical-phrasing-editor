@@ -4604,7 +4604,19 @@ body.hide-sections #section-strips{display:none}
 /* Split Words is intentionally a temporary, click-first mode. Text remains
    above connectors while each candidate word receives only a quiet cue. */
 #dcanvas.dem-active .dedit-word{cursor:crosshair}
-#dcanvas.dem-active .dedit-word:hover{background:rgba(200,168,75,.2);outline:1px solid rgba(164,123,40,.42)}
+#dcanvas.dem-active .dblock::before,
+#dcanvas.dem-active .dblock:hover::before,
+#dcanvas.dem-active .dblock:focus-visible::before{
+  background:transparent;
+  border-color:transparent;
+  border-style:solid;
+  box-shadow:none;
+}
+#dcanvas.dem-active .dedit-word:hover{
+  background:rgba(240,208,143,.52);
+  border-radius:4px;
+  outline:0;
+}
 
 .dra-handle{left:auto;right:-10px;width:20px;height:20px;border:1px solid rgba(73,53,72,.28);border-radius:6px;background:#fffdf9;color:var(--sig);box-shadow:0 2px 5px rgba(43,30,42,.12);font-size:0}
 .dra-handle.rtl{right:auto;left:-10px}
