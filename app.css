@@ -3799,29 +3799,31 @@ body.brk-locked .dbrk-pip:hover {
   background: rgba(200,168,75,.35);
 }
 
-/* Red slash — a pure visual overlay at the hovered word's split point,
-   positioned absolutely (via left/top/height set in JS from the hovered
-   word's own measured rect) rather than sitting in the text flow — an
-   in-flow element here would physically push the word over on every
-   hover. No fixed height here — it's set inline per-hover to match the
-   actual word's rendered height (which varies with neighboring
-   superscripts/cantillation-sized spans), so the bar always spans
-   exactly that word regardless of what's next to it. */
-#dem-slash {
-  display: block;
-  position: absolute;
-  width: 2px;
-  background: #cc2222;
-  border-radius: 1px;
-  pointer-events: none;
-  z-index: 2;
-  transform: rotate(-20deg);
-  transform-origin: center;
-  animation: dem-slash-in .08s ease;
+/* Split Words previews are persistent, actual slash glyphs rather than a
+   single measured line. Each lives absolutely inside its following word, so
+   the marker stays on the real split boundary without changing wrapping. */
+.dedit-word{position:relative}
+.dedit-split-marker{
+  position:absolute;
+  left:calc(-.52em - 3px);
+  top:50%;
+  z-index:2;
+  display:block;
+  color:#d12c2c;
+  font-family:Arial,sans-serif;
+  font-size:1.55em;
+  font-weight:800;
+  line-height:1;
+  text-shadow:0 1px 1px rgba(255,255,255,.85);
+  pointer-events:none;
+  user-select:none;
+  direction:ltr;
+  transform:translateY(-54%) rotate(-5deg);
 }
-@keyframes dem-slash-in {
-  from { opacity: 0; }
-  to   { opacity: 1; }
+.dedit-split-marker::before{content:'/'}
+.drow.rtl .dedit-split-marker{
+  left:auto;
+  right:calc(-.52em - 3px);
 }
 
 /* ── Critical apparatus marks (NA28) — added 202607212200 ── */

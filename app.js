@@ -2481,16 +2481,22 @@ function _demTokenize(blockEl){
   _mergeGluedWordSpans(textEl,'dedit-word');
   [...textEl.querySelectorAll('.dedit-word')].forEach((word,index)=>{
     word.dataset.demIndex=String(index);
+    // Each eligible split boundary lives inside its following word.  This makes
+    // the red marker a reliable, zero-layout-shift visual anchored to the
+    // word's real rendered edge instead of to an empty sibling span.
+    if(index===0) return; // splitting before the first word would leave an empty row
     const marker=document.createElement('span');
-    marker.className='dedit-sp'; marker.dataset.demIndex=String(index);
-    word.before(marker);
+    marker.className='dedit-split-marker';
+    marker.dataset.demIndex=String(index);
+    marker.setAttribute('aria-hidden','true');
+    word.prepend(marker);
   });
 }
 
 function _demUntokenize(blockEl){
   const textEl=blockEl?.querySelector('.dblock-text');
   if(!textEl) return;
-  textEl.querySelectorAll('.dedit-sp').forEach(marker=>marker.remove());
+  textEl.querySelectorAll('.dedit-split-marker,.dedit-sp').forEach(marker=>marker.remove());
   textEl.querySelectorAll('.dedit-word').forEach(word=>word.replaceWith(...word.childNodes));
   textEl.normalize();
 }
@@ -2521,14 +2527,12 @@ function _applyDiagramEditMode(on){
   splitButton?.setAttribute('aria-pressed',String(DIAGRAM_EDIT_MODE));
   if(DIAGRAM_EDIT_MODE){
     canvas.querySelectorAll('.dblock').forEach(_demTokenize);
-    canvas.querySelectorAll('.dedit-word').forEach(_demWireSplitPreview);
     canvas.querySelectorAll('.dl').forEach(labelCell=>{
       const row=labelCell.closest('.drow'); if(row) _demAddMergeBtn(labelCell,row.dataset.rid);
     });
   } else {
     canvas.querySelectorAll('.dem-merge-btn').forEach(button=>button.remove());
     canvas.querySelectorAll('.dblock').forEach(_demUntokenize);
-    document.getElementById('dem-slash')?.remove();
   }
   syncDiagramWorkspaceUI();
 }
@@ -2540,46 +2544,10 @@ function toggleDiagramEditMode(){
 }
 
 function _demCleanHTML(root){
-  root.querySelectorAll('.dedit-sp').forEach(marker=>marker.remove());
+  root.querySelectorAll('.dedit-split-marker,.dedit-sp').forEach(marker=>marker.remove());
   root.querySelectorAll('.dedit-word').forEach(word=>word.replaceWith(...word.childNodes));
   root.normalize();
   return root.innerHTML.replace(/^\s+|\s+$/g,'');
-}
-
-/* Show the split boundary without changing the text flow. The marker is
-   inserted immediately before each temporary word token, so its measured
-   position works for both RTL Hebrew and LTR Greek/English text. */
-function _demShowSplitPreview(wordEl){
-  if(!DIAGRAM_EDIT_MODE) return;
-  const textEl=wordEl.closest('.dblock-text');
-  const index=wordEl.dataset.demIndex;
-  if(!textEl||index==null) return;
-  document.getElementById('dem-slash')?.remove();
-  const marker=[...textEl.querySelectorAll('.dedit-sp')]
-    .find(candidate=>candidate.dataset.demIndex===index);
-  const wordRect=wordEl.getBoundingClientRect();
-  const markerRect=marker?.getBoundingClientRect();
-  const textRect=textEl.getBoundingClientRect();
-  const boundaryX=markerRect&&markerRect.width>=0
-    ?markerRect.left
-    :(IS_RTL?wordRect.right:wordRect.left);
-  const slash=document.createElement('span');
-  slash.id='dem-slash'; slash.dataset.demIndex=index;
-  slash.setAttribute('aria-hidden','true');
-  slash.style.left=(boundaryX-textRect.left-1)+'px';
-  slash.style.top=(wordRect.top-textRect.top-1)+'px';
-  slash.style.height=(wordRect.height+2)+'px';
-  textEl.appendChild(slash);
-}
-
-function _demWireSplitPreview(wordEl){
-  if(wordEl.dataset.demPreviewWired) return;
-  wordEl.dataset.demPreviewWired='1';
-  wordEl.addEventListener('mouseenter',()=>_demShowSplitPreview(wordEl));
-  wordEl.addEventListener('mouseleave',()=>{
-    const slash=document.getElementById('dem-slash');
-    if(slash?.dataset.demIndex===wordEl.dataset.demIndex) slash.remove();
-  });
 }
 
 function _demSplitWord(wordEl){
@@ -2590,7 +2558,7 @@ function _demSplitWord(wordEl){
   const index=wordEl.dataset.demIndex;
   if(!textEl||!rid||index==null) return;
   const clone=textEl.cloneNode(true);
-  const marker=clone.querySelector(`.dedit-sp[data-dem-index="${CSS.escape(index)}"]`);
+  const marker=clone.querySelector(`.dedit-split-marker[data-dem-index="${CSS.escape(index)}"]`);
   if(!marker) return;
   const beforeRange=document.createRange();
   beforeRange.selectNodeContents(clone); beforeRange.setEndBefore(marker);
@@ -2604,7 +2572,6 @@ function _demSplitWord(wordEl){
   if(!sourceRow||!source) return;
   const originalHTML=source.innerHTML;
   const verse=sourceRow.querySelector('.vin')?.value||'';
-  document.getElementById('dem-slash')?.remove();
   source.innerHTML=beforeHTML;
   const newRid=++RC;
   const newRow=makeRowEl(newRid,'','','',null);
