@@ -515,9 +515,8 @@ function bScrollTopFor(pane, el){
   return pane.scrollTop + (elRect.top - paneRect.top);
 }
 
-/* Topmost visible verse in a pane, via getBoundingClientRect — shared by
-   _bDoSync (pane-to-pane scroll lock) and _bSyncProjectorBible/
-   _bSyncProjectorScroll (presenter → projector scroll mirroring). */
+/* Topmost visible verse in a pane, via getBoundingClientRect — used by
+   _bDoSync for pane-to-pane scroll lock. */
 function _bTopmostVerseInPane(pane, fallbackChapter){
   if(!pane) return null;
   const paneRect=pane.getBoundingClientRect();
@@ -1030,7 +1029,6 @@ function bToggleSplit_(){
   } else {
     bOpenSplit();
   }
-  _bSyncProjectorBible();
 }
 
 function bOpenSplit(){
@@ -1112,7 +1110,6 @@ function openBible_(){
     if(!bPinned)panel.classList.add('open');
     bUpdateOfflineBar();
     bLoadIndex().then(()=>{bRenderTabBar('top');bUpdatePickerBtn('top');}).catch(()=>{bRenderTabBar('top');});
-    _bSyncProjectorBible();
   }
   // NOTE: Does NOT close Projects — both panels can be open simultaneously
 }
@@ -1122,7 +1119,6 @@ function closeBible(){
   if(panel)panel.classList.remove('open');
   bPanelOpen=false;
   bPickerClose();
-  _bSyncProjectorBible();
 }
 /* ── Bible panel pin ── */
 let bPinned=false;
@@ -1177,7 +1173,6 @@ function bApplyPin(){
       });
     }
     _bRefreshDiagramOverlays();
-    _bSyncProjectorBible();
   } else {
     panel.classList.remove('pinned');
     if(divider)divider.style.display='none';
@@ -1190,7 +1185,6 @@ function bApplyPin(){
     panel.classList.add('open');
     bPanelOpen=true;
     _bRefreshDiagramOverlays();
-    _bSyncProjectorBible();
   }
 }
 
@@ -1205,78 +1199,6 @@ function _bRefreshDiagramOverlays(){
     if(typeof refreshDiagramConnectors==='function') refreshDiagramConnectors();
     if(typeof renderSectionStrips==='function') renderSectionStrips();
   },50);
-}
-
-/* ── Mirror the Bible Module onto the presenter's projector window ──
-   Cheap no-op whenever SL_PROJ_WIN (app.js) isn't an open projector window
-   — i.e. always, outside of Slides presenting. SL_PROJ_WIN is a plain
-   global from app.js; bible.js and app.js share one window scope (both
-   classic scripts), so it's read directly, no message-passing needed
-   between them — only between this window and the separate projector
-   document, which only ever receives pre-rendered HTML, same as slides. */
-function _bSyncProjectorBible(){
-  if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
-  const topEl=document.getElementById('bpane-top');
-  const botEl=document.getElementById('bpane-bottom');
-  const topTab=bTabs.top[bActiveTab.top];
-  const botTab=bTabs.bottom[bActiveTab.bottom];
-  // Include each pane's current topmost-visible verse so the projector
-  // can scroll freshly-set content to the same anchor the presenter is
-  // looking at, not just leave it at the top.
-  const topAnchor=(topEl&&topTab)?_bTopmostVerseInPane(topEl,topTab.chapter):null;
-  const botAnchor=(bSplitOpen&&botEl&&botTab)?_bTopmostVerseInPane(botEl,botTab.chapter):null;
-  const panes={
-    top: topEl ? {label: topTab?topTab.label:'', html: topEl.innerHTML, chapter: topAnchor?.chapter, verse: topAnchor?.verse} : null,
-    bottom: (bSplitOpen && botEl) ? {label: botTab?botTab.label:'', html: botEl.innerHTML, chapter: botAnchor?.chapter, verse: botAnchor?.verse} : null
-  };
-  SL_PROJ_WIN.postMessage({type:'bible-state', open:bPanelOpen, pinned:bPinned, panes}, '*');
-}
-// Debounced wrapper for the MutationObserver below — passage content can
-// change from many places (chapter nav, tab switch, picker confirm,
-// infinite-scroll chapter loads); observing the pane DOM directly is
-// correct regardless of which one fired, rather than hunting down every
-// call site individually.
-let _bProjSyncT=null;
-function _bScheduleProjectorSync(){
-  clearTimeout(_bProjSyncT);
-  _bProjSyncT=setTimeout(_bSyncProjectorBible,150);
-}
-
-/* Lightweight scroll-only sync — doesn't resend pane HTML (that's
-   _bSyncProjectorBible's job, on actual content changes), just tells the
-   projector which verse to scroll its already-rendered pane to. Debounced
-   80ms, matching the existing pane-to-pane _bDoSync scroll-lock timing. */
-function _bSyncProjectorScroll(section){
-  if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
-  const pane=document.getElementById('bpane-'+section);
-  const tab=bTabs[section]?.[bActiveTab[section]];
-  if(!pane||!tab) return;
-  const anchor=_bTopmostVerseInPane(pane, tab.chapter);
-  if(!anchor) return;
-  SL_PROJ_WIN.postMessage({type:'bible-scroll', section, chapter:anchor.chapter, verse:anchor.verse}, '*');
-}
-const _bProjScrollT={top:null, bottom:null};
-function _bScheduleProjectorScroll(section){
-  clearTimeout(_bProjScrollT[section]);
-  _bProjScrollT[section]=setTimeout(()=>_bSyncProjectorScroll(section),80);
-}
-
-/* Mirrors #bible-panel's actual rendered width to the projector, live, in
-   real pixels — not proportional — since line-wrapping only depends on
-   the width/font-size pair, not on how big either window is. A
-   ResizeObserver (wired in DOMContentLoaded below) catches this
-   regardless of what caused it (today: dragging the pinned divider), so
-   nothing needs updating here if another resize path is ever added. */
-function _bSyncProjectorWidth(){
-  if(typeof SL_PROJ_WIN==='undefined' || !SL_PROJ_WIN || SL_PROJ_WIN.closed) return;
-  const panel=document.getElementById('bible-panel');
-  if(!panel) return;
-  SL_PROJ_WIN.postMessage({type:'bible-dims', width:panel.offsetWidth}, '*');
-}
-let _bProjWidthT=null;
-function _bScheduleProjectorWidth(){
-  clearTimeout(_bProjWidthT);
-  _bProjWidthT=setTimeout(_bSyncProjectorWidth,80);
 }
 
 function openProjects(){
@@ -1450,36 +1372,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   bRenderTabBar('top');bRenderTabBar('bottom');
   bUpdatePickerBtn();
   spUpdateUI();
-
-  // Keep the presenter's projector window's mirrored Bible panel in sync
-  // whenever passage content changes, regardless of which function caused
-  // it (chapter nav, tab switch, picker confirm, infinite-scroll loads) —
-  // see _bSyncProjectorBible/_bScheduleProjectorSync above. Cheap no-op
-  // whenever a projector isn't actually open. attributes/attributeFilter
-  // is required too, not just childList/characterData — bSetFontSize()
-  // changes font-size via a pure style-attribute mutation on the existing
-  // .bpane-content wrapper (no nodes added/removed, no text changed), which
-  // childList+characterData alone would silently miss.
-  const _bObsOpts={childList:true,subtree:true,characterData:true,attributes:true,attributeFilter:['style']};
-  const _bTopPane=document.getElementById('bpane-top');
-  const _bBotPane=document.getElementById('bpane-bottom');
-  if(_bTopPane) new MutationObserver(_bScheduleProjectorSync).observe(_bTopPane,_bObsOpts);
-  if(_bBotPane) new MutationObserver(_bScheduleProjectorSync).observe(_bBotPane,_bObsOpts);
-  // Scrolling a pane (without necessarily changing its content) also
-  // mirrors to the projector, so it tracks the presenter scrolling to a
-  // particular verse — separate from the pane-to-pane scroll-lock feature
-  // (bScrollLocked/bRewireScrollSync), always on, cheap no-op via the
-  // SL_PROJ_WIN guard in _bSyncProjectorScroll when no projector is open.
-  if(_bTopPane) _bTopPane.addEventListener('scroll',()=>_bScheduleProjectorScroll('top'),{passive:true});
-  if(_bBotPane) _bBotPane.addEventListener('scroll',()=>_bScheduleProjectorScroll('bottom'),{passive:true});
-  // Panel width (e.g. dragging the pinned divider) also mirrors, so the
-  // projector's line-wrapping matches the presenter's. ResizeObserver
-  // rather than hooking the divider drag directly — catches any resize
-  // regardless of cause, same "observe the real DOM" approach as above.
-  const _bPanelEl=document.getElementById('bible-panel');
-  if(_bPanelEl && typeof ResizeObserver==='function'){
-    new ResizeObserver(_bScheduleProjectorWidth).observe(_bPanelEl);
-  }
 
   // Restore pinned state after page refresh — deferred to openEditor
   // (don't call bApplyPin here; #app may be hidden on Screen 1)

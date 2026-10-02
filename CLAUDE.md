@@ -369,7 +369,7 @@ bPicker = {
 | `Enter` | Split row at caret |
 | `↑/↓` | Navigate rows |
 
-**Screen 1 only:** `Ctrl+O`, `Ctrl+,`, and `Alt+P` work. All others are blocked.
+**Screen 1 only:** `Ctrl+O` and `Ctrl+,` work. All others are blocked.
 
 ---
 
@@ -596,167 +596,6 @@ BRK_LABEL_GAP   // gap between bracket line and label text (px)
 
 ---
 
-## Slides / Presenter System (app.js)
-
-A built-in presentation layer. Three phases: A (builder), B (presenter), C (PDF export).
-
-### State variables
-```js
-SL_DECK         // {slides: [...]} — the full deck
-SL_ACTIVE_IDX   // index of currently selected slide
-SL_SEL_EL_ID    // ID of selected element on active slide, or '__passage__', or null
-SL_EL_CTR       // element ID seed
-SL_SLIDE_CTR    // slide ID seed
-SL_PROJ_WIN     // reference to projector window (window.open result)
-SL_PRES_IDX     // current slide index during presentation
-SL_CANVAS_W     // computed canvas width in px (maintains 16:9)
-SL_CANVAS_H     // computed canvas height in px
-SL_CMT_CACHE    // {cid: rawHTML} — comment text cache (DOM may be hidden in Slides view)
-_slLastRefreshTime  // timestamp guard — prevents double-fire within 100ms
-```
-
-### Slide data schema
-```js
-{
-  id:          'sl-1',
-  type:        'blank' | 'content',
-  view:        'phrasing' | 'diagram',
-  rowIds:      ['r1', 'r2', 'r3'],   // selected rows (empty = show nothing)
-  visibility: {
-    indentation: false,  // all default false — user opts in
-    translation:  false,
-    comments:     false,
-    connectors:   false,
-    brackets:     false,
-    labels:       false
-  },
-  contentArea: { x:3, y:3, w:94, h:55 },  // % of slide dimensions
-  elements: [
-    {
-      id: 'el-1',
-      type: 'textbox' | 'floatlabel' | 'commentbox',
-      x: 10, y: 65,   // % of slide
-      w: 80, h: 18,   // % of slide
-      html: '<b>Key observation</b>…',
-      // textbox only:
-      fontSize: 18, color: '#1F1E1E', align: 'left',
-      // floatlabel only:
-      sourceId: 'lbl-3',   // DIAGRAM_DATA.labels entry ID
-      // commentbox only:
-      sourceCid: 'c-2'     // comment card cid
-    }
-  ],
-  notes: 'Speaker notes here…'
-}
-```
-
-### Render pipeline
-`slRefreshSlide()` is the main entry point (called by Refresh button and thumbnail click):
-1. 100ms timestamp guard (prevents double-fire)
-2. `slSyncDerivedElements()` — syncs `floatlabel` elements from `DIAGRAM_DATA.labels` and `commentbox` elements from `SL_CMT_CACHE` into `slide.elements[]`, preserving user-moved positions
-3. `slRenderActive()` — debounced via `clearTimeout`/`setTimeout(0)` → `_slDoRender()`
-4. `slRenderThumb(idx)` — renders thumbnail at 152×85px
-
-`_slDoRender()` → `slRenderSlideInto(slide, container, w, h)`:
-- Clears container
-- Builds passage content (phrasing: clones `.xrow` elements; diagram: builds from scratch using row data — never clones `#dcanvas`)
-- Applies visibility toggles inline
-- Draws connectors/brackets via `slDrawConnectorsIntoClone()` / `slDrawBracketsIntoClone()`
-- Scales passage to fit `contentArea` via `requestAnimationFrame`
-- Renders text boxes, floatlabels, commentboxes as absolute-positioned elements
-
-### Key functions
-| Function | Purpose |
-|---|---|
-| `slRenderAll()` | Full re-render: thumbnails + props panel + active canvas |
-| `slRefreshSlide()` | Refresh active slide from live data (Refresh button, thumbnail click) |
-| `slRenderActive()` | Debounced canvas render → `_slDoRender()` |
-| `slRenderSlideInto(slide, container, w, h)` | Core renderer — builds slide DOM |
-| `slSyncDerivedElements()` | Syncs floatlabel/commentbox from live data into slide.elements[] |
-| `slSelectSlide(idx)` | Switch active slide → calls slRefreshSlide |
-| `slAddBlank()` / `slAddContent()` | Add slide variants |
-| `slDeleteSlide(idx)` / `slDuplicateSlide(idx)` | Manage slides |
-| `slSetView(view)` | Switch phrasing/diagram (no re-render — user clicks Refresh) |
-| `slVisChange(key, val)` | Toggle visibility flag (no re-render — user clicks Refresh) |
-| `slSelectEl(id)` | Select element without re-render — toggles CSS class + handles directly |
-| `slStartElDrag(ev, el, div, w, h)` | Move element via mousedown |
-| `slStartElResize(ev, el, div, dir, w, h)` | Resize element via handle drag |
-| `slStartThumbDrag(ev, fromIdx, thumbEl)` | Drag-to-reorder thumbnails |
-| `slStartPresent()` | Opens projector window, switches to presenter dashboard |
-| `slEndPresent()` | Closes projector, returns to slide editor |
-| `slPresNav(delta)` | Advance/retreat slides during presentation |
-| `slSendToProjector(slide)` | Renders slide at 1920×1080, sends via postMessage |
-| `slExportPDF()` | html2canvas each slide → jsPDF landscape A4 |
-| `slCollectDeck()` / `slLoadDeck(data)` | Serialize/restore deck from project JSON |
-| `slDrawConnectorsIntoClone(el, rids)` | Draw connectors using offsetTop (not getBoundingClientRect) |
-| `slDrawBracketsIntoClone(el, rids)` | Draw brackets using offsetTop |
-
-### Undo op types
-| Type | Payload | What it undoes |
-|---|---|---|
-| `sl-add-slide` | `{idx, slide}` | Slide creation |
-| `sl-remove-slide` | `{idx, slide}` | Slide deletion |
-| `sl-move-slide` | `{fromIdx, toIdx}` | Slide reorder |
-| `sl-slide-prop` | `{idx, prop, key?, oldVal, newVal}` | Any slide property (view, rowIds, visibility, contentArea, notes) |
-| `sl-add-el` | `{slideIdx, el}` | Element addition |
-| `sl-remove-el` | `{slideIdx, elIdx, el}` | Element deletion |
-| `sl-el-prop` | `{slideIdx, elId, prop, oldVal, newVal}` | Element move/resize/edit |
-| `sl-zorder` | `{slideIdx, oldOrder, newOrder}` | Element z-order change |
-
-### Projector communication
-- Projector window opened with `window.open('', '_blank', ...)`
-- Main window writes HTML shell with CSS vars inlined + link to app.css
-- Projector signals `{type:'sl-ready'}` when listener is live
-- Main window receives `sl-ready` → calls `slPresUpdate()` → `slSendToProjector(slide)`
-- Each slide sent as `{type:'sl-slide', html}` via `postMessage`
-- 2-second fallback in case `sl-ready` is never received
-
-### Key element IDs
-```
-#szone           Slides view container (flex row, 3 columns)
-#sl-list         Thumbnail list container
-#sl-list-panel   Left panel (thumbnails + add buttons)
-#sl-canvas-wrap  Center panel (toolbar + canvas outer)
-#sl-canvas-outer Center panel inner (gray background, centers canvas)
-#sl-canvas       The 16:9 slide canvas (size set by JS)
-#sl-toolbar      Slides toolbar (Add Text Box, Present, Refresh, Export)
-#sl-props-panel  Right panel (view toggle, row list, visibility, notes)
-#sl-row-list     Row checkbox list in props panel
-#sl-notes        Speaker notes textarea
-#sl-presenter    Presenter dashboard (overlays szone during presentation)
-#sl-pres-left    Presenter left column (slide preview)
-#sl-pres-right   Presenter right column (notes)
-#sl-pres-divider Draggable column divider
-#sl-pres-bar     Bottom navigation bar
-#sl-pres-preview Current slide preview container
-#sl-pres-notes   Speaker notes display (read-only during presentation)
-#sl-pres-counter Slide counter "N of M"
-#sl-ctx-menu     Context menu (Bring to Front / Send to Back / Delete)
-```
-
-### CSS classes on slide elements
-```
-.sl-el           Base class for all slide elements
-.sl-el-passage   Passage content area (draggable/resizable)
-.sl-el-textbox   User text box
-.sl-el-overlay   Floating label or comment box (read-only, draggable)
-.sl-resize-handle Corner/edge resize handle
-.sl-rh-{dir}     Direction-specific handle (nw, ne, sw, se, n, s, w, e)
-.sl-thumb        Slide thumbnail div
-.sl-thumb-inner  Thumbnail preview content container
-.sl-thumb.active Currently selected thumbnail
-.sl-drag-over   Drop target highlight during thumbnail reorder
-```
-
-### Important behaviours
-- **No live re-render on property change** — `slVisChange`, `slSetView`, row checkbox changes only update data. User must click Refresh to see changes. Prevents lag.
-- **`slLoadDeck` does NOT call `slRenderAll`** — rendering is always triggered by `setEditorView('slides')` → `setTimeout(slRenderAll, 80)`, or by user actions.
-- **Comment pane hidden in Slides view** — `toggleCmtPane()` is a no-op when `EDITOR_VIEW==='slides'`. The comment pane button is disabled.
-- **`SL_CMT_CACHE`** — populated in `loadData()` and updated in `autoSave()`. Used instead of querying `.ccard .cedit-c` directly (which returns empty when pane is hidden).
-- **Diagram content in slides** — built from `.xrow` data directly, never clones `#dcanvas`, to avoid stale content and zoom inheritance issues.
-
----
-
 ## Updated Keyboard Shortcuts
 
 | Shortcut | Action |
@@ -765,7 +604,6 @@ _slLastRefreshTime  // timestamp guard — prevents double-fire within 100ms
 | `Alt+2` | Open/close Bible Module |
 | `Alt+3` | Toggle comment pane |
 | `Alt+T` | Toggle Phrasing / Diagram View |
-| `Alt+P` | Open Slides View |
 | `Shift` (held) | Show bracket pip dots in Diagram View |
 | `Shift+click pip` | Start / complete bracket creation |
 | `Escape` | Cancel pending bracket |
@@ -775,12 +613,11 @@ _slLastRefreshTime  // timestamp guard — prevents double-fire within 100ms
 ## Updated File List
 
 ```
-index.html   — App shell; now includes #szone, #sl-presenter, #sl-ctx-menu,
-               #brk-edit-popup, Slides toolbar button
-app.css      — All styles (~3700+ lines, append-only); bracket and slides CSS appended
-app.js       — ~7100+ lines; bracketing system (~600 lines), slides system (~1200 lines)
-lang.js      — i18n strings for EN + ZH; bracket.* and slides.* key namespaces
-tut.js       — Tutorial content; now includes Part 9 (Brackets) and Part 10 (Slides)
+index.html   — App shell, including the Phrasing/Diagram workspace controls and #brk-edit-popup
+app.css      — All styles (append-only), including Diagram and bracket presentation
+app.js       — Core editor, export, Diagram, bracket, annotation, and compatibility systems
+lang.js      — i18n strings for EN + ZH
+tut.js       — Tutorial content, including Brackets
 bible.js     — Bible Module (unchanged)
 account.js   — NEW; cloud sync integration layer (Google-only) — see "Cloud Sync" above
 sw.js        — Service worker; APP_VERSION must be bumped on every deploy;

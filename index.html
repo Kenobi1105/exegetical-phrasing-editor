@@ -218,7 +218,6 @@
         <div class="hm-row"><span class="hm-desc" data-i18n="help.restart">Restart session</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">R</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.clear">Clear all content</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Shift</span><span class="kbd">L</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.view-toggle">Toggle Phrasing / Diagram View</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">T</span></div></div>
-        <div class="hm-row"><span class="hm-desc" data-i18n="help.slides">Open Slides view (Alt+P)</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">P</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.zoom-reset">Reset diagram zoom to 100%</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">0</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.add-label">Add floating label (Diagram View)</span><div class="hm-key"><span class="kbd">Alt</span><span class="kbd">L</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.conn-delete">Delete a selected connector</span><div class="hm-key"><span class="kbd">Backspace</span><span class="kbd">Delete</span> <span style="font-size:11px;color:var(--muted)" data-i18n="help.conn-delete.hint">in Diagram View</span></div></div>
@@ -344,10 +343,6 @@
         <button class="vtbtn" id="view-btn-diagram" data-i18n-title="view.diagram.title" title="Diagram View (Alt+T)" onclick="setEditorView('diagram')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="7" height="5" rx="1"/><rect x="13" y="9" width="7" height="5" rx="1"/><rect x="6" y="15" width="7" height="5" rx="1"/></svg>
           <span data-i18n="view.diagram">Diagram</span>
-        </button>
-        <button class="vtbtn" id="view-btn-slides" title="Slides View (Alt+P)" onclick="setEditorView('slides')">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="18" x2="12" y2="21"/></svg>
-          <span data-i18n="slides.title">Slides</span>
         </button>
       </div>
       <button class="tbtn" id="tb-mobile-tools" data-i18n-title="toolbar.mobile-tools" title="Editing tools" onclick="toggleMobileToolPanel()" style="display:none">
@@ -567,249 +562,6 @@
         </div>
       </div>
 
-      <!-- ══ SLIDES ZONE ══ -->
-      <div id="szone" style="display:none">
-        <!-- Left: slide thumbnail list -->
-        <div id="sl-list-panel">
-          <div id="sl-list-scroll">
-            <div id="sl-list"><!-- thumbnails injected by JS --></div>
-          </div>
-          <div id="sl-list-footer">
-            <button class="sl-add-btn" onclick="slAddBlank()" data-i18n="slides.add-blank">Add Blank Slide</button>
-            <button class="sl-add-btn sl-add-content-btn" onclick="slAddContent()" data-i18n="slides.add-content">Add Content Slide</button>
-          </div>
-        </div>
-        <!-- Center: slide canvas -->
-        <div id="sl-canvas-wrap">
-          <div id="sl-toolbar">
-            <button class="sl-tbtn" onclick="slAddTextBox()" title="Add Text Box">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="5" width="18" height="14" rx="2"/><line x1="7" y1="10" x2="17" y2="10"/><line x1="7" y1="14" x2="13" y2="14"/></svg>
-              <span data-i18n="slides.add-textbox">Add Text Box</span>
-            </button>
-            <button class="sl-tbtn" onclick="slAddRegion()" data-i18n-title="slides.add-region" title="Add region">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="4" width="8" height="8" rx="1"/><rect x="13" y="12" width="8" height="8" rx="1"/></svg>
-              <span data-i18n="slides.add-region">Add Region</span>
-            </button>
-            <button class="sl-tbtn" onclick="slAddShape('rect')" title="Add Rectangle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="4" y="6" width="16" height="12" rx="1"/></svg>
-              <span data-i18n="slides.add-rect">Rectangle</span>
-            </button>
-            <button class="sl-tbtn" onclick="slAddShape('ellipse')" title="Add Ellipse">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg>
-              <span data-i18n="slides.add-ellipse">Ellipse</span>
-            </button>
-            <button class="sl-tbtn" onclick="slAddImage()" title="Add Image">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-              <span data-i18n="slides.add-image">Add Image</span>
-            </button>
-            <input type="file" id="sl-image-file" accept="image/*" style="display:none" onchange="slImageFileSelected(event)"/>
-            <div class="sl-tsep"></div>
-            <button class="sl-tbtn" id="sl-align-left" onclick="slAlign('left')" disabled data-i18n-title="slides.align.left" title="Align left">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="2" x2="4" y2="22"/><rect x="4" y="5" width="14" height="4" rx="1"/><rect x="4" y="10" width="9" height="4" rx="1"/><rect x="4" y="15" width="16" height="4" rx="1"/></svg>
-            </button>
-            <button class="sl-tbtn" id="sl-align-hcenter" onclick="slAlign('hcenter')" disabled data-i18n-title="slides.align.hcenter" title="Align center">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="2" x2="12" y2="22"/><rect x="5" y="5" width="14" height="4" rx="1"/><rect x="7.5" y="10" width="9" height="4" rx="1"/><rect x="4" y="15" width="16" height="4" rx="1"/></svg>
-            </button>
-            <button class="sl-tbtn" id="sl-align-right" onclick="slAlign('right')" disabled data-i18n-title="slides.align.right" title="Align right">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="20" y1="2" x2="20" y2="22"/><rect x="6" y="5" width="14" height="4" rx="1"/><rect x="11" y="10" width="9" height="4" rx="1"/><rect x="4" y="15" width="16" height="4" rx="1"/></svg>
-            </button>
-            <button class="sl-tbtn" id="sl-align-top" onclick="slAlign('top')" disabled data-i18n-title="slides.align.top" title="Align top">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="4" x2="22" y2="4"/><rect x="5" y="4" width="4" height="14" rx="1"/><rect x="10" y="4" width="4" height="9" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/></svg>
-            </button>
-            <button class="sl-tbtn" id="sl-align-vmiddle" onclick="slAlign('vmiddle')" disabled data-i18n-title="slides.align.vmiddle" title="Align middle">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="12" x2="22" y2="12"/><rect x="5" y="5" width="4" height="14" rx="1"/><rect x="10" y="7.5" width="4" height="9" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/></svg>
-            </button>
-            <button class="sl-tbtn" id="sl-align-bottom" onclick="slAlign('bottom')" disabled data-i18n-title="slides.align.bottom" title="Align bottom">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="2" y1="20" x2="22" y2="20"/><rect x="5" y="6" width="4" height="14" rx="1"/><rect x="10" y="11" width="4" height="9" rx="1"/><rect x="15" y="4" width="4" height="16" rx="1"/></svg>
-            </button>
-            <div class="sl-tsep"></div>
-            <button class="sl-tbtn" id="sl-dist-h" onclick="slDistribute('h')" disabled data-i18n-title="slides.dist.h" title="Distribute horizontally">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="8" width="4" height="8" rx="1"/><rect x="10" y="8" width="4" height="8" rx="1"/><rect x="18" y="8" width="4" height="8" rx="1"/></svg>
-            </button>
-            <button class="sl-tbtn" id="sl-dist-v" onclick="slDistribute('v')" disabled data-i18n-title="slides.dist.v" title="Distribute vertically">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="8" y="2" width="8" height="4" rx="1"/><rect x="8" y="10" width="8" height="4" rx="1"/><rect x="8" y="18" width="8" height="4" rx="1"/></svg>
-            </button>
-            <div class="sl-tsep"></div>
-            <button class="sl-tbtn" id="sl-present-btn" onclick="slStartPresent()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/></svg>
-              <span data-i18n="slides.present">Present</span>
-            </button>
-            <button class="sl-tbtn" onclick="slRefreshSlide()" data-i18n-title="slides.refresh.title" title="Refresh slide from current project data">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
-              <span data-i18n="slides.refresh">Refresh</span>
-            </button>
-            <button class="sl-tbtn" onclick="slExportPDF()">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              <span data-i18n="slides.export-pdf">Export Slides PDF</span>
-            </button>
-          </div>
-          <div id="sl-canvas-outer">
-            <div id="sl-canvas">
-              <!-- 16:9 slide canvas — content injected by JS -->
-            </div>
-          </div>
-          <!-- Floating per-element toolbar — positioned by JS above the
-               selected text box / shape instead of living in the side panel. -->
-          <div id="sl-float-toolbar" style="display:none">
-            <div class="sl-prop-section sl-float-section" id="sl-shapeprops-section" style="display:none">
-              <div class="sl-fmt-row">
-                <span class="sl-fmt-sub-label" data-i18n="slides.shape.fill">Fill</span>
-                <button type="button" class="sl-swatch-btn" id="sl-shape-fill-btn" title="Fill" onclick="openColorPalette('slShapeFill', this, _slShapeColorFor('fill'))"></button>
-                <button class="sl-micro-btn" onclick="slShapeClearFill()" data-i18n="slides.shape.no-fill">None</button>
-                <div class="sl-float-sep"></div>
-                <span class="sl-fmt-sub-label" data-i18n="slides.shape.stroke">Border</span>
-                <button type="button" class="sl-swatch-btn" id="sl-shape-stroke-btn" title="Border" onclick="openColorPalette('slShapeStroke', this, _slShapeColorFor('stroke'))"></button>
-                <button class="sl-micro-btn" onclick="slShapeClearStroke()" data-i18n="slides.shape.no-border">None</button>
-                <div class="sl-float-sep"></div>
-                <span class="sl-fmt-sub-label" data-i18n="slides.shape.weight">Weight</span>
-                <input type="number" class="sl-fmt-size-input" id="sl-shape-strokewidth" value="2" min="0" max="20" onchange="slShapeSetStrokeWidth(this.value)"/>
-                <div class="sl-float-sep"></div>
-                <select class="sl-fmt-select sl-fmt-select-sm" id="sl-shape-strokestyle" onchange="slShapeSetStrokeStyle(this.value)">
-                  <option value="solid" data-i18n="slides.shape.solid">Solid</option>
-                  <option value="dashed" data-i18n="slides.shape.dashed">Dashed</option>
-                  <option value="dotted" data-i18n="slides.shape.dotted">Dotted</option>
-                </select>
-              </div>
-            </div>
-            <div class="sl-prop-section sl-float-section" id="sl-textfmt-section" style="display:none">
-              <div class="sl-fmt-row">
-                <button class="sl-fmt-btn" id="sl-fmt-b" onpointerdown="event.preventDefault()" onclick="slFmtCmd('bold')" title="Bold"><b>B</b></button>
-                <button class="sl-fmt-btn" id="sl-fmt-i" onpointerdown="event.preventDefault()" onclick="slFmtCmd('italic')" title="Italic"><i>I</i></button>
-                <button class="sl-fmt-btn" id="sl-fmt-u" onpointerdown="event.preventDefault()" onclick="slFmtCmd('underline')" title="Underline"><u>U</u></button>
-                <div class="sl-float-sep"></div>
-                <button class="sl-fmt-btn" id="sl-fmt-align-left" onpointerdown="event.preventDefault()" onclick="slFmtAlign('left')" data-i18n-title="slides.fmt.align-left" title="Align left"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="18" y2="18"/></svg></button>
-                <button class="sl-fmt-btn" id="sl-fmt-align-center" onpointerdown="event.preventDefault()" onclick="slFmtAlign('center')" data-i18n-title="slides.fmt.align-center" title="Align center"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="6" y1="12" x2="18" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg></button>
-                <button class="sl-fmt-btn" id="sl-fmt-align-right" onpointerdown="event.preventDefault()" onclick="slFmtAlign('right')" data-i18n-title="slides.fmt.align-right" title="Align right"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="9" y1="12" x2="21" y2="12"/><line x1="6" y1="18" x2="21" y2="18"/></svg></button>
-                <div class="sl-float-sep"></div>
-                <select class="sl-fmt-select sl-fmt-select-sm" id="sl-fmt-font" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtFontFamily(this.value)">
-                  <option value="" data-i18n="slides.fmt.font-default">Default</option>
-                  <option value="Georgia, 'Times New Roman', serif">Georgia</option>
-                  <option value="'Times New Roman', Times, serif">Times New Roman</option>
-                  <option value="Arial, Helvetica, sans-serif">Arial</option>
-                  <option value="'Courier New', Courier, monospace">Courier New</option>
-                  <option value="'Brush Script MT', cursive">Brush Script</option>
-                  <option value="Verdana, Geneva, sans-serif">Verdana</option>
-                  <option value="'Trebuchet MS', sans-serif">Trebuchet MS</option>
-                  <option value="Palatino, 'Palatino Linotype', 'Book Antiqua', serif">Palatino</option>
-                  <option value="'Playfair Display', Georgia, serif">Playfair Display</option>
-                  <option value="'Cormorant Garamond', Georgia, serif">Cormorant Garamond</option>
-                  <option value="'Montserrat', Arial, sans-serif">Montserrat</option>
-                </select>
-                <div class="sl-float-sep"></div>
-                <span class="sl-fmt-sub-label" data-i18n="slides.fmt.size">Size</span>
-                <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtFontSize(-2)">−</button>
-                <input type="number" class="sl-fmt-size-input" id="sl-fmt-size" value="18" min="6" max="200" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtFontSizeAbs(this.value)"/>
-                <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtFontSize(2)">+</button>
-              </div>
-              <div class="sl-fmt-row">
-                <span class="sl-fmt-sub-label" data-i18n="slides.fmt.color">Text color</span>
-                <button type="button" class="sl-swatch-btn" id="sl-fmt-color-btn" style="background:#1F1E1E" title="Text color" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slTextColor', this, '#1F1E1E')"></button>
-                <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtColorClear()" data-i18n="slides.fmt.none">None</button>
-                <div class="sl-float-sep"></div>
-                <span class="sl-fmt-sub-label" data-i18n="slides.fmt.outline">Outline</span>
-                <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtOutlineWidth(-1)">−</button>
-                <input type="number" class="sl-fmt-size-input" id="sl-fmt-outline-width" value="0" min="0" max="20" onpointerdown="slFmtSaveRange();event.stopPropagation()" onchange="slFmtOutlineWidthAbs(this.value)"/>
-                <button class="sl-fmt-step-btn" onpointerdown="event.preventDefault()" onclick="slFmtOutlineWidth(1)">+</button>
-                <button type="button" class="sl-swatch-btn" id="sl-fmt-outline-btn" style="background:#000000" data-i18n-title="slides.fmt.outline-color" title="Outline color" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slTextOutline', this, '#000000')"></button>
-                <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtOutlineClear()" data-i18n="slides.fmt.none">None</button>
-                <div class="sl-float-sep"></div>
-                <span class="sl-fmt-sub-label" data-i18n="slides.fmt.highlight">Highlight</span>
-                <button type="button" class="sl-swatch-btn" id="sl-fmt-hl-btn" style="background:#F0D08F" title="Highlight" onpointerdown="slFmtSaveRange()" onclick="openColorPalette('slHighlight', this, '#F0D08F')"></button>
-                <button class="sl-micro-btn" onpointerdown="event.preventDefault()" onclick="slFmtHighlightClear()" data-i18n="slides.fmt.no-highlight">None</button>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Right: properties panel -->
-        <div id="sl-props-panel">
-          <div class="sl-prop-section">
-            <div class="sl-prop-label" data-i18n="slides.regions">Regions</div>
-            <div id="sl-passage-tabs"><!-- region tabs injected by JS --></div>
-          </div>
-          <div id="sl-passage-props">
-            <div class="sl-prop-section">
-              <div class="sl-prop-label" data-i18n="view.diagram">View</div>
-              <div class="sl-view-toggle">
-                <button class="sl-view-btn active" id="sl-view-phrasing" onclick="slSetView('phrasing')" data-i18n="slides.view-phrasing">Phrasing</button>
-                <button class="sl-view-btn" id="sl-view-diagram" onclick="slSetView('diagram')" data-i18n="slides.view-diagram">Diagram</button>
-              </div>
-            </div>
-            <div class="sl-prop-section">
-              <div class="sl-prop-label">
-                <span data-i18n="col.verse">Rows</span>
-                <span class="sl-row-btns">
-                  <button class="sl-micro-btn" onclick="slSelectAllRows()" data-i18n="slides.rows.all">All</button>
-                  <button class="sl-micro-btn" onclick="slClearAllRows()" data-i18n="slides.rows.none">None</button>
-                </span>
-              </div>
-              <div id="sl-row-list"><!-- row checkboxes injected by JS --></div>
-            </div>
-            <div class="sl-prop-section">
-              <div class="sl-prop-label" data-i18n="slides.vis.section">Visibility</div>
-              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-indent"    onchange="slVisChange('indentation',   this.checked)"><span data-i18n="slides.vis.indent">Indentation</span></label>
-              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-trans"     onchange="slVisChange('translation',   this.checked)"><span data-i18n="slides.vis.trans">Translation lines</span></label>
-              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-verse"     onchange="slVisChange('verseNums',     this.checked)"><span data-i18n="slides.vis.verse">Verse numbers</span></label>
-              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-comments"  onchange="slVisChange('comments',      this.checked)"><span data-i18n="slides.vis.comments">Comments</span></label>
-              <div id="sl-cmt-list" class="sl-sublist"><!-- per-comment checkboxes injected by JS --></div>
-              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-connectors"onchange="slVisChange('connectors',    this.checked)"><span data-i18n="slides.vis.connectors">Connectors</span></label>
-              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-brackets"  onchange="slVisChange('brackets',      this.checked)"><span data-i18n="slides.vis.brackets">Brackets</span></label>
-              <label class="sl-vis-row"><input type="checkbox" id="sl-vis-labels"    onchange="slVisChange('labels',        this.checked)"><span data-i18n="slides.vis.labels">Labels</span></label>
-              <div id="sl-label-list" class="sl-sublist"><!-- per-label checkboxes injected by JS --></div>
-            </div>
-          </div>
-          <div class="sl-prop-section">
-            <div class="sl-prop-label" data-i18n="slides.bg.section">Background</div>
-            <button type="button" class="sl-swatch-btn" id="sl-bg-btn" title="Background"
-                    onclick="openColorPalette('slSlideBackground', this, SL_DECK.slides[SL_ACTIVE_IDX]?.background||'#ffffff')"></button>
-          </div>
-          <div class="sl-prop-section sl-notes-section">
-            <div class="sl-prop-label" data-i18n="slides.notes.section">Speaker Notes</div>
-            <div class="sl-fmt-row sl-notes-fmt-row">
-              <button class="sl-fmt-btn" onpointerdown="event.preventDefault()" onclick="slNotesFmtCmd('bold')" title="Bold"><b>B</b></button>
-              <button class="sl-fmt-btn" onpointerdown="event.preventDefault()" onclick="slNotesFmtCmd('italic')" title="Italic"><i>I</i></button>
-              <button class="sl-fmt-btn" onpointerdown="event.preventDefault()" onclick="slNotesFmtCmd('underline')" title="Underline"><u>U</u></button>
-            </div>
-            <div id="sl-notes" contenteditable="true" data-i18n-ph="slides.notes.ph" data-ph="Speaker notes…" oninput="slNotesChange()" onblur="slNotesCommit()"></div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ══ PRESENTER DASHBOARD (overlays szone during presentation) ══ -->
-      <div id="sl-presenter" style="display:none">
-        <div id="sl-pres-left">
-          <div id="sl-pres-preview"><!-- current slide rendered here --></div>
-        </div>
-        <div id="sl-pres-divider" style="touch-action:none" onpointerdown="slPresStartResize(event)"></div>
-        <div id="sl-pres-right">
-          <div class="sl-pres-notes-label" data-i18n="slides.notes.ph">Speaker Notes</div>
-          <div id="sl-pres-notes"></div>
-        </div>
-        <div id="sl-pres-bar">
-          <button class="sl-pres-btn" onclick="slPresNav(-1)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="15 18 9 12 15 6"/></svg>
-          </button>
-          <span id="sl-pres-counter">1 <span data-i18n="slides.slide-of">of</span> 1</span>
-          <button class="sl-pres-btn" onclick="slPresNav(1)">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><polyline points="9 18 15 12 9 6"/></svg>
-          </button>
-          <div class="sl-pres-sep"></div>
-          <button class="sl-pres-end-btn" onclick="slEndPresent()" data-i18n="slides.end-present">End Presentation</button>
-        </div>
-      </div>
-
-      <!-- Slide element right-click context menu — this default markup is
-           purely a fallback; both real code paths (element right-click via
-           _slShowElCtxMenu, slide-thumbnail "..." menu) rebuild innerHTML
-           explicitly on every open, so this content is never actually shown as-is. -->
-      <div id="sl-ctx-menu" style="display:none;position:fixed;z-index:200;background:var(--sig);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.3);padding:4px;min-width:160px">
-        <button class="sl-ctx-item" onclick="slCtxAction('front')" data-i18n="slides.bring-front">Bring to Front</button>
-        <button class="sl-ctx-item" onclick="slCtxAction('back')"  data-i18n="slides.send-back">Send to Back</button>
-        <div class="sl-ctx-sep"></div>
-        <button class="sl-ctx-item" onclick="slCtxAction('copy')"  data-i18n="slides.copy">Copy</button>
-        <button class="sl-ctx-item" onclick="slCtxAction('paste')" data-i18n="slides.paste">Paste</button>
-        <div class="sl-ctx-sep"></div>
-        <button class="sl-ctx-item sl-ctx-del" onclick="slCtxAction('delete')" data-i18n="slides.delete-el">Delete</button>
-      </div>
       <div id="cmargin" class="pane-hidden">
         <div id="cmargin-hdr">
           <span class="cmargin-title" data-i18n="workspace.notes">Notes</span>
@@ -916,8 +668,7 @@
   </div>
 </div>
 
-<!-- Project/folder card right-click menu — content built dynamically in JS
-     (projShowCardCtxMenu/projShowFolderMenu), same pattern as #sl-ctx-menu. -->
+<!-- Project/folder card right-click menu — content built dynamically in JS. -->
 <div id="proj-ctx-menu" style="display:none;position:fixed;z-index:9300;background:var(--sig);border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,.3);padding:4px;min-width:170px"></div>
 
 <!-- ══ BIBLE MODULE PANEL ══ -->
@@ -997,7 +748,6 @@
 <div id="export-popup">
   <button id="export-pdf-btn"        onclick="doExportPDF();closeExportPopup()"           data-i18n="export.pdf"        style="display:none">Export as PDF</button>
   <button id="export-diag-pdf-btn"   onclick="openDiagPdfModal();closeExportPopup()"      data-i18n="export.diag-pdf"   style="display:none">Export Diagram as PDF</button>
-  <button id="export-slides-pdf-btn" onclick="slExportPDF();closeExportPopup()"           data-i18n="slides.export-pdf" style="display:none">Export Slides PDF</button>
   <button                            onclick="doExportJSON();closeExportPopup()"           data-i18n="export.json">Export as JSON</button>
 </div>
 
