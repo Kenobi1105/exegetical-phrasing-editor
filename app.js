@@ -5221,11 +5221,12 @@ function _collectionMemberManagerHTML(){
   const members=new Set(ACTIVE_COLLECTION.members.map(member=>member.projectId));
   const projects=projIndex();
   const listed=new Set(projects.map(project=>project.id));
-  const projectRows=projects.map(project=>{const unavailable=projIsTrashed(project),included=members.has(project.id);return `<button type="button" class="collection-member-row${included?' is-member':''}${unavailable?' is-unavailable':''}" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${project.id}')"><span>${included?'✓':'＋'}</span><span>${escH(project.name||'Untitled')}</span><small>${escH(project.verseRef||'—')}${unavailable?' · '+escH(typeof t==='function'?t('collection.trashed'):'In Trash'):''}</small></button>`;}).join('');
+  const projectRows=projects.map(project=>{const unavailable=projIsTrashed(project),included=members.has(project.id);if(included)return `<div class="collection-member-row is-member${unavailable?' is-unavailable':''}"><button type="button" class="collection-member-open" onclick="collectionOpenMember('${project.id}')" ${unavailable?'disabled':''}><span>✓</span><span>${escH(project.name||'Untitled')}</span><small>${escH(project.verseRef||'—')}${unavailable?' · '+escH(typeof t==='function'?t('collection.trashed'):'In Trash'):''}</small></button><button type="button" class="collection-member-remove" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${project.id}')" title="Remove project">×</button></div>`;return `<button type="button" class="collection-member-row${unavailable?' is-unavailable':''}" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${project.id}')" ${unavailable?'disabled':''}><span>＋</span><span>${escH(project.name||'Untitled')}</span><small>${escH(project.verseRef||'—')}${unavailable?' · '+escH(typeof t==='function'?t('collection.trashed'):'In Trash'):''}</small></button>`;}).join('');
   const missingRows=ACTIVE_COLLECTION.members.filter(member=>!listed.has(member.projectId)).map(member=>`<button type="button" class="collection-member-row is-member is-unavailable" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${member.projectId}')" title="Remove unavailable reference"><span>×</span><span>${escH(member.label||'Unavailable project')}</span><small>${escH(member.reference||'—')} · ${typeof t==='function'?t('study.attachment.unavailable'):'Unavailable'}</small></button>`).join('');
   return `<section class="collection-member-manager" aria-label="${_studyEscAttr(typeof t==='function'?t('collection.manage'):'Manage members')}"><strong>${typeof t==='function'?t('collection.manage'):'Manage members'}</strong>${projectRows||`<p>${typeof t==='function'?t('collection.member.no-project'):'Open a saved project first.'}</p>`}${missingRows}</section>`;
 }
 function collectionManageActive(){if(!ACTIVE_COLLECTION)return;COLLECTION_MEMBERS_OPEN=!COLLECTION_MEMBERS_OPEN;renderStudyNotebook();}
+async function collectionOpenMember(projectId){if(!ACTIVE_COLLECTION)return;const entry=projIndex().find(project=>project.id===projectId);if(!entry||projIsTrashed(entry)){toast(typeof t==='function'?t('study.attachment.unavailable'):'This source is no longer available.');return;}await projLoad(projectId,{keepCollection:true});COLLECTION_MEMBERS_OPEN=true;renderStudyNotebook();}
 function toggleStudyNotebook(){
   const dock=document.getElementById('study-notebook');if(!dock)return;
   const opening=dock.classList.contains('pane-hidden');
@@ -5835,14 +5836,19 @@ async function collectionCreate(){
 }
 async function collectionOpen(id){
   const data=await collectionRead(id);if(!data||collectionIsTrashed(data))return;
-  ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=false;STUDY_NOTE_ACTIVE_ID=null;
+  ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=true;STUDY_NOTE_ACTIVE_ID=null;
   // A Collection is a working workspace, not a landing-page modal. Hide the
   // landing screen before revealing its notebook dock; previously the dock
   // opened correctly but remained obscured by #s1.
   if(typeof closeProjects==='function')closeProjects();
-  document.getElementById('s1')?.classList.add('hidden');
-  document.getElementById('s2')?.classList.add('hidden');
-  const app=document.getElementById('app');if(app)app.style.display='flex';
+  const available=data.members.map(member=>projIndex().find(project=>project.id===member.projectId)).filter(project=>project&&!projIsTrashed(project)).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+  if(available.length&&available[0].id!==CURRENT_PROJECT_ID){
+    await projLoad(available[0].id,{keepCollection:true});
+  }else{
+    document.getElementById('s1')?.classList.add('hidden');
+    document.getElementById('s2')?.classList.add('hidden');
+    const app=document.getElementById('app');if(app)app.style.display='flex';
+  }
   const dock=document.getElementById('study-notebook');if(dock?.classList.contains('pane-hidden'))toggleStudyNotebook();else renderStudyNotebook();
   toast((typeof t==='function'?t('collection.opened'):'Opened collection: ')+data.name);
 }
