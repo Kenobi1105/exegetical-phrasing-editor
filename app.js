@@ -5833,7 +5833,19 @@ async function collectionCreate(){
   const now=Date.now(),data={id:collectionNewId(),name:name.trim(),createdAt:now,updatedAt:now,members:[],notebook:{entries:[],nextId:0}};
   await collectionWrite(data);await collectionOpen(data.id);
 }
-async function collectionOpen(id){const data=await collectionRead(id);if(!data||collectionIsTrashed(data))return;ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=false;STUDY_NOTE_ACTIVE_ID=null;const dock=document.getElementById('study-notebook');if(dock?.classList.contains('pane-hidden'))toggleStudyNotebook();else renderStudyNotebook();toast((typeof t==='function'?t('collection.opened'):'Opened collection: ')+data.name);}
+async function collectionOpen(id){
+  const data=await collectionRead(id);if(!data||collectionIsTrashed(data))return;
+  ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=false;STUDY_NOTE_ACTIVE_ID=null;
+  // A Collection is a working workspace, not a landing-page modal. Hide the
+  // landing screen before revealing its notebook dock; previously the dock
+  // opened correctly but remained obscured by #s1.
+  if(typeof closeProjects==='function')closeProjects();
+  document.getElementById('s1')?.classList.add('hidden');
+  document.getElementById('s2')?.classList.add('hidden');
+  const app=document.getElementById('app');if(app)app.style.display='flex';
+  const dock=document.getElementById('study-notebook');if(dock?.classList.contains('pane-hidden'))toggleStudyNotebook();else renderStudyNotebook();
+  toast((typeof t==='function'?t('collection.opened'):'Opened collection: ')+data.name);
+}
 async function collectionRename(id){const data=await collectionRead(id);if(!data)return;const name=await cModalPrompt('collection.rename.title','collection.rename.hint',data.name);if(name&&name.trim()){data.name=name.trim();await collectionWrite(data);}}
 async function collectionDuplicate(id){const source=await collectionRead(id);if(!source)return;const copy=collectionNormalise({...source,id:collectionNewId(),name:(typeof t==='function'?t('collection.copy.prefix'):'Copy of ')+source.name,createdAt:Date.now(),updatedAt:Date.now(),cloudAt:undefined,trashedAt:undefined});await collectionWrite(copy);}
 async function collectionMoveToTrash(id){const data=await collectionRead(id);if(!data)return;data.trashedAt=Date.now();await collectionWrite(data,{queue:false});if(ACTIVE_COLLECTION_ID===id){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;renderStudyNotebook();}}
