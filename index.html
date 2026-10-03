@@ -40,6 +40,9 @@
     <div class="s1-heading">
       <h1 data-i18n="s1.title">Exegetical Phrasing Editor</h1>
       <p data-i18n="s1.subtitle">Choose the original language for this session. This sets text direction and canvas layout.</p>
+      <div class="s1-version">
+        <span data-i18n="s1.app-version">Version</span> <span id="s1-version-num"></span>
+      </div>
     </div>
     <section id="s1-returning" class="s1-returning" hidden>
       <div class="s1-section-kicker" data-i18n="s1.continue.kicker">Continue working</div>
@@ -86,9 +89,6 @@
         </div>
       </div>
       </div>
-    </div>
-    <div class="s1-version">
-      <span data-i18n="s1.app-version">Version</span> <span id="s1-version-num"></span>
     </div>
     </section>
   </div>
@@ -600,10 +600,12 @@
       <aside id="study-notebook" class="pane-hidden" aria-label="Study Notebook">
         <header id="study-notebook-hdr">
           <div><span id="study-notebook-title" class="cmargin-title" data-i18n="study.notebook.title">Study Notebook</span><span id="study-notebook-count" class="study-note-count">0</span></div>
-          <button id="collection-members-btn" type="button" onclick="collectionManageActive()" data-i18n-title="collection.manage" title="Manage members" hidden>☷</button>
+          <button id="collection-members-btn" type="button" onclick="collectionManageActive()" data-i18n-title="collection.manage" title="Manage members" aria-haspopup="dialog" aria-expanded="false" hidden>☷</button>
           <button type="button" onclick="studyNotebookFormat('bold')" title="Bold"><b>B</b></button>
           <button type="button" onclick="studyNotebookFormat('italic')" title="Italic"><i>I</i></button>
         </header>
+        <nav id="collection-chapter-switcher" class="collection-chapter-switcher" aria-label="Collection chapters" hidden></nav>
+        <section id="collection-members-popover" class="collection-members-popover" role="dialog" aria-modal="false" aria-label="Manage members" hidden></section>
         <div class="study-notebook-tools">
           <input id="study-notebook-search" type="search" data-i18n-ph="study.search" placeholder="Search notebook" oninput="renderStudyNotebook()"/>
           <select id="study-notebook-filter" onchange="renderStudyNotebook()" data-i18n-aria-label="study.filter.aria" aria-label="Filter study notes">

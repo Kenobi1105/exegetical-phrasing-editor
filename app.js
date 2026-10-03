@@ -5204,7 +5204,9 @@ function _studyNoteCard(note){
 function renderStudyNotebook(){
   const list=document.getElementById('study-notebook-list');if(!list)return;
   const title=document.getElementById('study-notebook-title');if(title)title.textContent=ACTIVE_COLLECTION?ACTIVE_COLLECTION.name:(typeof t==='function'?t('study.notebook.title'):'Study Notebook');
-  const memberBtn=document.getElementById('collection-members-btn');if(memberBtn)memberBtn.hidden=!ACTIVE_COLLECTION;
+  const memberBtn=document.getElementById('collection-members-btn');if(memberBtn){memberBtn.hidden=!ACTIVE_COLLECTION;memberBtn.setAttribute('aria-expanded',String(!!ACTIVE_COLLECTION&&COLLECTION_MEMBERS_OPEN));}
+  _renderCollectionChapterSwitcher();
+  _renderCollectionMembersPopover();
   const query=(document.getElementById('study-notebook-search')?.value||'').trim().toLowerCase();
   const stage=document.getElementById('study-notebook-filter')?.value||'all';
   const entries=_studyEntries();
@@ -5212,10 +5214,21 @@ function renderStudyNotebook(){
     if(stage!=='all'&&note.stage!==stage)return false;
     return !query||_studyStripHtml(note.title+' '+note.bodyHTML+' '+(note.attachments||[]).map(a=>a.label).join(' ')).toLowerCase().includes(query);
   });
-  const members=ACTIVE_COLLECTION&&COLLECTION_MEMBERS_OPEN?_collectionMemberManagerHTML():'';
-  list.innerHTML=members+(notes.length?notes.map(_studyNoteCard).join(''):`<div class="study-notebook-empty">${typeof t==='function'?t('study.empty'):'Start with an observation, question, or insight.'}</div>`);
+  list.innerHTML=notes.length?notes.map(_studyNoteCard).join(''):`<div class="study-notebook-empty">${typeof t==='function'?t('study.empty'):'Start with an observation, question, or insight.'}</div>`;
   const total=document.getElementById('study-notebook-count');if(total)total.textContent=entries.length;
   syncWorkspaceChrome();
+}
+function _renderCollectionChapterSwitcher(){
+  const host=document.getElementById('collection-chapter-switcher');if(!host)return;
+  if(!ACTIVE_COLLECTION){host.hidden=true;host.innerHTML='';return;}
+  host.hidden=false;
+  const active=ACTIVE_COLLECTION.members.map(member=>({member,project:projIndex().find(project=>project.id===member.projectId)}));
+  host.innerHTML=`<span class="collection-chapter-label">${typeof t==='function'?t('collection.chapters'):'Chapters'}</span><div class="collection-chapter-list">${active.map(({member,project})=>{const unavailable=!project||projIsTrashed(project),selected=project?.id===CURRENT_PROJECT_ID;const label=project?.name||member.label||'Unavailable project';return `<button type="button" class="collection-chapter-btn${selected?' is-active':''}${unavailable?' is-unavailable':''}" onclick="collectionOpenMember('${member.projectId}')" ${unavailable?'disabled':''} aria-current="${selected?'page':'false'}" title="${_studyEscAttr(unavailable?(typeof t==='function'?t('study.attachment.unavailable'):'Unavailable'):label)}">${escH(label)}</button>`;}).join('')||`<span class="collection-chapter-empty">${typeof t==='function'?t('collection.empty-members'):'Add saved projects with Manage Members.'}</span>`}</div>`;
+}
+function _renderCollectionMembersPopover(){
+  const popover=document.getElementById('collection-members-popover');if(!popover)return;
+  if(!ACTIVE_COLLECTION||!COLLECTION_MEMBERS_OPEN){popover.hidden=true;popover.innerHTML='';return;}
+  popover.hidden=false;popover.innerHTML=_collectionMemberManagerHTML();
 }
 function _collectionMemberManagerHTML(){
   const members=new Set(ACTIVE_COLLECTION.members.map(member=>member.projectId));
@@ -5223,10 +5236,14 @@ function _collectionMemberManagerHTML(){
   const listed=new Set(projects.map(project=>project.id));
   const projectRows=projects.map(project=>{const unavailable=projIsTrashed(project),included=members.has(project.id);if(included)return `<div class="collection-member-row is-member${unavailable?' is-unavailable':''}"><button type="button" class="collection-member-open" onclick="collectionOpenMember('${project.id}')" ${unavailable?'disabled':''}><span>✓</span><span>${escH(project.name||'Untitled')}</span><small>${escH(project.verseRef||'—')}${unavailable?' · '+escH(typeof t==='function'?t('collection.trashed'):'In Trash'):''}</small></button><button type="button" class="collection-member-remove" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${project.id}')" title="Remove project">×</button></div>`;return `<button type="button" class="collection-member-row${unavailable?' is-unavailable':''}" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${project.id}')" ${unavailable?'disabled':''}><span>＋</span><span>${escH(project.name||'Untitled')}</span><small>${escH(project.verseRef||'—')}${unavailable?' · '+escH(typeof t==='function'?t('collection.trashed'):'In Trash'):''}</small></button>`;}).join('');
   const missingRows=ACTIVE_COLLECTION.members.filter(member=>!listed.has(member.projectId)).map(member=>`<button type="button" class="collection-member-row is-member is-unavailable" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${member.projectId}')" title="Remove unavailable reference"><span>×</span><span>${escH(member.label||'Unavailable project')}</span><small>${escH(member.reference||'—')} · ${typeof t==='function'?t('study.attachment.unavailable'):'Unavailable'}</small></button>`).join('');
-  return `<section class="collection-member-manager" aria-label="${_studyEscAttr(typeof t==='function'?t('collection.manage'):'Manage members')}"><strong>${typeof t==='function'?t('collection.manage'):'Manage members'}</strong>${projectRows||`<p>${typeof t==='function'?t('collection.member.no-project'):'Open a saved project first.'}</p>`}${missingRows}</section>`;
+  return `<div class="collection-member-manager" onfocusout="collectionPopoverFocusOut(event)"><strong>${typeof t==='function'?t('collection.manage'):'Manage members'}</strong>${projectRows||`<p>${typeof t==='function'?t('collection.member.no-project'):'Open a saved project first.'}</p>`}${missingRows}</div>`;
 }
-function collectionManageActive(){if(!ACTIVE_COLLECTION)return;COLLECTION_MEMBERS_OPEN=!COLLECTION_MEMBERS_OPEN;renderStudyNotebook();}
-async function collectionOpenMember(projectId){if(!ACTIVE_COLLECTION)return;const entry=projIndex().find(project=>project.id===projectId);if(!entry||projIsTrashed(entry)){toast(typeof t==='function'?t('study.attachment.unavailable'):'This source is no longer available.');return;}await projLoad(projectId,{keepCollection:true});COLLECTION_MEMBERS_OPEN=true;renderStudyNotebook();}
+function collectionManageActive(){if(!ACTIVE_COLLECTION)return;COLLECTION_MEMBERS_OPEN=!COLLECTION_MEMBERS_OPEN;renderStudyNotebook();if(COLLECTION_MEMBERS_OPEN)requestAnimationFrame(()=>document.querySelector('#collection-members-popover button:not(:disabled)')?.focus());}
+function collectionCloseMembers(){if(!COLLECTION_MEMBERS_OPEN)return;COLLECTION_MEMBERS_OPEN=false;renderStudyNotebook();}
+function collectionPopoverFocusOut(event){setTimeout(()=>{const popover=document.getElementById('collection-members-popover'),button=document.getElementById('collection-members-btn');if(COLLECTION_MEMBERS_OPEN&&!popover?.contains(document.activeElement)&&document.activeElement!==button)collectionCloseMembers();},0);}
+async function collectionOpenMember(projectId){if(!ACTIVE_COLLECTION)return;const entry=projIndex().find(project=>project.id===projectId);if(!entry||projIsTrashed(entry)){toast(typeof t==='function'?t('study.attachment.unavailable'):'This source is no longer available.');return;}await projLoad(projectId,{keepCollection:true});renderStudyNotebook();}
+document.addEventListener('pointerdown',event=>{if(!COLLECTION_MEMBERS_OPEN)return;const popover=document.getElementById('collection-members-popover'),button=document.getElementById('collection-members-btn');if(!popover?.contains(event.target)&&event.target!==button)collectionCloseMembers();});
+document.addEventListener('keydown',event=>{if(event.key==='Escape'&&COLLECTION_MEMBERS_OPEN){event.preventDefault();collectionCloseMembers();document.getElementById('collection-members-btn')?.focus();}});
 function toggleStudyNotebook(){
   const dock=document.getElementById('study-notebook');if(!dock)return;
   const opening=dock.classList.contains('pane-hidden');
@@ -5836,7 +5853,7 @@ async function collectionCreate(){
 }
 async function collectionOpen(id){
   const data=await collectionRead(id);if(!data||collectionIsTrashed(data))return;
-  ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=true;STUDY_NOTE_ACTIVE_ID=null;
+  ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=false;STUDY_NOTE_ACTIVE_ID=null;
   // A Collection is a working workspace, not a landing-page modal. Hide the
   // landing screen before revealing its notebook dock; previously the dock
   // opened correctly but remained obscured by #s1.
