@@ -27,6 +27,7 @@
  */
 
 const DEFAULT_TABLE_NAME = 'phrasing_projects';
+const DEFAULT_COLLECTION_TABLE_NAME = 'phrasing_study_collections';
 const DEFAULT_MIGRATION_FLAG_PREFIX = 'phrasing_editor_migrated_v1';
 const DEFAULT_SUPABASE_MODULE_URL = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
 const ALLOWED_LANGUAGE_MODES = new Set(['Hebrew', 'Greek', 'Other']);
@@ -37,6 +38,7 @@ let syncConfig = {
   supabaseAnonKey: null,
   supabaseModuleUrl: DEFAULT_SUPABASE_MODULE_URL,
   tableName: DEFAULT_TABLE_NAME,
+  collectionTableName: DEFAULT_COLLECTION_TABLE_NAME,
   redirectTo: null,
   migrationFlagPrefix: DEFAULT_MIGRATION_FLAG_PREFIX
 };
@@ -59,6 +61,7 @@ export function configurePhrasingSync(options = {}) {
     supabaseAnonKey,
     redirectTo = getDefaultRedirectUrl(),
     tableName = DEFAULT_TABLE_NAME,
+    collectionTableName = DEFAULT_COLLECTION_TABLE_NAME,
     migrationFlagPrefix = DEFAULT_MIGRATION_FLAG_PREFIX,
     supabaseModuleUrl = DEFAULT_SUPABASE_MODULE_URL
   } = options;
@@ -73,6 +76,7 @@ export function configurePhrasingSync(options = {}) {
     supabaseAnonKey,
     supabaseModuleUrl,
     tableName,
+    collectionTableName,
     redirectTo,
     migrationFlagPrefix
   };
@@ -241,6 +245,24 @@ export async function deleteProjectFromCloud(projectId) {
   } catch (error) {
     return gracefulError(error);
   }
+}
+
+/** Shared Study Collection records intentionally have their own table so
+ * project payloads remain backward-compatible chapter documents. */
+export async function saveCollectionToCloud(collectionId, collectionData) {
+  const ready=await ensureReady(); if(!ready.ok)return ready;
+  const user=await getCurrentUser(); if(!user)return skipped('signed_out');
+  if(!collectionId||!collectionData||typeof collectionData!=='object')return skipped('invalid_collection');
+  const row={id:String(collectionId),user_id:user.id,name:String(collectionData.name||'Untitled collection'),payload:collectionData};
+  try{const {data,error}=await supabase.from(syncConfig.collectionTableName).upsert(row,{onConflict:'user_id,id'}).select().single();if(error)return gracefulError(error);return {ok:true,row:data};}catch(error){return gracefulError(error);}
+}
+export async function loadAllCollectionsFromCloud(){
+  const ready=await ensureReady();if(!ready.ok)return [];const user=await getCurrentUser();if(!user)return [];
+  try{const {data,error}=await supabase.from(syncConfig.collectionTableName).select('id,name,payload,created_at,updated_at').eq('user_id',user.id).order('updated_at',{ascending:false});return error?[]:(data||[]);}catch(_){return [];}
+}
+export async function deleteCollectionFromCloud(collectionId){
+  const ready=await ensureReady();if(!ready.ok)return ready;const user=await getCurrentUser();if(!user)return skipped('signed_out');if(!collectionId)return skipped('invalid_collection');
+  try{const {error}=await supabase.from(syncConfig.collectionTableName).delete().eq('user_id',user.id).eq('id',String(collectionId));return error?gracefulError(error):{ok:true};}catch(error){return gracefulError(error);}
 }
 
 /**

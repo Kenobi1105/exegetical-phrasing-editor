@@ -27,6 +27,7 @@
 const ACCT_OAUTH_PENDING_KEY = 'exeg-acct-oauth-pending';
 const ACCT_SEEN_SIGNIN_KEY   = 'exeg-acct-seen-signin';
 const ACCT_DELETE_QUEUE_KEY  = 'exeg-cloud-delete-queue';
+const ACCT_COLLECTION_DELETE_QUEUE_KEY='exeg-cloud-collection-delete-queue';
 const ACCT_LAST_SYNCED_KEY   = 'exeg-acct-last-synced';
 const ACCT_FLUSH_INTERVAL_MS = 30000;
 
@@ -37,6 +38,8 @@ const ACCT = {
   busy: false,
   dirty: new Set(),
   pushCache: {},
+  collectionDirty: new Set(),
+  collectionPushCache: {},
   flushing: false,
   lastSyncedAt: null, // ms epoch, persisted across reloads — see acctReadLastSynced/acctWriteLastSynced
   _unsub: null,
@@ -169,7 +172,7 @@ async function acctSignOut(){
   if(ACCT._unsub){ try{ ACCT._unsub(); }catch(_e){} ACCT._unsub=null; }
   acctStopFlusher();
   ACCT.state='signed_out'; ACCT.user=null;
-  ACCT.dirty.clear(); ACCT.pushCache={}; ACCT._pulledOnce=false;
+  ACCT.dirty.clear(); ACCT.pushCache={}; ACCT.collectionDirty.clear(); ACCT.collectionPushCache={}; ACCT._pulledOnce=false;
   acctRenderBadges();
   acctRender();
   toast(typeof t==='function'?t('account.toast.signed-out'):'Signed out. Your projects stay on this device.');
@@ -178,7 +181,7 @@ async function acctSignOut(){
 async function acctSyncNow(){
   if(ACCT.state!=='ready') return;
   acctSetBusy(true);
-  try{ await acctFlushDirty(); await acctFlushDeleteQueue(); await acctPull(); }
+  try{ await acctFlushDirty(); await acctFlushDeleteQueue(); await acctFlushCollections(); await acctFlushCollectionDeleteQueue(); await acctPull(); await acctPullCollections(); }
   catch(_e){}
   acctSetBusy(false);
   acctStampLastSynced();
@@ -212,15 +215,24 @@ async function acctMigrateThenPull(){
       toast(typeof t==='function'?t('account.toast.migrated'):'Local projects uploaded to your account');
     }
   }catch(_e){}
-  try{ await acctFlushDeleteQueue(); }catch(_e){}
+  // Collections have their own local store and intentionally do not use the
+  // project migration flag. Queue only records that have never reached cloud;
+  // existing cloud-backed records are reconciled by acctPullCollections.
+  try{await acctQueueUnsyncedCollections();}catch(_e){}
+  try{ await acctFlushDeleteQueue();await acctFlushCollectionDeleteQueue(); }catch(_e){}
   // Flush any locally-dirty projects BEFORE pulling — otherwise a project
   // edited in a prior session but never pushed (e.g. tab closed before the
   // 30s flush timer fired) is vulnerable to being silently outraced by a
   // cloud row on this very first pull, before acctPull()'s own dirty-check
   // ever gets a chance to protect it (mirrors acctSyncNow's ordering).
-  try{ await acctFlushDirty(); }catch(_e){}
-  try{ await acctPull(); }catch(_e){}
+  try{ await acctFlushDirty();await acctFlushCollections(); }catch(_e){}
+  try{ await acctPull();await acctPullCollections(); }catch(_e){}
   acctStampLastSynced();
+}
+
+async function acctQueueUnsyncedCollections(){
+  if(typeof collectionIndex!=='function'||typeof collectionRead!=='function')return;
+  for(const entry of collectionIndex())if(!collectionIsTrashed(entry)&&!entry.cloudAt){const data=await collectionRead(entry.id);if(data)acctQueueCollectionPush(entry.id,data,false);}
 }
 
 async function acctPull(){
@@ -432,9 +444,36 @@ function acctStampCloudAt(id, iso){
 function acctReadDeleteQueue(){ try{ return JSON.parse(localStorage.getItem(ACCT_DELETE_QUEUE_KEY)||'[]'); }catch(_e){ return []; } }
 function acctWriteDeleteQueue(q){ try{ localStorage.setItem(ACCT_DELETE_QUEUE_KEY, JSON.stringify(q)); }catch(_e){} }
 
+/* ── Study Collection sync: independent records, conflict copies only ── */
+function acctQueueCollectionPush(id,data,immediate){if(!id)return;id=String(id);ACCT.collectionDirty.add(id);ACCT.collectionPushCache[id]=data;if(immediate)acctFlushCollections();}
+function acctQueueCollectionDelete(id){if(!id)return;id=String(id);ACCT.collectionDirty.delete(id);delete ACCT.collectionPushCache[id];const q=acctReadCollectionDeleteQueue();if(!q.includes(id)){q.push(id);acctWriteCollectionDeleteQueue(q);}acctFlushCollectionDeleteQueue();}
+function acctReadCollectionDeleteQueue(){try{return JSON.parse(localStorage.getItem(ACCT_COLLECTION_DELETE_QUEUE_KEY)||'[]');}catch(_){return [];}}
+function acctWriteCollectionDeleteQueue(q){try{localStorage.setItem(ACCT_COLLECTION_DELETE_QUEUE_KEY,JSON.stringify(q));}catch(_){}}
+async function acctFlushCollections(){
+  const S=_sync();if(!S||ACCT.state!=='ready'||!ACCT.collectionDirty.size)return;
+  for(const id of Array.from(ACCT.collectionDirty))try{
+    let data=ACCT.collectionPushCache[id];if(!data&&typeof collectionRead==='function')data=await collectionRead(id);
+    if(!data){ACCT.collectionDirty.delete(id);continue;}
+    const res=await S.saveCollectionToCloud(id,data);if(res.ok){ACCT.collectionDirty.delete(id);delete ACCT.collectionPushCache[id];const iso=res.row?.updated_at;if(iso&&typeof collectionRead==='function'){const local=await collectionRead(id);if(local){local.cloudAt=Date.parse(iso);await collectionWrite(local,{queue:false});}}}
+  }catch(_){}
+}
+async function acctFlushCollectionDeleteQueue(){const S=_sync();if(!S||ACCT.state!=='ready')return;const remain=[];for(const id of acctReadCollectionDeleteQueue())try{const res=await S.deleteCollectionFromCloud(id);if(!res.ok)remain.push(id);}catch(_){remain.push(id);}acctWriteCollectionDeleteQueue(remain);}
+async function acctPullCollections(){
+  const S=_sync();if(!S||ACCT.state!=='ready'||typeof collectionIndex!=='function')return;let rows=[];try{rows=await S.loadAllCollectionsFromCloud();}catch(_){return;}
+  const index=collectionIndex(),deleting=new Set(acctReadCollectionDeleteQueue());let changed=false;
+  for(const row of rows){const id=String(row.id);if(deleting.has(id))continue;const existing=index.find(item=>item.id===id);if(existing&&collectionIsTrashed(existing))continue;const remoteTime=row.updated_at?Date.parse(row.updated_at):0;
+    if(existing&&ACCT.collectionDirty.has(id)){const copy=collectionNormalise({...row.payload,id:collectionNewId(),name:(typeof t==='function'?t('collection.conflict.prefix'):'Conflict copy — ')+(row.name||row.payload?.name||'Untitled collection'),cloudAt:remoteTime});await cIdbSet(copy.id,JSON.stringify(copy));index.unshift(collectionSummary(copy));changed=true;continue;}
+    if(existing&&remoteTime<=(existing.savedAt||0))continue;
+    const data=collectionNormalise({...row.payload,id,name:row.name||row.payload?.name,cloudAt:remoteTime,updatedAt:remoteTime||Date.now()});await cIdbSet(id,JSON.stringify(data));if(existing)Object.assign(existing,collectionSummary(data));else index.unshift(collectionSummary(data));changed=true;
+  }
+  const cloudIds=new Set(rows.map(row=>String(row.id)));
+  for(const item of index.slice())if(!cloudIds.has(item.id)&&item.cloudAt&&!collectionIsTrashed(item)&&!ACCT.collectionDirty.has(item.id)&&!deleting.has(item.id)){try{await cIdbDelete(item.id);index.splice(index.indexOf(item),1);changed=true;}catch(_){}}
+  if(changed){collectionStoreIndex(index);if(typeof renderProjPanel==='function')renderProjPanel();if(typeof renderS1Recent==='function')renderS1Recent();}
+}
+
 function acctStartFlusher(){
   if(ACCT._flushTimer) return;
-  ACCT._flushTimer=setInterval(()=>{ acctFlushDirty(); acctFlushDeleteQueue(); }, ACCT_FLUSH_INTERVAL_MS);
+  ACCT._flushTimer=setInterval(()=>{ acctFlushDirty(); acctFlushDeleteQueue(); acctFlushCollections(); acctFlushCollectionDeleteQueue(); }, ACCT_FLUSH_INTERVAL_MS);
   document.addEventListener('visibilitychange', acctOnVisibilityChange);
   window.addEventListener('online', acctOnOnline);
 }
@@ -443,11 +482,11 @@ function acctStopFlusher(){
   document.removeEventListener('visibilitychange', acctOnVisibilityChange);
   window.removeEventListener('online', acctOnOnline);
 }
-function acctOnVisibilityChange(){ if(document.visibilityState==='hidden'){ acctFlushDirty(); acctFlushDeleteQueue(); } }
+function acctOnVisibilityChange(){ if(document.visibilityState==='hidden'){ acctFlushDirty(); acctFlushDeleteQueue(); acctFlushCollections(); acctFlushCollectionDeleteQueue(); } }
 async function acctOnOnline(){
-  await acctFlushDirty(); await acctFlushDeleteQueue();
+  await acctFlushDirty(); await acctFlushDeleteQueue(); await acctFlushCollections(); await acctFlushCollectionDeleteQueue();
   if(ACCT.state!=='ready') return;
-  await acctPull();
+  await acctPull(); await acctPullCollections();
   acctStampLastSynced();
 }
 

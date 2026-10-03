@@ -64,6 +64,34 @@ for select
 to authenticated
 using ((select auth.uid()) = user_id);
 
+-- Shared cross-chapter notebooks and project membership references. This is
+-- intentionally a separate record type: existing chapter project payloads
+-- remain compatible and are never embedded in a Collection.
+create table if not exists public.phrasing_study_collections (
+  id text not null,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  name text not null default 'Untitled collection',
+  payload jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (user_id, id)
+);
+create index if not exists phrasing_study_collections_user_updated_idx on public.phrasing_study_collections (user_id, updated_at desc);
+create or replace function public.set_phrasing_study_collections_updated_at() returns trigger language plpgsql security invoker set search_path = public as $$ begin new.updated_at = now(); return new; end; $$;
+drop trigger if exists set_phrasing_study_collections_updated_at on public.phrasing_study_collections;
+create trigger set_phrasing_study_collections_updated_at before update on public.phrasing_study_collections for each row execute function public.set_phrasing_study_collections_updated_at();
+alter table public.phrasing_study_collections enable row level security;
+revoke all on public.phrasing_study_collections from anon;
+grant select, insert, update, delete on public.phrasing_study_collections to authenticated;
+drop policy if exists "phrasing_study_collections_select_own" on public.phrasing_study_collections;
+create policy "phrasing_study_collections_select_own" on public.phrasing_study_collections for select to authenticated using ((select auth.uid()) = user_id);
+drop policy if exists "phrasing_study_collections_insert_own" on public.phrasing_study_collections;
+create policy "phrasing_study_collections_insert_own" on public.phrasing_study_collections for insert to authenticated with check ((select auth.uid()) = user_id);
+drop policy if exists "phrasing_study_collections_update_own" on public.phrasing_study_collections;
+create policy "phrasing_study_collections_update_own" on public.phrasing_study_collections for update to authenticated using ((select auth.uid()) = user_id) with check ((select auth.uid()) = user_id);
+drop policy if exists "phrasing_study_collections_delete_own" on public.phrasing_study_collections;
+create policy "phrasing_study_collections_delete_own" on public.phrasing_study_collections for delete to authenticated using ((select auth.uid()) = user_id);
+
 drop policy if exists "phrasing_projects_insert_own"
   on public.phrasing_projects;
 create policy "phrasing_projects_insert_own"

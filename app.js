@@ -4997,7 +4997,8 @@ function syncWorkspaceChrome(state){
   document.getElementById('btn-cmt-pane')?.classList.toggle('active',!!cm&&!cm.classList.contains('pane-hidden'));
   const notebook=document.getElementById('study-notebook');
   const notebookCount=document.getElementById('workspace-notebook-count');
-  if(notebookCount){notebookCount.textContent=STUDY_NOTEBOOK.length;notebookCount.style.display=STUDY_NOTEBOOK.length?'flex':'none';}
+  const notebookEntries=_studyEntries();
+  if(notebookCount){notebookCount.textContent=notebookEntries.length;notebookCount.style.display=notebookEntries.length?'flex':'none';}
   document.getElementById('btn-study-notebook')?.classList.toggle('active',!!notebook&&!notebook.classList.contains('pane-hidden'));
   _refreshWorkspaceToolSections();
 }
@@ -5092,23 +5093,31 @@ function _studyStripHtml(html){
   return (node.textContent||'').replace(/\s+/g,' ').trim();
 }
 function _studyEscAttr(value){return escH(String(value||'')).replace(/"/g,'&quot;');}
-function _studyFind(id){return STUDY_NOTEBOOK.find(note=>note.id===id);}
+function _studyEntries(){return ACTIVE_COLLECTION?.notebook?.entries||STUDY_NOTEBOOK;}
+function _studyFind(id){return _studyEntries().find(note=>note.id===id);}
+function _studyCommit(){
+  if(ACTIVE_COLLECTION){ collectionSaveActive(); }
+  else autoSave();
+}
 function _studyReferenceForRow(rid){
   const row=document.querySelector(`.xrow[data-rid="${rid}"]`);
   if(!row) return null;
   const line=row.querySelector('.lid')?.textContent||'';
   const verse=row.querySelector('.vin')?.value||'';
   const text=_studyStripHtml(row.querySelector(`#oc-${rid} .cedit`)?.innerHTML||'');
-  return {type:'row',rid:String(rid),label:(line&&line!=='—'?line:(verse?'v'+verse:'Line'))+(text?' · '+text.slice(0,54):''),snapshot:{line,verse,text}};
+  return {type:'row',projectId:CURRENT_PROJECT_ID||null,rid:String(rid),label:(line&&line!=='—'?line:(verse?'v'+verse:'Line'))+(text?' · '+text.slice(0,54):''),snapshot:{line,verse,text}};
 }
 function studyNotebookCurrentAttachment(){
   if(EDITOR_VIEW==='diagram'&&SELECTED_DIAG_RID){const link=_studyReferenceForRow(SELECTED_DIAG_RID);if(link)link.view='diagram';return link;}
   if(lastFocusedRowEl?.dataset?.rid){return _studyReferenceForRow(lastFocusedRowEl.dataset.rid);}
   const bibleSel=window.studyNotebookBibleSelection;
-  if(bibleSel) return {...bibleSel};
+  if(bibleSel) return {...bibleSel,projectId:ACTIVE_COLLECTION?(CURRENT_PROJECT_ID||null):bibleSel.projectId};
+  if(ACTIVE_COLLECTION&&CURRENT_PROJECT_ID){const project=projIndex().find(item=>item.id===CURRENT_PROJECT_ID);if(project)return {type:'project',projectId:project.id,label:project.name||'Project',snapshot:{reference:project.verseRef||'',name:project.name||''}};}
   return null;
 }
 function studyNotebookAttachmentAvailable(link){
+  if(link.projectId&&link.projectId!==CURRENT_PROJECT_ID){const entry=projIndex().find(item=>item.id===link.projectId);return !!entry&&!projIsTrashed(entry);}
+  if(link.type==='project') return true;
   if(link.type==='row') return !!document.querySelector(`.xrow[data-rid="${link.rid}"]`);
   if(link.type==='bible') return true;
   return false;
@@ -5117,24 +5126,25 @@ function studyNotebookSave(id,field,el){
   const note=_studyFind(id);if(!note) return;
   note[field]=field==='bodyHTML'?el.innerHTML:el.textContent;
   note.updatedAt=Date.now();STUDY_NOTE_ACTIVE_ID=id;
-  autoSave();
+  _studyCommit();
 }
 function studyNotebookSetStage(id,value){
   const note=_studyFind(id);if(!note||!STUDY_STAGES.includes(value)) return;
-  note.stage=value;note.updatedAt=Date.now();autoSave();renderStudyNotebook();
+  note.stage=value;note.updatedAt=Date.now();_studyCommit();renderStudyNotebook();
 }
 function studyNotebookDelete(id){
   const note=_studyFind(id);if(!note) return;
   if(!confirm(typeof t==='function'?t('study.delete.confirm'):'Delete this notebook entry?')) return;
-  STUDY_NOTEBOOK=STUDY_NOTEBOOK.filter(item=>item.id!==id);
+  if(ACTIVE_COLLECTION) ACTIVE_COLLECTION.notebook.entries=_studyEntries().filter(item=>item.id!==id);
+  else STUDY_NOTEBOOK=STUDY_NOTEBOOK.filter(item=>item.id!==id);
   if(STUDY_NOTE_ACTIVE_ID===id)STUDY_NOTE_ACTIVE_ID=null;
-  autoSave();renderStudyNotebook();syncWorkspaceChrome();
+  _studyCommit();renderStudyNotebook();syncWorkspaceChrome();
 }
 function addStudyNote(stage){
   const filter=document.getElementById('study-notebook-filter')?.value||'observation';
   const note={id:_studyNewId(),stage:STUDY_STAGES.includes(stage)?stage:(STUDY_STAGES.includes(filter)?filter:'observation'),title:'',bodyHTML:'',attachments:[],createdAt:Date.now(),updatedAt:Date.now()};
-  STUDY_NOTEBOOK.unshift(note);STUDY_NOTE_ACTIVE_ID=note.id;
-  renderStudyNotebook();syncWorkspaceChrome();autoSave();
+  _studyEntries().unshift(note);STUDY_NOTE_ACTIVE_ID=note.id;
+  renderStudyNotebook();syncWorkspaceChrome();_studyCommit();
   requestAnimationFrame(()=>document.querySelector(`.study-note-title[data-note-id="${note.id}"]`)?.focus());
 }
 function studyNotebookAttachCurrent(id){
@@ -5144,11 +5154,11 @@ function studyNotebookAttachCurrent(id){
   note.attachments=Array.isArray(note.attachments)?note.attachments:[];
   const duplicate=note.attachments.some(item=>item.type===attachment.type&&item.rid===attachment.rid&&item.reference===attachment.reference);
   if(!duplicate) note.attachments.push(attachment);
-  note.updatedAt=Date.now();autoSave();renderStudyNotebook();
+  note.updatedAt=Date.now();_studyCommit();renderStudyNotebook();
 }
 function studyNotebookDetach(id,index){
   const note=_studyFind(id);if(!note||!note.attachments?.[index]) return;
-  note.attachments.splice(index,1);note.updatedAt=Date.now();autoSave();renderStudyNotebook();
+  note.attachments.splice(index,1);note.updatedAt=Date.now();_studyCommit();renderStudyNotebook();
 }
 function studyNotebookFormat(command){
   const active=document.activeElement;
@@ -5157,9 +5167,15 @@ function studyNotebookFormat(command){
   const id=active.dataset.noteId;
   if(id) studyNotebookSave(id,active.classList.contains('study-note-title')?'title':'bodyHTML',active);
 }
-function studyNotebookJump(link){
+async function studyNotebookJump(link){
   if(!link)return;
+  if(link.projectId&&link.projectId!==CURRENT_PROJECT_ID){
+    const entry=projIndex().find(item=>item.id===link.projectId);
+    if(!entry||projIsTrashed(entry)){toast(typeof t==='function'?t('study.attachment.unavailable'):'This source is no longer available.');return;}
+    await projLoad(link.projectId,{keepCollection:true});
+  }
   if(link.type==='bible'&&typeof window.bOpenNotebookVerse==='function'){window.bOpenNotebookVerse(link);return;}
+  if(link.type==='project') return;
   if(link.type!=='row'||!studyNotebookAttachmentAvailable(link)){toast(typeof t==='function'?t('study.attachment.unavailable'):'This source is no longer available.');return;}
   if(link.view==='diagram'){
     if(EDITOR_VIEW!=='diagram')setEditorView('diagram');
@@ -5187,16 +5203,29 @@ function _studyNoteCard(note){
 }
 function renderStudyNotebook(){
   const list=document.getElementById('study-notebook-list');if(!list)return;
+  const title=document.getElementById('study-notebook-title');if(title)title.textContent=ACTIVE_COLLECTION?ACTIVE_COLLECTION.name:(typeof t==='function'?t('study.notebook.title'):'Study Notebook');
+  const memberBtn=document.getElementById('collection-members-btn');if(memberBtn)memberBtn.hidden=!ACTIVE_COLLECTION;
   const query=(document.getElementById('study-notebook-search')?.value||'').trim().toLowerCase();
   const stage=document.getElementById('study-notebook-filter')?.value||'all';
-  const notes=STUDY_NOTEBOOK.filter(note=>{
+  const entries=_studyEntries();
+  const notes=entries.filter(note=>{
     if(stage!=='all'&&note.stage!==stage)return false;
     return !query||_studyStripHtml(note.title+' '+note.bodyHTML+' '+(note.attachments||[]).map(a=>a.label).join(' ')).toLowerCase().includes(query);
   });
-  list.innerHTML=notes.length?notes.map(_studyNoteCard).join(''):`<div class="study-notebook-empty">${typeof t==='function'?t('study.empty'):'Start with an observation, question, or insight.'}</div>`;
-  const total=document.getElementById('study-notebook-count');if(total)total.textContent=STUDY_NOTEBOOK.length;
+  const members=ACTIVE_COLLECTION&&COLLECTION_MEMBERS_OPEN?_collectionMemberManagerHTML():'';
+  list.innerHTML=members+(notes.length?notes.map(_studyNoteCard).join(''):`<div class="study-notebook-empty">${typeof t==='function'?t('study.empty'):'Start with an observation, question, or insight.'}</div>`);
+  const total=document.getElementById('study-notebook-count');if(total)total.textContent=entries.length;
   syncWorkspaceChrome();
 }
+function _collectionMemberManagerHTML(){
+  const members=new Set(ACTIVE_COLLECTION.members.map(member=>member.projectId));
+  const projects=projIndex();
+  const listed=new Set(projects.map(project=>project.id));
+  const projectRows=projects.map(project=>{const unavailable=projIsTrashed(project),included=members.has(project.id);return `<button type="button" class="collection-member-row${included?' is-member':''}${unavailable?' is-unavailable':''}" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${project.id}')"><span>${included?'✓':'＋'}</span><span>${escH(project.name||'Untitled')}</span><small>${escH(project.verseRef||'—')}${unavailable?' · '+escH(typeof t==='function'?t('collection.trashed'):'In Trash'):''}</small></button>`;}).join('');
+  const missingRows=ACTIVE_COLLECTION.members.filter(member=>!listed.has(member.projectId)).map(member=>`<button type="button" class="collection-member-row is-member is-unavailable" onclick="collectionToggleMember('${ACTIVE_COLLECTION.id}','${member.projectId}')" title="Remove unavailable reference"><span>×</span><span>${escH(member.label||'Unavailable project')}</span><small>${escH(member.reference||'—')} · ${typeof t==='function'?t('study.attachment.unavailable'):'Unavailable'}</small></button>`).join('');
+  return `<section class="collection-member-manager" aria-label="${_studyEscAttr(typeof t==='function'?t('collection.manage'):'Manage members')}"><strong>${typeof t==='function'?t('collection.manage'):'Manage members'}</strong>${projectRows||`<p>${typeof t==='function'?t('collection.member.no-project'):'Open a saved project first.'}</p>`}${missingRows}</section>`;
+}
+function collectionManageActive(){if(!ACTIVE_COLLECTION)return;COLLECTION_MEMBERS_OPEN=!COLLECTION_MEMBERS_OPEN;renderStudyNotebook();}
 function toggleStudyNotebook(){
   const dock=document.getElementById('study-notebook');if(!dock)return;
   const opening=dock.classList.contains('pane-hidden');
@@ -5730,8 +5759,14 @@ const PROJ_AUTOSAVE_KEY='exeg-autosave-current'; // tracks which project is "ope
 // field, and adding one is a schema migration out of scope here. A project
 // entry's folderId is deliberately never included in acctCloudPayload().
 const PROJ_FOLDERS_KEY='exeg-proj-folders';
+const COLLECTION_INDEX_KEY='exeg-study-collections-index';
+const COLLECTION_TRASH_RETENTION_MS=30*24*60*60*1000;
 
 let CURRENT_PROJECT_ID=null; // null = new unsaved project
+let ACTIVE_COLLECTION_ID=null;
+let ACTIVE_COLLECTION=null;
+let COLLECTION_MEMBERS_OPEN=false;
+let collectionSaveTimer=null;
 
 function projIndex(){
   try{ return JSON.parse(localStorage.getItem(PROJ_INDEX_KEY)||'[]'); }
@@ -5760,12 +5795,53 @@ function projSaveFolders(folders){
 let projIdb=null;
 async function pOpenIDB(){
   return new Promise((res,rej)=>{
-    const r=indexedDB.open('exeg-proj-v1',1);
-    r.onupgradeneeded=e=>e.target.result.createObjectStore('projdata');
+    const r=indexedDB.open('exeg-proj-v1',2);
+    r.onupgradeneeded=e=>{const db=e.target.result;if(!db.objectStoreNames.contains('projdata'))db.createObjectStore('projdata');if(!db.objectStoreNames.contains('collections'))db.createObjectStore('collections');};
     r.onsuccess=e=>res(e.target.result);
     r.onerror=()=>rej(r.error);
   });
 }
+async function cIdbGet(id){if(!projIdb)projIdb=await pOpenIDB();return new Promise((res,rej)=>{const r=projIdb.transaction('collections','readonly').objectStore('collections').get(id);r.onsuccess=e=>res(e.target.result);r.onerror=()=>rej(r.error);});}
+async function cIdbSet(id,val){if(!projIdb)projIdb=await pOpenIDB();return new Promise((res,rej)=>{const r=projIdb.transaction('collections','readwrite').objectStore('collections').put(val,id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});}
+async function cIdbDelete(id){if(!projIdb)projIdb=await pOpenIDB();return new Promise((res,rej)=>{const r=projIdb.transaction('collections','readwrite').objectStore('collections').delete(id);r.onsuccess=()=>res();r.onerror=()=>rej(r.error);});}
+
+/* ── Study Collections: shared, project-independent research records ── */
+function collectionIndex(){try{return JSON.parse(localStorage.getItem(COLLECTION_INDEX_KEY)||'[]');}catch(_){return [];}}
+function collectionStoreIndex(items){try{localStorage.setItem(COLLECTION_INDEX_KEY,JSON.stringify(items));}catch(_){}}
+function collectionNewId(){return 'collection-'+Date.now()+'-'+Math.random().toString(36).slice(2,8);}
+function collectionIsTrashed(item){return Number.isFinite(item?.trashedAt)&&item.trashedAt>0;}
+function collectionActiveEntries(){return collectionIndex().filter(item=>!collectionIsTrashed(item));}
+function collectionSummary(data){return {id:data.id,name:data.name||'Untitled collection',savedAt:data.updatedAt||Date.now(),trashedAt:data.trashedAt,memberCount:(data.members||[]).length,cloudAt:data.cloudAt};}
+function collectionNormalise(data){
+  const raw=data&&typeof data==='object'?data:{};
+  return {id:String(raw.id||collectionNewId()),name:String(raw.name||'Untitled collection'),createdAt:Number(raw.createdAt)||Date.now(),updatedAt:Number(raw.updatedAt)||Date.now(),trashedAt:Number(raw.trashedAt)||undefined,cloudAt:Number(raw.cloudAt)||undefined,members:Array.isArray(raw.members)?raw.members.filter(m=>m&&m.projectId).map(m=>({projectId:String(m.projectId),label:String(m.label||''),reference:String(m.reference||''),addedAt:Number(m.addedAt)||Date.now()})):[],notebook:{entries:Array.isArray(raw.notebook?.entries)?raw.notebook.entries:[],nextId:Number(raw.notebook?.nextId)||0}};
+}
+async function collectionRead(id){try{const raw=await cIdbGet(id);return raw?collectionNormalise(JSON.parse(raw)):null;}catch(_){return null;}}
+async function collectionWrite(data,{queue=true}={}){
+  const collection=collectionNormalise(data);collection.updatedAt=Date.now();
+  await cIdbSet(collection.id,JSON.stringify(collection));
+  const idx=collectionIndex(),pos=idx.findIndex(item=>item.id===collection.id),summary=collectionSummary(collection);
+  if(pos===-1)idx.unshift(summary);else idx[pos]=summary;
+  collectionStoreIndex(idx);
+  if(queue&&typeof acctQueueCollectionPush==='function'&&!collectionIsTrashed(collection))acctQueueCollectionPush(collection.id,collection,true);
+  if(ACTIVE_COLLECTION_ID===collection.id){ACTIVE_COLLECTION=collection;}
+  renderProjPanel();renderS1Recent();return collection;
+}
+function collectionSaveActive(){if(!ACTIVE_COLLECTION)return;const pending=ACTIVE_COLLECTION;clearTimeout(collectionSaveTimer);collectionSaveTimer=setTimeout(async()=>{try{await collectionWrite(pending);}catch(_){toast(typeof t==='function'?t('toast.storage-full'):'Storage full');}},450);}
+async function collectionCreate(){
+  const name=await cModalPrompt('collection.create.title','collection.create.hint','');if(!name||!name.trim())return;
+  const now=Date.now(),data={id:collectionNewId(),name:name.trim(),createdAt:now,updatedAt:now,members:[],notebook:{entries:[],nextId:0}};
+  await collectionWrite(data);await collectionOpen(data.id);
+}
+async function collectionOpen(id){const data=await collectionRead(id);if(!data||collectionIsTrashed(data))return;ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=false;STUDY_NOTE_ACTIVE_ID=null;const dock=document.getElementById('study-notebook');if(dock?.classList.contains('pane-hidden'))toggleStudyNotebook();else renderStudyNotebook();toast((typeof t==='function'?t('collection.opened'):'Opened collection: ')+data.name);}
+async function collectionRename(id){const data=await collectionRead(id);if(!data)return;const name=await cModalPrompt('collection.rename.title','collection.rename.hint',data.name);if(name&&name.trim()){data.name=name.trim();await collectionWrite(data);}}
+async function collectionDuplicate(id){const source=await collectionRead(id);if(!source)return;const copy=collectionNormalise({...source,id:collectionNewId(),name:(typeof t==='function'?t('collection.copy.prefix'):'Copy of ')+source.name,createdAt:Date.now(),updatedAt:Date.now(),cloudAt:undefined,trashedAt:undefined});await collectionWrite(copy);}
+async function collectionMoveToTrash(id){const data=await collectionRead(id);if(!data)return;data.trashedAt=Date.now();await collectionWrite(data,{queue:false});if(ACTIVE_COLLECTION_ID===id){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;renderStudyNotebook();}}
+async function collectionRestore(id){const data=await collectionRead(id);if(!data)return;delete data.trashedAt;await collectionWrite(data);}
+async function collectionDeletePermanently(id){const data=await collectionRead(id);if(!data||!confirm(typeof t==='function'?t('collection.delete.confirm'):'Permanently delete this collection?'))return;await cIdbDelete(id);collectionStoreIndex(collectionIndex().filter(item=>item.id!==id));if(typeof acctQueueCollectionDelete==='function')acctQueueCollectionDelete(id);if(ACTIVE_COLLECTION_ID===id){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;renderStudyNotebook();}renderProjPanel();renderS1Recent();}
+async function collectionToggleMember(collectionId,projectId){const data=await collectionRead(collectionId);if(!data)return;const at=data.members.findIndex(item=>item.projectId===projectId);if(at>=0){data.members.splice(at,1);await collectionWrite(data);if(ACTIVE_COLLECTION_ID===collectionId)renderStudyNotebook();return;}const project=projIndex().find(item=>item.id===projectId);if(!project)return;data.members.push({projectId,label:project.name||'Untitled',reference:project.verseRef||'',addedAt:Date.now()});await collectionWrite(data);if(ACTIVE_COLLECTION_ID===collectionId)renderStudyNotebook();}
+async function collectionAddCurrent(id){if(!CURRENT_PROJECT_ID){toast(typeof t==='function'?t('collection.member.no-project'):'Open a saved project first.');return;}await collectionToggleMember(id,CURRENT_PROJECT_ID);}
+async function collectionPurgeTrash(){const expired=collectionIndex().filter(item=>collectionIsTrashed(item)&&Date.now()-item.trashedAt>=COLLECTION_TRASH_RETENTION_MS);for(const item of expired){await cIdbDelete(item.id);if(typeof acctQueueCollectionDelete==='function')acctQueueCollectionDelete(item.id);}if(expired.length)collectionStoreIndex(collectionIndex().filter(item=>!expired.some(x=>x.id===item.id)));}
 async function pIdbGet(id){
   if(!projIdb) projIdb=await pOpenIDB();
   return new Promise((res,rej)=>{
@@ -5885,8 +5961,9 @@ async function projSave(showPanel){
   if(typeof acctQueuePush==='function') acctQueuePush(id,data,name,true);
 }
 
-async function projLoad(id){
+async function projLoad(id,options={}){
   try{
+    if(!options.keepCollection){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;}
     if(projIsTrashed(projIndex().find(entry=>entry.id===id))) return;
     // IndexedDB is the primary store; fall back to legacy localStorage if
     // a specific id somehow wasn't migrated (or IDB is unreachable) —
@@ -6044,14 +6121,16 @@ function projValidPayload(data){
     (!Object.prototype.hasOwnProperty.call(data,'rows')||Array.isArray(data.rows))&&
     (!Object.prototype.hasOwnProperty.call(data,'cmts')||Array.isArray(data.cmts));
 }
+function collectionValidPayload(data){return !!data&&typeof data==='object'&&!Array.isArray(data)&&typeof data.id==='string'&&typeof data.name==='string'&&Array.isArray(data.members)&&data.notebook&&Array.isArray(data.notebook.entries);}
 
 async function projCreateBackup(){
   const entries=projIndex();
-  if(!entries.length){toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');return;}
+  const collections=collectionIndex();
+  if(!entries.length&&!collections.length){toast(typeof t==='function'?t('toast.no-projects-export'):'No projects saved.');return;}
   try{
     await _loadJSZip();
     const zip=new JSZip();
-    const manifest={kind:PROJ_BACKUP_KIND,version:PROJ_BACKUP_VERSION,createdAt:Date.now(),folders:projFolders(),projects:[]};
+    const manifest={kind:PROJ_BACKUP_KIND,version:PROJ_BACKUP_VERSION,createdAt:Date.now(),folders:projFolders(),projects:[],collections:[]};
     for(const entry of entries){
       let raw=null;
       try{raw=await pIdbGet(entry.id);}catch(_e){}
@@ -6063,7 +6142,12 @@ async function projCreateBackup(){
       zip.file(path,raw);
       manifest.projects.push({entry,path});
     }
-    if(!manifest.projects.length) throw new Error('empty-backup');
+    for(const entry of collections){
+      const raw=await cIdbGet(entry.id);if(!raw)throw new Error('missing-collection');
+      const data=JSON.parse(raw);if(!collectionValidPayload(data))throw new Error('invalid-collection');
+      const path='collections/'+entry.id+'.json';zip.file(path,raw);manifest.collections.push({entry,path});
+    }
+    if(!manifest.projects.length&&!manifest.collections.length) throw new Error('empty-backup');
     zip.file('manifest.json',JSON.stringify(manifest,null,2));
     const blob=await zip.generateAsync({type:'blob'});
     _downloadBlob(blob,'ExegProjectBackup_'+_dateStamp()+'.zip');
@@ -6083,7 +6167,7 @@ async function projRestoreBackupFile(file){
     const manifestFile=zip.file('manifest.json');
     if(!manifestFile) throw new Error('missing-manifest');
     const manifest=JSON.parse(await manifestFile.async('string'));
-    if(!manifest||manifest.kind!==PROJ_BACKUP_KIND||manifest.version!==PROJ_BACKUP_VERSION||!Array.isArray(manifest.projects)||!Array.isArray(manifest.folders)) throw new Error('unsupported-backup');
+    if(!manifest||manifest.kind!==PROJ_BACKUP_KIND||![1,2].includes(manifest.version)||!Array.isArray(manifest.projects)||!Array.isArray(manifest.folders)) throw new Error('unsupported-backup');
     const staged=[];
     const seenIds=new Set();
     for(const item of manifest.projects){
@@ -6096,7 +6180,12 @@ async function projRestoreBackupFile(file){
       if(!projValidPayload(data)) throw new Error('invalid-project');
       staged.push({entry,raw});
     }
-    if(!staged.length) throw new Error('empty-backup');
+    const stagedCollections=[];const collectionIds=new Set();
+    for(const item of (manifest.collections||[])){
+      const entry=item?.entry,path=item?.path;if(!entry||typeof entry.id!=='string'||!path||collectionIds.has(entry.id))throw new Error('invalid-collection');
+      collectionIds.add(entry.id);const source=zip.file(path);if(!source)throw new Error('missing-collection');const raw=await source.async('string');const data=JSON.parse(raw);if(!collectionValidPayload(data))throw new Error('invalid-collection');stagedCollections.push({entry,raw,data});
+    }
+    if(!staged.length&&!stagedCollections.length) throw new Error('empty-backup');
 
     const folders=projFolders().slice(), folderIds=new Set(folders.map(folder=>folder.id)), folderMap=new Map(), seenFolderIds=new Set();
     for(const sourceFolder of manifest.folders){
@@ -6107,22 +6196,34 @@ async function projRestoreBackupFile(file){
       folderIds.add(nextId); folderMap.set(sourceFolder.id,nextId);
       folders.push({id:nextId,name:sourceFolder.name.trim()||'Restored folder',order:folders.length+1});
     }
-    const existingIds=new Set(projIndex().map(entry=>entry.id));
+    const existingIds=new Set(projIndex().map(entry=>entry.id)), projectMap=new Map();
     const now=Date.now(), imported=[];
     for(const source of staged){
       const conflict=existingIds.has(source.entry.id);
       const id=conflict?projNewId():source.entry.id;
+      projectMap.set(source.entry.id,id);
       existingIds.add(id);
       const folderId=source.entry.folderId?folderMap.get(source.entry.folderId)||null:null;
       const trashedFolderId=source.entry.trashedFolderId?folderMap.get(source.entry.trashedFolderId)||null:null;
       imported.push({id,raw:source.raw,entry:{...source.entry,id,name:(conflict?(typeof t==='function'?t('proj.restored.prefix'):'Restored ') :'')+(source.entry.name||'Untitled'),folderId,trashedFolderId,pinned:!!source.entry.pinned,trashedAt:Number.isFinite(source.entry.trashedAt)?source.entry.trashedAt:undefined,cloudAt:undefined,renamed:true,restoredAt:now}});
     }
+    const importedCollections=[],existingCollectionIds=new Set(collectionIndex().map(entry=>entry.id));
+    for(const source of stagedCollections){
+      const conflict=existingCollectionIds.has(source.entry.id),id=conflict?collectionNewId():source.entry.id;existingCollectionIds.add(id);
+      const data=collectionNormalise({...source.data,id,name:(conflict?(typeof t==='function'?t('proj.restored.prefix'):'Restored '):'')+source.data.name,cloudAt:undefined});
+      data.members=data.members.map(member=>({...member,projectId:projectMap.get(member.projectId)||member.projectId}));
+      importedCollections.push(data);
+    }
     const written=[];
     try{for(const item of imported){await pIdbSet(item.id,item.raw);written.push(item.id);}}
     catch(err){for(const id of written){try{await pIdbDelete(id);}catch(_e){}}throw err;}
+    const collectionWritten=[];
+    try{for(const item of importedCollections){await cIdbSet(item.id,JSON.stringify(item));collectionWritten.push(item.id);}}
+    catch(err){for(const id of written){try{await pIdbDelete(id);}catch(_e){}}for(const id of collectionWritten){try{await cIdbDelete(id);}catch(_e){}}throw err;}
     const idx=projIndex(); idx.unshift(...imported.map(item=>item.entry));
+    const cidx=collectionIndex();cidx.unshift(...importedCollections.map(collectionSummary));collectionStoreIndex(cidx);
     projSaveFolders(folders); projStoreIndex(idx); renderProjPanel(); renderS1Recent();
-    toast((typeof t==='function'?t('proj.backup.restored'):'Restored ')+imported.length+' '+(typeof t==='function'?t('proj.backup.projects'):'project(s)'));
+    toast((typeof t==='function'?t('proj.backup.restored'):'Restored ')+(imported.length+importedCollections.length)+' '+(typeof t==='function'?t('proj.backup.projects'):'item(s)'));
   }catch(_e){toast(typeof t==='function'?t('proj.backup.invalid'):'That backup could not be restored. No projects were changed.');}
 }
 
@@ -6673,12 +6774,12 @@ let PROJ_SORT='date-desc';
 let PROJ_VIEW='all';
 const PROJ_TRASH_RETENTION_MS=30*24*60*60*1000;
 const PROJ_BACKUP_KIND='exeg-project-library';
-const PROJ_BACKUP_VERSION=1;
+const PROJ_BACKUP_VERSION=2;
 
 function projSetSearch(v){ PROJ_SEARCH_Q=v||''; renderProjPanel(); }
 function projSetSort(v){ PROJ_SORT=v||'date-desc'; renderProjPanel(); }
 function projSetView(view){
-  PROJ_VIEW=['all','pinned','trash'].includes(view)?view:'all';
+  PROJ_VIEW=['all','pinned','trash','collections'].includes(view)?view:'all';
   renderProjPanel();
 }
 function projIsTrashed(entry){ return Number.isFinite(entry?.trashedAt)&&entry.trashedAt>0; }
@@ -6769,11 +6870,26 @@ function _projFolderSectionHTML(folder,cards,isUnfiled){
 </div>`;
 }
 
+function _collectionCardHTML(entry){
+  const when=new Date(entry.savedAt||Date.now()).toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'});
+  const isTrash=collectionIsTrashed(entry);
+  if(isTrash)return `<div class="proj-card proj-collection-card is-trashed"><div class="proj-card-name">${escH(entry.name)}</div><div class="proj-card-actions"><button onclick="collectionRestore('${entry.id}',event)" title="Restore">↶</button><button onclick="collectionDeletePermanently('${entry.id}',event)" title="Delete permanently">×</button></div><div class="proj-card-meta proj-trash-meta"><span>${typeof t==='function'?t('collection.trashed'):'In Trash'}</span></div></div>`;
+  return `<div class="proj-card proj-collection-card" role="button" tabindex="0" onclick="collectionOpen('${entry.id}')" onkeydown="if(event.target===this&&(event.key==='Enter'||event.key===' ')){event.preventDefault();collectionOpen('${entry.id}')}"><div class="proj-card-name">${escH(entry.name)}</div><div class="proj-card-actions"><button onclick="event.stopPropagation();collectionAddCurrent('${entry.id}')" title="${_studyEscAttr(typeof t==='function'?t('collection.add.current'):'Add current project')}">＋</button><button onclick="event.stopPropagation();collectionRename('${entry.id}')" title="Rename">✎</button><button onclick="event.stopPropagation();collectionDuplicate('${entry.id}')" title="Duplicate">⧉</button><button onclick="event.stopPropagation();collectionMoveToTrash('${entry.id}')" title="Move to Trash">×</button></div><div class="proj-card-meta proj-collection-meta"><span>${entry.memberCount||0} ${typeof t==='function'?t('collection.members'):'projects'}</span><span>·</span><span>${when}</span></div></div>`;
+}
+function _renderCollections(list){
+  const all=collectionIndex();const q=PROJ_SEARCH_Q.trim().toLowerCase();
+  let active=all.filter(item=>!collectionIsTrashed(item));if(q)active=active.filter(item=>(item.name||'').toLowerCase().includes(q));
+  active=_projFilterSort(active);
+  const trash=all.filter(collectionIsTrashed);
+  list.innerHTML=(active.map(_collectionCardHTML).join('')||`<div id="proj-list-empty">${typeof t==='function'?t('collection.empty'):'No Study Collections yet.'}</div>`)+(trash.length?`<div class="proj-folder-section"><div class="proj-folder-hdr"><span class="proj-folder-name">${typeof t==='function'?t('collection.trash'):'Collection Trash'}</span><span class="proj-folder-count">${trash.length}</span></div><div class="proj-folder-cards">${trash.map(_collectionCardHTML).join('')}</div></div>`:'');
+}
+
 function renderProjPanel(){
   const list=document.getElementById('proj-list');
   const idxAll=projIndex();
   const folders=projFolders().slice().sort((a,b)=>(a.order||0)-(b.order||0));
-  const counts={all:idxAll.filter(e=>!projIsTrashed(e)).length,pinned:idxAll.filter(e=>!projIsTrashed(e)&&e.pinned).length,trash:idxAll.filter(projIsTrashed).length};
+  const collectionEntries=collectionIndex();
+  const counts={all:idxAll.filter(e=>!projIsTrashed(e)).length,pinned:idxAll.filter(e=>!projIsTrashed(e)&&e.pinned).length,trash:idxAll.filter(projIsTrashed).length,collections:collectionEntries.filter(e=>!collectionIsTrashed(e)).length};
   Object.entries(counts).forEach(([view,count])=>{
     const countEl=document.getElementById('proj-count-'+view); if(countEl) countEl.textContent=count;
     const tab=document.querySelector('.proj-library-tab[data-view="'+view+'"]');
@@ -6783,7 +6899,9 @@ function renderProjPanel(){
   const hint=document.getElementById('proj-folders-hint');
   if(hint) hint.hidden=folders.length===0||PROJ_VIEW!=='all';
   const trashActions=document.getElementById('proj-trash-actions'); if(trashActions) trashActions.hidden=PROJ_VIEW!=='trash'||!counts.trash;
-  const folderButton=document.getElementById('proj-new-folder-btn'); if(folderButton) folderButton.disabled=PROJ_VIEW==='trash';
+  const folderButton=document.getElementById('proj-new-folder-btn'); if(folderButton) folderButton.disabled=PROJ_VIEW==='trash'||PROJ_VIEW==='collections';
+  const collectionButton=document.getElementById('proj-new-collection-btn');if(collectionButton)collectionButton.hidden=PROJ_VIEW!=='collections';
+  if(PROJ_VIEW==='collections'){_renderCollections(list);return;}
   const scoped=_projViewEntries(idxAll);
   const idx=_projFilterSort(scoped);
   if(!idx.length){
@@ -6810,7 +6928,7 @@ function renderProjPanel(){
 }
 
 async function openProjects(){
-  try{await projPurgeTrash();}catch(_e){}
+  try{await projPurgeTrash();await collectionPurgeTrash();}catch(_e){}
   if(typeof window.spOpen==='function')window.spOpen('projects');else{const p=document.getElementById('proj-panel');if(p)p.classList.add('open');}
   projUpdateStorageIndicator();
 }
@@ -6895,12 +7013,14 @@ function projMoveToFolder(id,folderId){
 
 document.getElementById('proj-list')?.addEventListener('pointerdown', ev=>{
   if(ev.button!==0) return;
+  if(PROJ_VIEW==='collections') return;
   if(PROJ_VIEW==='trash'||ev.target.closest('.proj-card-actions')||ev.target.closest('.proj-folder-hdr')) return;
   const card=ev.target.closest('.proj-card');
   if(!card) return;
   projStartCardDrag(ev, card.dataset.projId, card);
 });
 document.getElementById('proj-list')?.addEventListener('contextmenu', ev=>{
+  if(PROJ_VIEW==='collections') return;
   const card=ev.target.closest('.proj-card');
   if(!card) return;
   ev.preventDefault();
@@ -7042,9 +7162,13 @@ function renderS1Recent(){
   const el=document.getElementById('s1-recent');
   const returning=document.getElementById('s1-returning');
   const continueCard=document.getElementById('s1-continue-card');
+  const collectionEl=document.getElementById('s1-collection-continue');
+  const latestCollection=collectionActiveEntries().slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0))[0];
+  if(collectionEl){collectionEl.hidden=!latestCollection;collectionEl.innerHTML=latestCollection?`<button type="button" onclick="collectionOpen('${latestCollection.id}')"><span>${escH(typeof t==='function'?t('collection.continue'):'Continue collection')}</span><span>${escH(latestCollection.name)}</span><span>→</span></button>`:'';}
   if(!el||!returning||!continueCard) return;
   const active=projActiveEntries().slice().sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
-  returning.hidden=!active.length;
+  returning.hidden=!(active.length||latestCollection);
+  continueCard.hidden=!active.length;
   if(!active.length){el.innerHTML='';return;}
   const latest=active[0], latestDate=new Date(latest.savedAt||Date.now());
   const latestWhen=latestDate.toLocaleDateString([],{month:'short',day:'numeric',year:'numeric'})+' · '+latestDate.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
@@ -10609,7 +10733,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // for why this is safe to await here (idempotent, resumable, leaves
   // localStorage untouched on any failure).
   try{ await projMigrateToIdbOnce(); }catch(_e){}
-  try{ await projPurgeTrash(); }catch(_e){}
+  try{ await projPurgeTrash(); await collectionPurgeTrash(); }catch(_e){}
   try{
     const savedCmtFs=parseInt(localStorage.getItem('exeg-cmt-fontsize'));
     _setCmtFontSize(isNaN(savedCmtFs)?CMT_FONT_SIZE:savedCmtFs);

@@ -49,6 +49,7 @@
         <button onclick="openProjects()" id="btn-projects-s1" class="s1-all-projects" type="button" data-i18n="s1.all-projects">All projects</button>
       </div>
       <div id="s1-recent" class="s1-recent-list"></div>
+      <div id="s1-collection-continue" class="s1-collection-continue" hidden></div>
     </section>
     <section class="s1-new-project">
       <div class="s1-section-kicker" data-i18n="s1.new.kicker">Start a new project</div>
@@ -598,7 +599,8 @@
       </div>
       <aside id="study-notebook" class="pane-hidden" aria-label="Study Notebook">
         <header id="study-notebook-hdr">
-          <div><span class="cmargin-title" data-i18n="study.notebook.title">Study Notebook</span><span id="study-notebook-count" class="study-note-count">0</span></div>
+          <div><span id="study-notebook-title" class="cmargin-title" data-i18n="study.notebook.title">Study Notebook</span><span id="study-notebook-count" class="study-note-count">0</span></div>
+          <button id="collection-members-btn" type="button" onclick="collectionManageActive()" data-i18n-title="collection.manage" title="Manage members" hidden>☷</button>
           <button type="button" onclick="studyNotebookFormat('bold')" title="Bold"><b>B</b></button>
           <button type="button" onclick="studyNotebookFormat('italic')" title="Italic"><i>I</i></button>
         </header>
@@ -675,6 +677,7 @@
     <button class="proj-library-tab active" type="button" data-view="all" onclick="projSetView('all')" role="tab" aria-selected="true"><span data-i18n="proj.view.all">All</span><span id="proj-count-all" class="proj-view-count">0</span></button>
     <button class="proj-library-tab" type="button" data-view="pinned" onclick="projSetView('pinned')" role="tab" aria-selected="false"><span data-i18n="proj.view.pinned">Pinned</span><span id="proj-count-pinned" class="proj-view-count">0</span></button>
     <button class="proj-library-tab" type="button" data-view="trash" onclick="projSetView('trash')" role="tab" aria-selected="false"><span data-i18n="proj.view.trash">Trash</span><span id="proj-count-trash" class="proj-view-count">0</span></button>
+    <button class="proj-library-tab" type="button" data-view="collections" onclick="projSetView('collections')" role="tab" aria-selected="false"><span data-i18n="collection.view">Collections</span><span id="proj-count-collections" class="proj-view-count">0</span></button>
   </div>
   <div id="proj-panel-search-row">
     <input type="text" id="proj-search" oninput="projSetSearch(this.value)" data-i18n-ph="proj.search-ph" placeholder="Search projects…"/>
@@ -687,6 +690,7 @@
     <button id="proj-new-folder-btn" onclick="projFolderCreate()" title="New folder">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/><line x1="12" y1="10" x2="12" y2="16"/><line x1="9" y1="13" x2="15" y2="13"/></svg>
     </button>
+    <button id="proj-new-collection-btn" onclick="collectionCreate()" data-i18n-title="collection.create" title="New collection">＋</button>
   </div>
   <div id="proj-folders-hint" class="proj-folders-hint" data-i18n="proj.folders.local-only-hint" hidden>Folders are saved on this device only — they don't sync between devices yet.</div>
   <div id="proj-list">
