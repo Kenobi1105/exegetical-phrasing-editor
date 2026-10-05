@@ -156,6 +156,9 @@ let ANN_CTR=0; // ever-incrementing annotation id seed
 let STUDY_NOTEBOOK=[];
 let STUDY_NOTE_CTR=0;
 let STUDY_NOTE_ACTIVE_ID=null;
+let STUDY_NOTE_ACTIVE_EDITOR=null;
+let STUDY_NOTE_SELECTION=null;
+let STUDY_NOTE_TEXT_COLOR='#1F1E1E';
 const STUDY_NOTEBOOK_OPEN_KEY='exeg-study-notebook-open';
 const STUDY_STAGES=['observation','question','cross-reference','insight','application'];
 
@@ -3418,7 +3421,7 @@ function _makePaletteSwatchBtn(color){
 // rather than the 4 soft highlight tones (PALETTE_PRESETS_HL) — solid
 // foreground/border colors read better from a wider spread than the soft
 // highlight tones do.
-const PALETTE_TEXT_LIKE_TOOLS=['textColor'];
+const PALETTE_TEXT_LIKE_TOOLS=['textColor','studyTextColor'];
 
 function _renderPaletteRows(){
   const presetRow=document.getElementById('cpp-preset-row');
@@ -3484,6 +3487,11 @@ function applyPaletteColor(color){
     const bar=document.getElementById('txt-color-bar');
     if(bar) bar.style.background=color;
     fmtCmd('foreColor',color);
+  } else if(PALETTE_ACTIVE_TOOL==='studyTextColor'){
+    STUDY_NOTE_TEXT_COLOR=color;
+    const bar=document.querySelector('#study-notebook-color i');
+    if(bar) bar.style.background=color;
+    studyNotebookFormat('foreColor',color);
   } else if(PALETTE_ACTIVE_TOOL==='lineColor'){
     setConnectorColor(color);
 
@@ -3527,7 +3535,7 @@ document.addEventListener('click', e=>{
   if(path.includes(pop)) return;
   // Also ignore clicks on any trigger button — their own onclick
   // handlers already manage opening/repositioning correctly.
-  if(path.some(n=>n.closest && n.closest('#cep-color-swatch, #tb-hl, #tb-txt-color, #bep-color-swatch'))) return;
+  if(path.some(n=>n.closest && n.closest('#cep-color-swatch, #tb-hl, #tb-txt-color, #study-notebook-color, #bep-color-swatch'))) return;
   closeColorPalette();
 });
 
@@ -5272,12 +5280,64 @@ function studyNotebookDetach(id,index){
   const note=_studyFind(id);if(!note||!note.attachments?.[index]) return;
   note.attachments.splice(index,1);note.updatedAt=Date.now();_studyCommit();renderStudyNotebook();
 }
-function studyNotebookFormat(command){
-  const active=document.activeElement;
-  if(!active?.closest?.('.study-note-card')) return;
-  document.execCommand(command,false,null);
-  const id=active.dataset.noteId;
-  if(id) studyNotebookSave(id,active.classList.contains('study-note-title')?'title':'bodyHTML',active);
+function studyNotebookRememberFocus(el){
+  if(!el?.closest?.('.study-note-card'))return;
+  STUDY_NOTE_ACTIVE_EDITOR=el;activeEl=el;STUDY_NOTE_ACTIVE_ID=el.dataset.noteId||STUDY_NOTE_ACTIVE_ID;
+  const selection=window.getSelection();
+  if(selection?.rangeCount&&el.contains(selection.anchorNode))STUDY_NOTE_SELECTION=selection.getRangeAt(0).cloneRange();
+}
+function _studyNotebookActiveEditor(){
+  const focused=document.activeElement;
+  if(focused?.matches?.('.study-note-title,.study-note-body'))studyNotebookRememberFocus(focused);
+  return STUDY_NOTE_ACTIVE_EDITOR?.isConnected&&STUDY_NOTE_ACTIVE_EDITOR.closest('.study-note-card')?STUDY_NOTE_ACTIVE_EDITOR:null;
+}
+function _studyNotebookRestoreSelection(editor){
+  if(!editor)return;
+  editor.focus();
+  if(!STUDY_NOTE_SELECTION||!editor.contains(STUDY_NOTE_SELECTION.commonAncestorContainer))return;
+  try{const selection=window.getSelection();selection.removeAllRanges();selection.addRange(STUDY_NOTE_SELECTION.cloneRange());}catch(_){}
+}
+function _studyNotebookSaveEditor(editor){
+  if(!editor)return;
+  const id=editor.dataset.noteId;
+  if(id)studyNotebookSave(id,editor.classList.contains('study-note-title')?'title':'bodyHTML',editor);
+}
+function studyNotebookFormat(command,value=null){
+  const editor=_studyNotebookActiveEditor();if(!editor)return;
+  _studyNotebookRestoreSelection(editor);
+  document.execCommand(command,false,value);
+  studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);
+}
+function openStudyNotebookColorPalette(trigger){
+  if(!_studyNotebookActiveEditor())return;
+  openColorPalette('studyTextColor',trigger,STUDY_NOTE_TEXT_COLOR);
+}
+function _studyNotebookDashAtParagraphStart(editor){
+  const selection=window.getSelection();if(!selection?.rangeCount||!selection.isCollapsed)return false;
+  const range=selection.getRangeAt(0);if(!editor.contains(range.startContainer)||range.startContainer.nodeType!==Node.TEXT_NODE||range.startOffset<1)return false;
+  const block=range.startContainer.parentElement?.closest('li,p,div')||editor;
+  if(!editor.contains(block))return false;
+  const before=range.cloneRange();before.selectNodeContents(block);before.setEnd(range.startContainer,range.startOffset);
+  return before.toString()==='-'&&block.textContent==='-';
+}
+function _studyNotebookConvertDashToBullet(editor){
+  const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;if(!range)return;
+  const dash=range.cloneRange();dash.setStart(range.startContainer,range.startOffset-1);
+  selection.removeAllRanges();selection.addRange(dash);
+  document.execCommand('delete',false,null);
+  document.execCommand('insertUnorderedList',false,null);
+  studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);
+}
+function studyNotebookKeydown(event,editor){
+  studyNotebookRememberFocus(editor);
+  if(event.key==='Tab'){
+    event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);
+    requestAnimationFrame(()=>{studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);});return;
+  }
+  if(event.key===' '&&!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&_studyNotebookDashAtParagraphStart(editor)){
+    event.preventDefault();_studyNotebookConvertDashToBullet(editor);return;
+  }
+  requestAnimationFrame(()=>studyNotebookRememberFocus(editor));
 }
 async function studyNotebookJump(link){
   if(!link)return;
@@ -5311,7 +5371,7 @@ function _studyNoteCard(note){
     return `<span class="study-note-attachment${available?'':' is-orphan'}" title="${_studyEscAttr(link.label)}"><button type="button" onclick="studyNotebookJumpByIndex('${note.id}',${index})">${escH(link.label||'Source')}</button><button type="button" class="study-note-detach" onclick="studyNotebookDetach('${note.id}',${index})" aria-label="${_studyEscAttr(detachLabel)}">×</button></span>`;
   }).join('');
   const stamp=new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleDateString([],{month:'short',day:'numeric'})+' · '+new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  return `<article class="study-note-card" data-study-id="${note.id}"><div class="study-note-card-hdr"><select class="study-note-stage" onchange="studyNotebookSetStage('${note.id}',this.value)">${STUDY_STAGES.map(stage=>`<option value="${stage}"${note.stage===stage?' selected':''}>${escH(_studyStageLabel(stage))}</option>`).join('')}</select><button class="study-note-delete" type="button" onclick="studyNotebookDelete('${note.id}')" title="${_studyEscAttr(deleteLabel)}" aria-label="${_studyEscAttr(deleteLabel)}">×</button></div><div class="study-note-title" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.title.placeholder'):'Entry title') }" onfocus="STUDY_NOTE_ACTIVE_ID='${note.id}'" oninput="studyNotebookSave('${note.id}','title',this)">${escH(note.title||'')}</div><div class="study-note-body" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.body.placeholder'):'Write your study note…') }" onfocus="STUDY_NOTE_ACTIVE_ID='${note.id}'" oninput="studyNotebookSave('${note.id}','bodyHTML',this)">${note.bodyHTML||''}</div>${attachments?`<div class="study-note-attachments">${attachments}</div>`:''}<footer class="study-note-footer"><span>${escH(stamp)}</span><button class="study-note-attach" type="button" onclick="studyNotebookAttachCurrent('${note.id}')">${typeof t==='function'?t('study.attach'):'Attach current source'}</button></footer></article>`;
+  return `<article class="study-note-card" data-study-id="${note.id}"><div class="study-note-card-hdr"><select class="study-note-stage" onchange="studyNotebookSetStage('${note.id}',this.value)">${STUDY_STAGES.map(stage=>`<option value="${stage}"${note.stage===stage?' selected':''}>${escH(_studyStageLabel(stage))}</option>`).join('')}</select><button class="study-note-delete" type="button" onclick="studyNotebookDelete('${note.id}')" title="${_studyEscAttr(deleteLabel)}" aria-label="${_studyEscAttr(deleteLabel)}">×</button></div><div class="study-note-title" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.title.placeholder'):'Entry title') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookSave('${note.id}','title',this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${escH(note.title||'')}</div><div class="study-note-body" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.body.placeholder'):'Write your study note…') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookSave('${note.id}','bodyHTML',this)" onkeydown="studyNotebookKeydown(event,this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${note.bodyHTML||''}</div>${attachments?`<div class="study-note-attachments">${attachments}</div>`:''}<footer class="study-note-footer"><span>${escH(stamp)}</span><button class="study-note-attach" type="button" onclick="studyNotebookAttachCurrent('${note.id}')">${typeof t==='function'?t('study.attach'):'Attach current source'}</button></footer></article>`;
 }
 function renderStudyNotebook(){
   const list=document.getElementById('study-notebook-list');if(!list)return;
@@ -5587,6 +5647,11 @@ function startCR(e,col){
 ════════════════════════════════════════ */
 document.addEventListener('keydown',e=>{
   if(!(e.ctrlKey||e.metaKey))return;
+  const noteEditor=e.target?.closest?.('.study-note-title,.study-note-body');
+  if(noteEditor&&!e.shiftKey&&!e.altKey){
+    const command={b:'bold',i:'italic',u:'underline'}[String(e.key||'').toLowerCase()];
+    if(command){e.preventDefault();studyNotebookRememberFocus(noteEditor);studyNotebookFormat(command);return;}
+  }
   // In Screen 1: only allow Ctrl+O, Ctrl+, and Ctrl+Shift+1
   const inS1=!document.getElementById('s1').classList.contains('hidden');
   if(inS1){

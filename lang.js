@@ -36,6 +36,10 @@ const LANGS = {
     /* ── Study Notebook ── */
     'study.notebook.title':'Study Notebook',
     'study.notebook.toggle':'Study Notebook (Alt+4)',
+    'study.text-color':   'Text color',
+    'study.indent':       'Indent note block',
+    'study.outdent':      'Outdent note block',
+    'study.bullet':       'Bullet list',
     'structure.title':     'Structure',
     'structure.toggle':    'Structure panel',
     'structure.help':      'Arrange sections to explore patterns',
@@ -616,6 +620,10 @@ const LANGS = {
     /* ── 研读笔记本 ── */
     'study.notebook.title':'研读笔记本',
     'study.notebook.toggle':'研读笔记本（Alt+4）',
+    'study.text-color':   '文字颜色',
+    'study.indent':       '缩进笔记段落',
+    'study.outdent':      '减少笔记段落缩进',
+    'study.bullet':       '项目符号列表',
     'structure.title':     '结构',
     'structure.toggle':    '结构面板',
     'structure.help':      '排列分段以探索结构模式',

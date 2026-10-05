@@ -613,9 +613,10 @@
         <header id="study-notebook-hdr">
           <div><span id="study-notebook-title" class="cmargin-title" data-i18n="study.notebook.title">Study Notebook</span><span id="study-notebook-count" class="study-note-count">0</span></div>
           <button id="collection-members-btn" type="button" onclick="collectionManageActive()" data-i18n-title="collection.manage" title="Manage members" aria-haspopup="dialog" aria-expanded="false" hidden>☷</button>
-          <button type="button" onclick="studyNotebookFormat('bold')" title="Bold"><b>B</b></button>
-          <button type="button" onclick="studyNotebookFormat('italic')" title="Italic"><i>I</i></button>
-          <button type="button" onclick="studyNotebookFormat('underline')" title="Underline"><u>U</u></button>
+          <button type="button" onpointerdown="event.preventDefault()" onclick="studyNotebookFormat('bold')" title="Bold"><b>B</b></button>
+          <button type="button" onpointerdown="event.preventDefault()" onclick="studyNotebookFormat('italic')" title="Italic"><i>I</i></button>
+          <button type="button" onpointerdown="event.preventDefault()" onclick="studyNotebookFormat('underline')" title="Underline"><u>U</u></button>
+          <button type="button" id="study-notebook-color" class="study-notebook-color" onpointerdown="event.preventDefault()" onclick="openStudyNotebookColorPalette(this)" data-i18n-title="study.text-color" title="Text color" aria-label="Text color"><span>A</span><i></i></button>
         </header>
         <nav id="collection-chapter-switcher" class="collection-chapter-switcher" aria-label="Collection chapters" hidden></nav>
         <section id="collection-members-popover" class="collection-members-popover" role="dialog" aria-modal="false" aria-label="Manage members" hidden></section>
