@@ -5330,10 +5330,29 @@ function _studyNotebookConvertDashToBullet(editor){
   document.execCommand('insertUnorderedList',false,null);
   studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);
 }
+function _studyNotebookOutdentAtCaret(editor){
+  const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;
+  if(!range||!range.collapsed||!editor.contains(range.startContainer))return false;
+  const source=range.startContainer.nodeType===Node.ELEMENT_NODE?range.startContainer:range.startContainer.parentElement;
+  const block=source?.closest?.('li,p,div,blockquote');
+  if(!block||!editor.contains(block))return false;
+  const before=range.cloneRange();before.selectNodeContents(block);before.setEnd(range.startContainer,range.startOffset);
+  if(before.toString())return false;
+  // Browser indentation is represented as a blockquote, while nested list
+  // items have another list item above them.  Do not intercept ordinary
+  // Backspace behavior on a non-indented paragraph or top-level bullet.
+  const nestedListItem=block.matches('li')&&!!block.parentElement?.parentElement?.closest('li');
+  const directIndent=block.style.marginLeft||block.style.marginInlineStart||block.style.textIndent;
+  return !!block.closest('blockquote')||nestedListItem||!!directIndent;
+}
 function studyNotebookKeydown(event,editor){
   studyNotebookRememberFocus(editor);
   if(event.key==='Tab'){
     event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);
+    requestAnimationFrame(()=>{studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);});return;
+  }
+  if(event.key==='Backspace'&&!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&_studyNotebookOutdentAtCaret(editor)){
+    event.preventDefault();document.execCommand('outdent',false,null);
     requestAnimationFrame(()=>{studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);});return;
   }
   if(event.key===' '&&!event.shiftKey&&!event.ctrlKey&&!event.metaKey&&_studyNotebookDashAtParagraphStart(editor)){
