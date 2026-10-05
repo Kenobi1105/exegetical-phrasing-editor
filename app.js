@@ -108,6 +108,8 @@ function _applyColorSet(colors){
    affects paint and would double-scale connector coordinates since the
    SVG layers are siblings of the blocks under the same scaled parent. */
 let EDITOR_VIEW='phrasing';
+let COMPARE_PANES=[null,null];
+const STRUCTURE_PANEL_OPEN_KEY='exeg-structure-panel-open';
 let DIAGRAM_EDIT_MODE=false; // true = diagram word-edit mode active
 let DIAGRAM_DATA={connectors:[], labels:[]};
 let CNX=0; // connector ID counter, same idiom as RC (row counter) / CC (comment counter)
@@ -747,15 +749,21 @@ function addEmptyRowUndoable(afterEl){
 function setEditorView(view){
   // A legacy project may name the retired Slides view; always open safely
   // in Phrasing instead.
-  view=view==='diagram'?'diagram':'phrasing';
+  view=['diagram','compare'].includes(view)?view:'phrasing';
+  if(view==='compare' && (!ACTIVE_COLLECTION || _collectionAvailableProjects().length<2)){
+    toast('Open a Collection with at least two available chapters to compare.');
+    return;
+  }
   if(view!==EDITOR_VIEW){
     EDITOR_VIEW=view;
     autoSave();
   }
   const isDiagram=EDITOR_VIEW==='diagram';
-  const isPhrasing=!isDiagram;
+  const isCompare=EDITOR_VIEW==='compare';
+  const isPhrasing=EDITOR_VIEW==='phrasing';
   document.getElementById('tzone').style.display    = isPhrasing?'':'none';
   document.getElementById('dzone').style.display    = isDiagram?'':'none';
+  document.getElementById('collection-compare')?.toggleAttribute('hidden',!isCompare);
   // Section strips are measured via getBoundingClientRect() on Phrasing's
   // rows, which are always 0,0,0,0 while tzone is display:none (e.g. a
   // section created from Diagram View) — nothing recomputed them once
@@ -764,6 +772,7 @@ function setEditorView(view){
   if(isPhrasing && typeof renderSectionStrips==='function') renderSectionStrips();
   document.getElementById('view-btn-phrasing')?.classList.toggle('active',EDITOR_VIEW==='phrasing');
   document.getElementById('view-btn-diagram')?.classList.toggle('active',isDiagram);
+  document.getElementById('view-btn-compare')?.classList.toggle('active',isCompare);
   document.getElementById('dzoom-sep')?.style.setProperty('display',isDiagram?'':'none');
   // Phrasing-only formatting controls (font size, text colour, indent/outdent)
   const phrasingFmt=isPhrasing?'':'none';
@@ -798,6 +807,7 @@ function setEditorView(view){
     cancelRightAngleArm();
   }
   if(isDiagram) renderDiagram();
+  if(isCompare) renderCollectionCompare();
   if(isDiagram) syncDiagramWorkspaceUI();
   if(typeof refreshBrackets==='function') setTimeout(()=>refreshBrackets(), 80);
   if(typeof _refreshMobilePanelSections==='function') _refreshMobilePanelSections();
@@ -4467,6 +4477,12 @@ function ensureFocus(){if(activeEl){activeEl.focus();restoreRange();}}
 function fmtCmd(cmd,val){
   ensureFocus();
   document.execCommand(cmd,false,val||null);
+  if(activeEl?.classList?.contains('structure-row-edit')){
+    structureSyncRow(activeEl,activeEl.dataset.rid,activeEl.dataset.col);
+  }
+  if(activeEl?.classList?.contains('compare-edit')&&activeEl.dataset.comparePane!==undefined){
+    compareEdit(Number(activeEl.dataset.comparePane),activeEl.dataset.rid,activeEl.dataset.col,activeEl);
+  }
   updateTb();
   // For collapsed selections (no text selected), the browser sets a
   // "pending format" for the next typed character. Calling updateTb()
@@ -4698,6 +4714,7 @@ function _unwrapHl(span){
 function updateTb(){
   document.getElementById('tb-b').classList.toggle('on',document.queryCommandState('bold'));
   document.getElementById('tb-i').classList.toggle('on',document.queryCommandState('italic'));
+  document.getElementById('tb-u')?.classList.toggle('on',document.queryCommandState('underline'));
   document.getElementById('tb-s').classList.toggle('on',document.queryCommandState('strikeThrough'));
   document.getElementById('tb-sup').classList.toggle('on',document.queryCommandState('superscript'));
 }
@@ -5000,6 +5017,10 @@ function syncWorkspaceChrome(state){
   const notebookEntries=_studyEntries();
   if(notebookCount){notebookCount.textContent=notebookEntries.length;notebookCount.style.display=notebookEntries.length?'flex':'none';}
   document.getElementById('btn-study-notebook')?.classList.toggle('active',!!notebook&&!notebook.classList.contains('pane-hidden'));
+  const structure=document.getElementById('structure-panel');
+  document.getElementById('btn-structure-panel')?.classList.toggle('active',!!structure&&!structure.classList.contains('pane-hidden'));
+  const compareBtn=document.getElementById('view-btn-compare');
+  if(compareBtn)compareBtn.hidden=!ACTIVE_COLLECTION||_collectionAvailableProjects().length<2;
   _refreshWorkspaceToolSections();
 }
 
@@ -5037,6 +5058,7 @@ function initWorkspaceChrome(){
   _organizeWorkspaceTools();
   const cm=document.getElementById('cmargin');
   const notebook=document.getElementById('study-notebook');
+  const structure=document.getElementById('structure-panel');
   let notesOpen=false;
   try{notesOpen=localStorage.getItem(WORKSPACE_NOTES_KEY)==='1';}catch(_){}
   cm?.classList.toggle('pane-hidden',!notesOpen);
@@ -5044,6 +5066,10 @@ function initWorkspaceChrome(){
   try{notebookOpen=localStorage.getItem(STUDY_NOTEBOOK_OPEN_KEY)==='1';}catch(_){}
   notebook?.classList.toggle('pane-hidden',!notebookOpen);
   if(notebookOpen) cm?.classList.add('pane-hidden');
+  let structureOpen=false;
+  try{structureOpen=localStorage.getItem(STRUCTURE_PANEL_OPEN_KEY)==='1';}catch(_){}
+  structure?.classList.toggle('pane-hidden',!structureOpen);
+  if(structureOpen){cm?.classList.add('pane-hidden');notebook?.classList.add('pane-hidden');renderStructurePanel();}
   document.addEventListener('click',event=>{
     if(event.target.closest('#workspace-tools-popover,#workspace-more-popover,#btn-workspace-tools,#btn-workspace-more')) return;
     closeWorkspacePopovers();
@@ -5064,7 +5090,8 @@ function toggleCmtPane(){
   const hidden=cm.classList.toggle('pane-hidden');
   if(!hidden){
     document.getElementById('study-notebook')?.classList.add('pane-hidden');
-    try{localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');}catch(_){}
+    document.getElementById('structure-panel')?.classList.add('pane-hidden');
+    try{localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');localStorage.setItem(STRUCTURE_PANEL_OPEN_KEY,'0');}catch(_){}
   }
   try{localStorage.setItem(WORKSPACE_NOTES_KEY,hidden?'0':'1');}catch(_){}
   const btn=document.getElementById('btn-cmt-pane');
@@ -5250,12 +5277,143 @@ function toggleStudyNotebook(){
   dock.classList.toggle('pane-hidden',!opening);
   if(opening){
     const cm=document.getElementById('cmargin');cm?.classList.add('pane-hidden');
-    try{localStorage.setItem(WORKSPACE_NOTES_KEY,'0');localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'1');}catch(_){}
+    document.getElementById('structure-panel')?.classList.add('pane-hidden');
+    try{localStorage.setItem(WORKSPACE_NOTES_KEY,'0');localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'1');localStorage.setItem(STRUCTURE_PANEL_OPEN_KEY,'0');}catch(_){}
     renderStudyNotebook();
   }else try{localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');}catch(_){}
   setTimeout(()=>{refreshBrackets();refreshDiagramConnectors();if(typeof renderSectionStrips==='function')renderSectionStrips();},50);
   syncWorkspaceChrome();
 }
+
+function toggleStructurePanel(){
+  const dock=document.getElementById('structure-panel');if(!dock)return;
+  const opening=dock.classList.contains('pane-hidden');
+  dock.classList.toggle('pane-hidden',!opening);
+  if(opening){
+    document.getElementById('cmargin')?.classList.add('pane-hidden');
+    document.getElementById('study-notebook')?.classList.add('pane-hidden');
+    try{localStorage.setItem(WORKSPACE_NOTES_KEY,'0');localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');localStorage.setItem(STRUCTURE_PANEL_OPEN_KEY,'1');}catch(_){}
+    renderStructurePanel();
+  }else try{localStorage.setItem(STRUCTURE_PANEL_OPEN_KEY,'0');}catch(_){}
+  document.getElementById('btn-structure-panel')?.classList.toggle('active',opening);
+  setTimeout(()=>{refreshBrackets();refreshDiagramConnectors();renderSectionStrips();},50);
+  syncWorkspaceChrome();
+}
+
+/* ── Structure panel ─────────────────────────────────────────────────
+   It projects the existing section annotations into a movable analytical
+   map. The only new persisted value is structureLane; source-row order and
+   section ranges remain the canonical phrasing document. */
+function _structureLane(ann){return Math.max(-2,Math.min(2,Number(ann.structureLane)||0));}
+function _structureSections(){
+  const rows=_realRows(),index=new Map(rows.map((row,i)=>[String(row.dataset.rid),i]));
+  return ANNOTATIONS.filter(ann=>ann.type==='section').sort((a,b)=>(index.get(String(a.startRid))??Infinity)-(index.get(String(b.startRid))??Infinity));
+}
+function _structureRowHTML(row){
+  const rid=String(row.dataset.rid),verse=row.querySelector('.vin')?.value||'',line=row.querySelector('.lid')?.textContent||'—';
+  const orig=row.querySelector(`#oc-${rid} .cedit`)?.innerHTML||'',trans=row.querySelector(`#tc-${rid} .cedit`)?.innerHTML||'';
+  return `<article class="structure-row"><header class="structure-row-head"><span>${escH(verse||'—')}</span><span>${escH(line)}</span></header><div class="structure-row-edit" contenteditable="true" data-rid="${rid}" data-col="o">${orig}</div>${IS_SINGLE?'':`<div class="structure-row-edit" contenteditable="true" data-rid="${rid}" data-col="t">${trans}</div>`}</article>`;
+}
+function _structureSelectOptions(selected){return _realRows().map(row=>{const rid=String(row.dataset.rid),label=(row.querySelector('.lid')?.textContent||rid);return `<option value="${rid}"${rid===String(selected)?' selected':''}>${escH(label)}</option>`;}).join('');}
+function _structureGroupHTML(ann,rows,rowNo,isUnsectioned=false){
+  if(isUnsectioned)return `<section class="structure-group is-unsectioned" style="grid-row:${rowNo}"><header class="structure-divider"><span class="structure-divider-label">${escH(typeof t==='function'?t('structure.unsectioned'):'Unsectioned')}</span></header><div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div></section>`;
+  const lane=_structureLane(ann),start=lane+3;
+  return `<section class="structure-group" data-ann-id="${ann.id}" style="--structure-start:${start};--structure-color:${escH(ann.color||'#534AB7')};grid-row:${rowNo}"><header class="structure-divider" draggable="true"><button type="button" data-structure-action="left" title="Move section left">‹</button><span class="structure-divider-label" contenteditable="true" data-ph="Section…">${escH(ann.label||'')}</span><input type="color" value="${escH(ann.color||'#534AB7')}" title="Section color"><button type="button" data-structure-action="reset" title="Center section">•</button><button type="button" data-structure-action="right" title="Move section right">›</button><button type="button" data-structure-action="delete" title="Delete section">×</button></header><div class="structure-divider-meta"><select data-structure-range="start" aria-label="Section starts at">${_structureSelectOptions(ann.startRid)}</select><select data-structure-range="end" aria-label="Section ends at">${_structureSelectOptions(ann.endRid)}</select></div><div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div></section>`;
+}
+function renderStructurePanel(){
+  const canvas=document.getElementById('structure-panel-canvas');if(!canvas)return;
+  const rows=_realRows();if(!rows.length){canvas.innerHTML=`<div class="structure-empty">${escH(typeof t==='function'?t('structure.empty'):'Add phrasing rows, then organize them into sections.')}</div>`;return;}
+  const index=new Map(rows.map((row,i)=>[String(row.dataset.rid),i]));
+  const sections=_structureSections();const occupied=new Set();const groups=[];
+  sections.forEach(ann=>{const a=index.get(String(ann.startRid)),b=index.get(String(ann.endRid));if(a===undefined||b===undefined)return;const lo=Math.min(a,b),hi=Math.max(a,b),members=rows.slice(lo,hi+1);members.forEach(row=>occupied.add(String(row.dataset.rid)));groups.push({ann,rows:members,at:lo});});
+  const unsectioned=rows.filter(row=>!occupied.has(String(row.dataset.rid)));if(unsectioned.length)groups.push({ann:null,rows:unsectioned,at:Math.min(...unsectioned.map(row=>index.get(String(row.dataset.rid))))});
+  groups.sort((a,b)=>a.at-b.at);
+  canvas.innerHTML=`<div class="structure-lanes">${groups.map((group,i)=>_structureGroupHTML(group.ann,group.rows,i+1,!group.ann)).join('')}</div>`;
+  canvas.querySelectorAll('.structure-row-edit').forEach(el=>{
+    el.addEventListener('focus',()=>{activeEl=el;saveRange();});
+    el.addEventListener('input',()=>structureSyncRow(el,el.dataset.rid,el.dataset.col));
+    el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);
+  });
+  canvas.querySelectorAll('.structure-group[data-ann-id]').forEach(group=>_bindStructureGroup(group));
+}
+function structureSyncRow(el,rid,col){
+  const row=document.querySelector(`.xrow[data-rid="${CSS.escape(String(rid))}"]`);const target=row?.querySelector(`#${col==='t'?'tc':'oc'}-${rid} .cedit`);if(!target)return;
+  target.innerHTML=el.innerHTML;cleanEmptyCell(target);autoSave();if(EDITOR_VIEW==='diagram')renderDiagram();
+}
+function _bindStructureGroup(group){
+  const ann=ANNOTATIONS.find(item=>item.id===group.dataset.annId);if(!ann)return;
+  const header=group.querySelector('.structure-divider'),label=group.querySelector('.structure-divider-label');
+  label.addEventListener('focus',()=>_annLabelFocusSnap(ann.id,label));
+  label.addEventListener('input',()=>{ann.label=label.textContent.trim();autoSave();renderSectionStrips();if(EDITOR_VIEW==='diagram')renderDiagram();});
+  label.addEventListener('blur',()=>_annLabelBlurSnap(ann.id,ann));
+  group.querySelector('input[type="color"]')?.addEventListener('input',event=>{ann.color=event.target.value;autoSave();renderSectionStrips();if(EDITOR_VIEW==='diagram')renderDiagram();});
+  group.querySelectorAll('[data-structure-action]').forEach(button=>button.addEventListener('click',()=>{const action=button.dataset.structureAction;if(action==='delete'){deleteSection(ann.id);renderStructurePanel();return;}ann.structureLane=action==='reset'?0:Math.max(-2,Math.min(2,_structureLane(ann)+(action==='left'?-1:1)));autoSave();renderStructurePanel();}));
+  group.querySelectorAll('[data-structure-range]').forEach(select=>select.addEventListener('change',()=>structureSetRange(ann.id,group.querySelector('[data-structure-range="start"]').value,group.querySelector('[data-structure-range="end"]').value)));
+  header.addEventListener('dragstart',event=>{if(event.target!==header){event.preventDefault();return;}event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',ann.id);});
+  header.addEventListener('dragend',event=>{const rect=document.getElementById('structure-panel-canvas')?.getBoundingClientRect();if(!rect)return;const delta=Math.round((event.clientX-(rect.left+rect.width/2))/108);ann.structureLane=Math.max(-2,Math.min(2,delta));autoSave();renderStructurePanel();});
+}
+function structureSetRange(id,startRid,endRid){
+  const ann=ANNOTATIONS.find(item=>item.id===id);if(!ann)return;const rids=_realRows().map(row=>String(row.dataset.rid));const start=rids.indexOf(String(startRid)),end=rids.indexOf(String(endRid));if(start<0||end<0)return;
+  const lo=Math.min(start,end),hi=Math.max(start,end);if(rids.some((_,i)=>i>=lo&&i<=hi&&_rowInOtherSection(rids,i,id))){toast('Sections cannot overlap.');renderStructurePanel();return;}
+  ann.startRid=rids[lo];ann.endRid=rids[hi];autoSave();renderSectionStrips();if(EDITOR_VIEW==='diagram')renderDiagram();renderStructurePanel();
+}
+function structureAddSection(){
+  const rids=_realRows().map(row=>String(row.dataset.rid));const first=rids.find((rid,i)=>!_rowInOtherSection(rids,i,null));if(!first){toast('Every row is already inside a section.');return;}
+  const ann={id:_annId(),type:'section',startRid:first,endRid:first,label:'',color:'#534AB7',structureLane:0};ANNOTATIONS.push(ann);autoSave();renderSectionStrips();renderStructurePanel();setTimeout(()=>document.querySelector(`.structure-group[data-ann-id="${ann.id}"] .structure-divider-label`)?.focus(),0);
+}
+
+/* ── Collection compare ──────────────────────────────────────────────
+   Each pane owns a parsed project payload. It never calls projLoad(), so
+   editing either chapter cannot replace the primary editor's active project. */
+let COMPARE_LINK_SELECTION=[null,null];
+function _collectionAvailableProjects(){
+  if(!ACTIVE_COLLECTION)return [];
+  return ACTIVE_COLLECTION.members.map(member=>projIndex().find(project=>project.id===member.projectId)).filter(project=>project&&!projIsTrashed(project)).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
+}
+async function _compareReadProject(id){
+  let raw=null;try{raw=await pIdbGet(id);}catch(_){}if(!raw)raw=localStorage.getItem(PROJ_DATA_KEY(id));
+  try{return raw?JSON.parse(raw):null;}catch(_){return null;}
+}
+async function renderCollectionCompare(){
+  const host=document.getElementById('collection-compare-panes'),empty=document.getElementById('collection-compare-empty');if(!host)return;
+  const available=_collectionAvailableProjects();
+  document.getElementById('view-btn-compare')?.toggleAttribute('hidden',available.length<2);
+  if(available.length<2){host.innerHTML='';if(empty){empty.hidden=false;empty.textContent=typeof t==='function'?t('compare.empty'):'Open a Collection with at least two available chapters to compare them here.';}return;}
+  if(empty)empty.hidden=true;
+  for(let i=0;i<2;i++)if(!COMPARE_PANES[i]||!available.some(project=>project.id===COMPARE_PANES[i].projectId))await compareLoadPane(i,available[i]?.id);
+  host.innerHTML=COMPARE_PANES.map((pane,i)=>_comparePaneHTML(pane,i,available)).join('');
+  host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el));el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
+  host.querySelectorAll('[data-compare-comment]').forEach(el=>el.addEventListener('input',()=>compareSaveComment(el)));
+}
+async function compareLoadPane(index,id){
+  if(!id)return;const data=await _compareReadProject(id);if(!data)return;
+  COMPARE_PANES[index]={projectId:id,data,view:COMPARE_PANES[index]?.view||'phrasing',saveTimer:null};
+}
+function _comparePaneOptions(index,available,pane){
+  const other=COMPARE_PANES[index===0?1:0]?.projectId;
+  return available.map(project=>`<option value="${project.id}"${project.id===pane.projectId?' selected':''}${project.id===other?' disabled':''}>${escH(project.name||'Untitled')} · ${escH(project.verseRef||'—')}</option>`).join('');
+}
+function _compareSectionsAt(data,rid){return (data.annotations||[]).filter(ann=>ann.type==='section'&&String(ann.startRid)===String(rid));}
+function _comparePaneHTML(pane,index,available){
+  if(!pane?.data)return `<section class="compare-pane"><div class="compare-pane-body">Could not load this chapter.</div></section>`;
+  const data=pane.data,rows=data.rows||[];const isDiagram=pane.view==='diagram',phraseLabel=typeof t==='function'?t('compare.phrasing'):'Phrasing',diagramLabel=typeof t==='function'?t('compare.diagram'):'Diagram';
+  const content=isDiagram?`<div class="compare-diagram">${rows.map((row,i)=>`<article class="compare-diagram-card" data-compare-card="${index}:${row.rid}" style="--compare-align:${i%3===0?'flex-end':i%3===1?'center':'flex-start'}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>`).join('')}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`:rows.map(row=>{const sections=_compareSectionsAt(data,row.rid).map(ann=>`<div class="compare-ref" contenteditable="true" oninput="compareSectionLabel(${index},'${ann.id}',this)">${escH(ann.label||'Section')}</div>`).join('');const comment=(data.cmts||[]).find(item=>String(item.rid)===String(row.rid));return `${sections}<article class="compare-row"><div class="compare-row-id"><button type="button" title="Add or edit comment" onclick="compareToggleComment(${index},'${row.rid}')">${escH(row.lineId||'—')}</button></div><div><div class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}${comment?`<div class="compare-edit compare-comment" contenteditable="true" data-compare-comment="${index}:${row.rid}">${comment.html||''}</div>`:''}</div></article>`;}).join('');
+  return `<section class="compare-pane" data-compare-pane="${index}"><header class="compare-pane-hdr"><select aria-label="Choose collection chapter" onchange="compareChoosePane(${index},this.value)">${_comparePaneOptions(index,available,pane)}</select><button type="button" class="${!isDiagram?'active':''}" onclick="compareSetView(${index},'phrasing')">${escH(phraseLabel)}</button><button type="button" class="${isDiagram?'active':''}" onclick="compareSetView(${index},'diagram')">${escH(diagramLabel)}</button><button type="button" onclick="compareAddRow(${index})" title="Add row">＋</button><button type="button" onclick="compareAddSection(${index})" title="Add section">§</button><button type="button" onclick="compareDeleteFocusedRow(${index})" title="Delete focused row">−</button></header><div class="compare-pane-hdr"><button type="button" onclick="compareFormat(${index},'bold')"><b>B</b></button><button type="button" onclick="compareFormat(${index},'italic')"><i>I</i></button><button type="button" onclick="compareFormat(${index},'underline')"><u>U</u></button><button type="button" onclick="compareIndent(${index},-1)">⇤</button><button type="button" onclick="compareIndent(${index},1)">⇥</button>${isDiagram?`<button type="button" onclick="compareRemoveLastLink(${index})" title="Remove last relationship">⌫</button>`:''}<span class="compare-ref">${escH(data.verseRef||'Untitled passage')}</span></div><div class="compare-pane-body">${content||'<div class="structure-empty">This chapter has no phrasing rows yet.</div>'}</div></section>`;
+}
+async function compareChoosePane(index,id){if(COMPARE_PANES[index===0?1:0]?.projectId===id){toast('Choose a different collection chapter for each pane.');return;}await compareLoadPane(index,id);renderCollectionCompare();}
+function compareSetView(index,view){if(COMPARE_PANES[index]){COMPARE_PANES[index].view=view;renderCollectionCompare();}}
+function compareEdit(index,rid,col,el){const pane=COMPARE_PANES[index],row=pane?.data?.rows?.find(item=>String(item.rid)===String(rid));if(!row)return;row[col==='t'?'transHTML':'origHTML']=el.innerHTML;if(pane.projectId===CURRENT_PROJECT_ID){const primary=document.querySelector(`.xrow[data-rid="${CSS.escape(String(rid))}"] #${col==='t'?'tc':'oc'}-${rid} .cedit`);if(primary&&primary!==el)primary.innerHTML=el.innerHTML;if(EDITOR_VIEW==='diagram')renderDiagram();}compareScheduleSave(index);}
+function compareFormat(index,command){const active=activeEl;if(!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;active.focus();restoreRange();document.execCommand(command,false,null);compareEdit(index,active.dataset.rid,active.dataset.col,active);}
+function compareIndent(index,delta){const active=activeEl;if(!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const pane=COMPARE_PANES[index],row=pane.data.rows.find(item=>String(item.rid)===String(active.dataset.rid));const key=active.dataset.col==='t'?'transIndent':'origIndent';row[key]=String(Math.max(0,Number(row[key]||0)+delta));compareScheduleSave(index);renderCollectionCompare();}
+function compareAddRow(index){const pane=COMPARE_PANES[index];if(!pane)return;const data=pane.data,rid=String(Math.max(Number(data.RC)||0,...(data.rows||[]).map(row=>Number(row.rid)||0))+1);data.RC=Number(rid);data.rows.push({rid,verse:'',lineId:'—',origHTML:'',transHTML:'',origIndent:'0',transIndent:'0',cid:''});compareScheduleSave(index);renderCollectionCompare();}
+function compareAddSection(index){const pane=COMPARE_PANES[index],active=activeEl;if(!pane||!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const rid=active.dataset.rid,sections=pane.data.annotations||(pane.data.annotations=[]);if(sections.some(ann=>ann.type==='section'&&String(ann.startRid)===String(rid)))return;const id=`ann-compare-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;sections.push({id,type:'section',startRid:rid,endRid:rid,label:'Section',color:'#534AB7',structureLane:0});compareScheduleSave(index);renderCollectionCompare();}
+function compareDeleteFocusedRow(index){const pane=COMPARE_PANES[index],active=activeEl;if(!pane||!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const rid=String(active.dataset.rid);pane.data.rows=pane.data.rows.filter(row=>String(row.rid)!==rid);pane.data.cmts=(pane.data.cmts||[]).filter(comment=>String(comment.rid)!==rid);pane.data.annotations=(pane.data.annotations||[]).filter(ann=>String(ann.startRid)!==rid&&String(ann.endRid)!==rid);pane.data.diagramData={...(pane.data.diagramData||{}),connectors:(pane.data.diagramData?.connectors||[]).filter(link=>String(link.fromRid)!==rid&&String(link.toRid)!==rid)};compareScheduleSave(index);renderCollectionCompare();}
+function compareSectionLabel(index,id,el){const ann=COMPARE_PANES[index]?.data?.annotations?.find(item=>item.id===id);if(!ann)return;ann.label=el.textContent.trim();compareScheduleSave(index);}
+function compareToggleComment(index,rid){const pane=COMPARE_PANES[index];if(!pane)return;const comments=pane.data.cmts||(pane.data.cmts=[]);let comment=comments.find(item=>String(item.rid)===String(rid));if(!comment){comment={cid:String((Number(pane.data.CC)||0)+1),rid,html:''};pane.data.CC=Number(comment.cid);comments.push(comment);}compareScheduleSave(index);renderCollectionCompare();}
+function compareSaveComment(el){const [index,rid]=String(el.dataset.compareComment||'').split(':');const pane=COMPARE_PANES[Number(index)],comment=pane?.data?.cmts?.find(item=>String(item.rid)===rid);if(!comment)return;comment.html=el.innerHTML;compareScheduleSave(Number(index));}
+function compareDiagramLink(index,rid){const pane=COMPARE_PANES[index];if(!pane||pane.view!=='diagram')return;const previous=COMPARE_LINK_SELECTION[index];if(!previous){COMPARE_LINK_SELECTION[index]=rid;document.querySelector(`[data-compare-card="${index}:${rid}"]`)?.focus();return;}if(previous!==rid){const data=pane.data,links=data.diagramData?.connectors||(data.diagramData={...(data.diagramData||{}),connectors:[],labels:data.diagramData?.labels||[]}).connectors;links.push({id:`compare-cnx-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,fromRid:previous,toRid:rid,kind:'curve'});compareScheduleSave(index);}COMPARE_LINK_SELECTION[index]=null;renderCollectionCompare();}
+function compareRemoveLastLink(index){const links=COMPARE_PANES[index]?.data?.diagramData?.connectors;if(!links?.length)return;links.pop();compareScheduleSave(index);renderCollectionCompare();}
+function compareScheduleSave(index){const pane=COMPARE_PANES[index];if(!pane)return;clearTimeout(pane.saveTimer);pane.saveTimer=setTimeout(async()=>{try{await pIdbSet(pane.projectId,JSON.stringify(pane.data));const idx=projIndex(),entry=idx.find(item=>item.id===pane.projectId);if(entry){entry.savedAt=Date.now();entry.verseRef=pane.data.verseRef||entry.verseRef;projStoreIndex(idx);}if(typeof acctMarkDirty==='function')acctMarkDirty(pane.projectId);}catch(_){toast('Could not save this comparison chapter.');}},500);}
 
 /* Feature 3: Add comment anchored to the currently focused or last-focused row */
 function addCommentOnFocusedRow(){
@@ -5750,12 +5908,12 @@ function loadData(data){
   // Restore brackets (after rows are in DOM, loadBracketData defers render)
   if(typeof loadBracketData==='function') loadBracketData(data.brackets||[]);
   // Restore annotations
-  ANNOTATIONS=Array.isArray(data.annotations)?data.annotations.map(a=>({...a})):[];
+  ANNOTATIONS=Array.isArray(data.annotations)?data.annotations.map(a=>a.type==='section'?{...a,structureLane:_structureLane(a)}:{...a}):[];
   ANN_CTR=data.annCtr||0;
   // Ensure ANN_CTR is at least as large as the highest existing id
   ANNOTATIONS.forEach(a=>{ const n=parseInt(String(a.id||'').replace(/^ann-/,''),10); if(!isNaN(n)&&n>=ANN_CTR) ANN_CTR=n+1; });
   // Re-render dividers in phrasing view after rows exist in DOM
-  setTimeout(()=>{ renderDividers(); renderSectionStrips(); if(EDITOR_VIEW==='diagram') renderAnnLayer(); }, 50);
+  setTimeout(()=>{ renderDividers(); renderSectionStrips(); renderStructurePanel(); if(EDITOR_VIEW==='diagram') renderAnnLayer(); }, 50);
   // Restore diagram edit mode (persistent across saves)
   DIAGRAM_EDIT_MODE=data.diagramEditMode===true;
   if(DIAGRAM_EDIT_MODE) setTimeout(()=>_applyDiagramEditMode(true), 80);
@@ -5867,6 +6025,8 @@ async function collectionOpen(id){
     const app=document.getElementById('app');if(app)app.style.display='flex';
   }
   const dock=document.getElementById('study-notebook');if(dock?.classList.contains('pane-hidden'))toggleStudyNotebook();else renderStudyNotebook();
+  COMPARE_PANES=[null,null];
+  syncWorkspaceChrome();
   toast((typeof t==='function'?t('collection.opened'):'Opened collection: ')+data.name);
 }
 async function collectionRename(id){const data=await collectionRead(id);if(!data)return;const name=await cModalPrompt('collection.rename.title','collection.rename.hint',data.name);if(name&&name.trim()){data.name=name.trim();await collectionWrite(data);}}
@@ -5874,7 +6034,7 @@ async function collectionDuplicate(id){const source=await collectionRead(id);if(
 async function collectionMoveToTrash(id){const data=await collectionRead(id);if(!data)return;data.trashedAt=Date.now();await collectionWrite(data,{queue:false});if(ACTIVE_COLLECTION_ID===id){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;renderStudyNotebook();}}
 async function collectionRestore(id){const data=await collectionRead(id);if(!data)return;delete data.trashedAt;await collectionWrite(data);}
 async function collectionDeletePermanently(id){const data=await collectionRead(id);if(!data||!confirm(typeof t==='function'?t('collection.delete.confirm'):'Permanently delete this collection?'))return;await cIdbDelete(id);collectionStoreIndex(collectionIndex().filter(item=>item.id!==id));if(typeof acctQueueCollectionDelete==='function')acctQueueCollectionDelete(id);if(ACTIVE_COLLECTION_ID===id){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;renderStudyNotebook();}renderProjPanel();renderS1Recent();}
-async function collectionToggleMember(collectionId,projectId){const data=await collectionRead(collectionId);if(!data)return;const at=data.members.findIndex(item=>item.projectId===projectId);if(at>=0){data.members.splice(at,1);await collectionWrite(data);if(ACTIVE_COLLECTION_ID===collectionId)renderStudyNotebook();return;}const project=projIndex().find(item=>item.id===projectId);if(!project)return;data.members.push({projectId,label:project.name||'Untitled',reference:project.verseRef||'',addedAt:Date.now()});await collectionWrite(data);if(ACTIVE_COLLECTION_ID===collectionId)renderStudyNotebook();}
+async function collectionToggleMember(collectionId,projectId){const data=await collectionRead(collectionId);if(!data)return;const at=data.members.findIndex(item=>item.projectId===projectId);if(at>=0){data.members.splice(at,1);await collectionWrite(data);if(ACTIVE_COLLECTION_ID===collectionId){ACTIVE_COLLECTION=data;COMPARE_PANES=[null,null];renderStudyNotebook();syncWorkspaceChrome();}return;}const project=projIndex().find(item=>item.id===projectId);if(!project)return;data.members.push({projectId,label:project.name||'Untitled',reference:project.verseRef||'',addedAt:Date.now()});await collectionWrite(data);if(ACTIVE_COLLECTION_ID===collectionId){ACTIVE_COLLECTION=data;COMPARE_PANES=[null,null];renderStudyNotebook();syncWorkspaceChrome();}}
 async function collectionAddCurrent(id){if(!CURRENT_PROJECT_ID){toast(typeof t==='function'?t('collection.member.no-project'):'Open a saved project first.');return;}await collectionToggleMember(id,CURRENT_PROJECT_ID);}
 async function collectionPurgeTrash(){const expired=collectionIndex().filter(item=>collectionIsTrashed(item)&&Date.now()-item.trashedAt>=COLLECTION_TRASH_RETENTION_MS);for(const item of expired){await cIdbDelete(item.id);if(typeof acctQueueCollectionDelete==='function')acctQueueCollectionDelete(item.id);}if(expired.length)collectionStoreIndex(collectionIndex().filter(item=>!expired.some(x=>x.id===item.id)));}
 async function pIdbGet(id){
@@ -9309,9 +9469,10 @@ function addSection(){
     toast(typeof t==='function'?t('toast.section-overlap'):'This row is already inside another section.');
     return;
   }
-  const ann = { id:_annId(), type:'section', startRid:anchorRid, endRid:anchorRid, label:'', color:'#534AB7' };
+  const ann = { id:_annId(), type:'section', startRid:anchorRid, endRid:anchorRid, label:'', color:'#534AB7', structureLane:0 };
   ANNOTATIONS.push(ann);
   renderSectionStrips();
+  renderStructurePanel();
   if(EDITOR_VIEW==='diagram') renderDiagram();
   autoSave();
   rowPush({type:'ann-add', ann:{...ann}});
@@ -9327,6 +9488,7 @@ function deleteSection(id){
   const ann=ANNOTATIONS.find(a=>a.id===id); if(!ann) return;
   ANNOTATIONS=ANNOTATIONS.filter(a=>a.id!==id);
   renderSectionStrips();
+  renderStructurePanel();
   if(EDITOR_VIEW==='diagram') renderDiagram();
   autoSave();
   rowPush({type:'ann-remove', ann:{...ann}});
@@ -9522,6 +9684,7 @@ function renderSectionStrips(){
       ann.color=swatch.value;
       strip.style.setProperty('--sec-color', ann.color);
       if(EDITOR_VIEW==='diagram') renderDiagram();
+      if(!document.getElementById('structure-panel')?.classList.contains('pane-hidden'))renderStructurePanel();
       autoSave();
       rowPush({type:'ann-edit', annId:ann.id, prop:'color', oldVal, newVal:ann.color});
     });
@@ -9534,7 +9697,7 @@ function renderSectionStrips(){
     label.textContent=ann.label||'';
     label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
     label.addEventListener('focus',()=>{ _annLabelFocusSnap(ann.id,label); });
-    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); _annLabelBlurSnap(ann.id,ann); autoSave(); });
+    label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); _annLabelBlurSnap(ann.id,ann); autoSave(); if(!document.getElementById('structure-panel')?.classList.contains('pane-hidden'))renderStructurePanel(); });
 
     const topHandle=document.createElement('div');
     topHandle.className='sec-strip-handle sec-strip-handle-top';
