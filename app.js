@@ -11511,7 +11511,11 @@ document.addEventListener('keydown',function(ev){
   if(!ev.altKey||ev.shiftKey||ev.ctrlKey||ev.metaKey)return;
   if(!'1234tTlLdDaAbBcCeEsSjJkKhH'.includes(ev.key))return;
   const tag=(ev.target.tagName||'').toLowerCase();
-  if(tag==='input'||tag==='textarea'||ev.target.isContentEditable)return;
+  // Section and proposition dividers are intentional editor commands. Keep
+  // them available while a row is being edited; otherwise Alt+D falls
+  // through to Chrome's address-bar shortcut before the app can prevent it.
+  const annotationShortcut=ev.key==='d'||ev.key==='D'||ev.key==='s'||ev.key==='S';
+  if((tag==='input'||tag==='textarea'||ev.target.isContentEditable)&&!annotationShortcut)return;
   const s2Visible=!document.getElementById('s2')?.classList.contains('hidden');
   if(s2Visible)return;
   const s1Visible=!document.getElementById('s1')?.classList.contains('hidden');
