@@ -5312,15 +5312,41 @@ function openStudyNotebookColorPalette(trigger){
   if(!_studyNotebookActiveEditor())return;
   openColorPalette('studyTextColor',trigger,STUDY_NOTE_TEXT_COLOR);
 }
+function _studyNotebookCurrentLineBeforeCaret(editor,range){
+  const source=range.startContainer.parentElement;
+  const block=source?.closest?.('li,p,div,blockquote');
+  const before=range.cloneRange();
+  if(block&&block!==editor){
+    before.selectNodeContents(block);before.setEnd(range.startContainer,range.startOffset);
+    return before.toString();
+  }
+  // A contenteditable body can also use bare text separated by <br> nodes.
+  // Build the pre-caret text ourselves: innerText on a detached fragment does
+  // not consistently preserve those line boundaries across browsers.
+  before.selectNodeContents(editor);before.setEnd(range.startContainer,range.startOffset);
+  const fragment=before.cloneContents();let text='';
+  const blockTag=new Set(['DIV','P','LI','BLOCKQUOTE']);
+  const walk=node=>{
+    if(node.nodeType===Node.TEXT_NODE){text+=node.data;return;}
+    if(node.nodeType===Node.ELEMENT_NODE&&node.nodeName==='BR'){text+='\n';return;}
+    const isBlock=node.nodeType===Node.ELEMENT_NODE&&blockTag.has(node.nodeName);
+    if(isBlock&&text&&!text.endsWith('\n'))text+='\n';
+    node.childNodes.forEach(walk);
+    if(isBlock&&text&&!text.endsWith('\n'))text+='\n';
+  };
+  fragment.childNodes.forEach(walk);
+  const lines=text.replace(/\n+$/,'').split('\n');
+  return lines.at(-1)||'';
+}
 function _studyNotebookDashAtParagraphStart(editor){
   const selection=window.getSelection();if(!selection?.rangeCount||!selection.isCollapsed)return false;
   const range=selection.getRangeAt(0);if(!editor.contains(range.startContainer)||range.startContainer.nodeType!==Node.TEXT_NODE||range.startOffset<1)return false;
-  // Inspect only the current visual line. A note body can have earlier
-  // paragraphs, so converting "- " must not depend on the whole note being empty.
-  const before=range.cloneRange();before.selectNodeContents(editor);before.setEnd(range.startContainer,range.startOffset);
-  const scratch=document.createElement('div');scratch.appendChild(before.cloneContents());
-  const currentLine=(scratch.innerText||scratch.textContent||'').split(/\r?\n/).pop()||'';
-  return currentLine.trim()==='-';
+  return _studyNotebookCurrentLineBeforeCaret(editor,range).trim()==='-';
+}
+function _studyNotebookDashSpaceAtParagraphStart(editor){
+  const selection=window.getSelection();if(!selection?.rangeCount||!selection.isCollapsed)return false;
+  const range=selection.getRangeAt(0);if(!editor.contains(range.startContainer)||range.startContainer.nodeType!==Node.TEXT_NODE||range.startOffset<2)return false;
+  return /^\s*-\s$/.test(_studyNotebookCurrentLineBeforeCaret(editor,range));
 }
 function _studyNotebookConvertDashToBullet(editor){
   const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;if(!range)return;
@@ -5328,6 +5354,22 @@ function _studyNotebookConvertDashToBullet(editor){
   selection.removeAllRanges();selection.addRange(dash);
   document.execCommand('delete',false,null);
   document.execCommand('insertUnorderedList',false,null);
+  studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);
+}
+function _studyNotebookConvertDashSpaceToBullet(editor){
+  const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;
+  if(!range||range.startContainer.nodeType!==Node.TEXT_NODE||range.startOffset<2)return;
+  const dashAndSpace=range.cloneRange();dashAndSpace.setStart(range.startContainer,range.startOffset-2);
+  selection.removeAllRanges();selection.addRange(dashAndSpace);
+  document.execCommand('delete',false,null);
+  document.execCommand('insertUnorderedList',false,null);
+  studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);
+}
+function studyNotebookBodyInput(event,editor){
+  // Keydown handles the common path before a space appears. This fallback
+  // covers browsers/content states that only expose the complete "- " line
+  // after insertion.
+  if(event.inputType==='insertText'&&event.data===' '&&_studyNotebookDashSpaceAtParagraphStart(editor))_studyNotebookConvertDashSpaceToBullet(editor);
   studyNotebookRememberFocus(editor);_studyNotebookSaveEditor(editor);
 }
 function _studyNotebookOutdentAtCaret(editor){
@@ -5392,7 +5434,7 @@ function _studyNoteCard(note){
     return `<span class="study-note-attachment${available?'':' is-orphan'}" title="${_studyEscAttr(link.label)}"><button type="button" onclick="studyNotebookJumpByIndex('${note.id}',${index})">${escH(link.label||'Source')}</button><button type="button" class="study-note-detach" onclick="studyNotebookDetach('${note.id}',${index})" aria-label="${_studyEscAttr(detachLabel)}">×</button></span>`;
   }).join('');
   const stamp=new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleDateString([],{month:'short',day:'numeric'})+' · '+new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  return `<article class="study-note-card" data-study-id="${note.id}"><div class="study-note-card-hdr"><select class="study-note-stage" onchange="studyNotebookSetStage('${note.id}',this.value)">${STUDY_STAGES.map(stage=>`<option value="${stage}"${note.stage===stage?' selected':''}>${escH(_studyStageLabel(stage))}</option>`).join('')}</select><button class="study-note-delete" type="button" onclick="studyNotebookDelete('${note.id}')" title="${_studyEscAttr(deleteLabel)}" aria-label="${_studyEscAttr(deleteLabel)}">×</button></div><div class="study-note-title" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.title.placeholder'):'Entry title') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookSave('${note.id}','title',this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${escH(note.title||'')}</div><div class="study-note-body" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.body.placeholder'):'Write your study note…') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookSave('${note.id}','bodyHTML',this)" onkeydown="studyNotebookKeydown(event,this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${note.bodyHTML||''}</div>${attachments?`<div class="study-note-attachments">${attachments}</div>`:''}<footer class="study-note-footer"><span>${escH(stamp)}</span><button class="study-note-attach" type="button" onclick="studyNotebookAttachCurrent('${note.id}')">${typeof t==='function'?t('study.attach'):'Attach current source'}</button></footer></article>`;
+  return `<article class="study-note-card" data-study-id="${note.id}"><div class="study-note-card-hdr"><select class="study-note-stage" onchange="studyNotebookSetStage('${note.id}',this.value)">${STUDY_STAGES.map(stage=>`<option value="${stage}"${note.stage===stage?' selected':''}>${escH(_studyStageLabel(stage))}</option>`).join('')}</select><button class="study-note-delete" type="button" onclick="studyNotebookDelete('${note.id}')" title="${_studyEscAttr(deleteLabel)}" aria-label="${_studyEscAttr(deleteLabel)}">×</button></div><div class="study-note-title" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.title.placeholder'):'Entry title') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookSave('${note.id}','title',this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${escH(note.title||'')}</div><div class="study-note-body" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.body.placeholder'):'Write your study note…') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookBodyInput(event,this)" onkeydown="studyNotebookKeydown(event,this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${note.bodyHTML||''}</div>${attachments?`<div class="study-note-attachments">${attachments}</div>`:''}<footer class="study-note-footer"><span>${escH(stamp)}</span><button class="study-note-attach" type="button" onclick="studyNotebookAttachCurrent('${note.id}')">${typeof t==='function'?t('study.attach'):'Attach current source'}</button></footer></article>`;
 }
 function renderStudyNotebook(){
   const list=document.getElementById('study-notebook-list');if(!list)return;
