@@ -5927,6 +5927,8 @@ document.addEventListener('keydown',e=>{
 /* Escape handler */
 document.addEventListener('keydown',function(e){
   if(e.key!=='Escape')return;
+  var phrasingPdfModal=document.getElementById('phrasing-pdf-modal');
+  if(phrasingPdfModal&&!phrasingPdfModal.classList.contains('hidden')){e.preventDefault();closePhrasingPdfModal();return;}
   var setModal=document.getElementById('set-modal');
   if(setModal&&!setModal.classList.contains('hidden')){e.preventDefault();if(typeof settingsEscOrClickOutside==='function')settingsEscOrClickOutside();return;}
   var helpModal=document.getElementById('help-modal');
@@ -7860,7 +7862,21 @@ function closeExportPopup(){
 }
 async function doExportPDF(){
   closeExportPopup();
-  exportPDF();
+  openPhrasingPdfModal();
+}
+
+/* ── Phrasing PDF export ─────────────────────────────────────────────── */
+function openPhrasingPdfModal(){
+  document.getElementById('phrasing-pdf-modal')?.classList.remove('hidden');
+  applyLang();
+}
+function closePhrasingPdfModal(){
+  document.getElementById('phrasing-pdf-modal')?.classList.add('hidden');
+}
+function exportPhrasingPDFFromModal(){
+  const format=document.getElementById('phrasing-pdf-size')?.value||'a4';
+  closePhrasingPdfModal();
+  exportPDF(format);
 }
 
 /* ── Diagram PDF export ──────────────────────────────────────────────── */
@@ -8458,11 +8474,11 @@ function _pdfCommentHtml(cid){
 /* Returns a jsPDF document.  Both a normal download and a bulk ZIP call this
    function so page layout, PDF-only sizing, and performance behavior cannot
    drift apart. */
-async function _buildPhrasingPDF(ref, onProgress){
+async function _buildPhrasingPDF(ref, onProgress, format='a4'){
   const {jsPDF}=window.jspdf||{};
   if(!jsPDF) throw new Error('PDF library not loaded.');
 
-  const doc=new jsPDF({orientation:IS_SINGLE?'portrait':'landscape',unit:'pt',format:'a4'});
+  const doc=new jsPDF({orientation:IS_SINGLE?'portrait':'landscape',unit:'pt',format});
   const pW=doc.internal.pageSize.getWidth();
   const pH=doc.internal.pageSize.getHeight();
   const MAR=28, usableW=pW-MAR*2, PT_PX=72/96;
@@ -8695,12 +8711,13 @@ function appendStudyNotebookPDF(doc){
   }
 }
 
-async function _capturePhrasingPDFBlob(ref){
-  const doc=await _buildPhrasingPDF(ref);
+async function _capturePhrasingPDFBlob(ref, format='a4'){
+  const doc=await _buildPhrasingPDF(ref,undefined,format);
   return doc.output('blob');
 }
 
-function exportPDF(){
+function exportPDF(format='a4'){
+  format=format==='a3'?'a3':'a4';
   const refEl=document.getElementById('refin');
   let ref=refEl.value.trim();
   if(!ref){
@@ -8709,7 +8726,7 @@ function exportPDF(){
     ref=entered.trim();refEl.value=ref;autoSave();
   }
   showProgress(0,'Exporting PDF…');
-  _buildPhrasingPDF(ref,(pct,label)=>showProgress(pct,label))
+  _buildPhrasingPDF(ref,(pct,label)=>showProgress(pct,label),format)
     .then(doc=>{
       showProgress(95,'Saving PDF…');
       doc.save(buildFilename(ref)+' Phrasing.pdf');

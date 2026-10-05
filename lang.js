@@ -498,6 +498,7 @@ const LANGS = {
 
     /* ── Export popup ── */
     'export.pdf':              'Export as PDF',
+    'export.phrasing-pdf.title': 'Export Phrasing as PDF',
     'export.diag-pdf':         'Export Diagram as PDF',
     'export.pdf.title':        'Export Diagram as PDF',
     'export.pdf.size-label':   'Page Size',
@@ -1102,6 +1103,7 @@ const LANGS = {
 
     /* ── Export popup ── */
     'export.pdf':              '导出为 PDF',
+    'export.phrasing-pdf.title': '导出释经分句 PDF',
     'export.diag-pdf':         '导出图示为 PDF',
     'export.pdf.title':        '导出图示为 PDF',
     'export.pdf.size-label':   '页面大小',

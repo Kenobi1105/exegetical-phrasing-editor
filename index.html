@@ -843,9 +843,34 @@
 <!-- ══ EXPORT POPUP ══ -->
 <div id="export-popup">
   <label class="export-study-option"><input id="export-study-notebook" type="checkbox"/> <span data-i18n="study.export.include">Include Study Notebook</span></label>
-  <button id="export-pdf-btn"        onclick="doExportPDF();closeExportPopup()"           data-i18n="export.pdf"        style="display:none">Export as PDF</button>
+  <button id="export-pdf-btn"        onclick="openPhrasingPdfModal();closeExportPopup()" data-i18n="export.pdf"        style="display:none">Export as PDF</button>
   <button id="export-diag-pdf-btn"   onclick="openDiagPdfModal();closeExportPopup()"      data-i18n="export.diag-pdf"   style="display:none">Export Diagram as PDF</button>
   <button                            onclick="doExportJSON();closeExportPopup()"           data-i18n="export.json">Export as JSON</button>
+</div>
+
+<!-- ══ PHRASING PDF PAGE-SIZE PICKER MODAL ══ -->
+<div id="phrasing-pdf-modal" class="screen hidden" role="dialog" aria-modal="true" aria-labelledby="phrasing-pdf-title">
+  <div class="mcard diag-pdf-mcard">
+    <div class="diag-pdf-header">
+      <h3 id="phrasing-pdf-title" class="diag-pdf-title" data-i18n="export.phrasing-pdf.title">Export Phrasing as PDF</h3>
+      <button class="diag-pdf-close" onclick="closePhrasingPdfModal()" aria-label="Close">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div class="diag-pdf-fields">
+      <div class="diag-pdf-field">
+        <label class="diag-pdf-label" for="phrasing-pdf-size" data-i18n="export.pdf.size-label">Page Size</label>
+        <select id="phrasing-pdf-size" class="diag-pdf-select">
+          <option value="a4" selected data-i18n="export.pdf.a4">A4</option>
+          <option value="a3" data-i18n="export.pdf.a3">A3</option>
+        </select>
+      </div>
+    </div>
+    <div class="diag-pdf-footer">
+      <button class="diag-pdf-cancel" onclick="closePhrasingPdfModal()" data-i18n="export.pdf.cancel">Cancel</button>
+      <button class="diag-pdf-export-btn" onclick="exportPhrasingPDFFromModal()" data-i18n="export.pdf.export-btn">Export PDF</button>
+    </div>
+  </div>
 </div>
 
 <!-- ══ DIAGRAM PDF PAGE-SIZE PICKER MODAL ══ -->
