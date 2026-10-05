@@ -865,6 +865,13 @@
           <option value="a3" data-i18n="export.pdf.a3">A3</option>
         </select>
       </div>
+      <div class="diag-pdf-field">
+        <label class="diag-pdf-label" for="phrasing-pdf-content-size" data-i18n="export.pdf.content-size-label">Content Size</label>
+        <select id="phrasing-pdf-content-size" class="diag-pdf-select">
+          <option value="fit" selected data-i18n="export.pdf.scale-to-page">Scale to page</option>
+          <option value="original" data-i18n="export.pdf.keep-a4-size">Keep A4 content size</option>
+        </select>
+      </div>
     </div>
     <div class="diag-pdf-footer">
       <button class="diag-pdf-cancel" onclick="closePhrasingPdfModal()" data-i18n="export.pdf.cancel">Cancel</button>

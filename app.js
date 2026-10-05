@@ -7875,8 +7875,9 @@ function closePhrasingPdfModal(){
 }
 function exportPhrasingPDFFromModal(){
   const format=document.getElementById('phrasing-pdf-size')?.value||'a4';
+  const contentSizing=document.getElementById('phrasing-pdf-content-size')?.value||'fit';
   closePhrasingPdfModal();
-  exportPDF(format);
+  exportPDF(format,contentSizing);
 }
 
 /* ── Diagram PDF export ──────────────────────────────────────────────── */
@@ -8474,14 +8475,23 @@ function _pdfCommentHtml(cid){
 /* Returns a jsPDF document.  Both a normal download and a bulk ZIP call this
    function so page layout, PDF-only sizing, and performance behavior cannot
    drift apart. */
-async function _buildPhrasingPDF(ref, onProgress, format='a4'){
+async function _buildPhrasingPDF(ref, onProgress, format='a4', contentSizing='fit'){
   const {jsPDF}=window.jspdf||{};
   if(!jsPDF) throw new Error('PDF library not loaded.');
 
+  format=format==='a3'?'a3':'a4';
+  contentSizing=contentSizing==='original'?'original':'fit';
   const doc=new jsPDF({orientation:IS_SINGLE?'portrait':'landscape',unit:'pt',format});
   const pW=doc.internal.pageSize.getWidth();
   const pH=doc.internal.pageSize.getHeight();
-  const MAR=28, usableW=pW-MAR*2, PT_PX=72/96;
+  const PAGE_MARGIN=28;
+  // A3 normally scales the phrase table to fill its wider page. Keeping the
+  // A4 content width leaves A3's extra height available for more rows.
+  const a4ContentW=(IS_SINGLE?595.28:841.89)-PAGE_MARGIN*2;
+  const usableW=format==='a3'&&contentSizing==='original'
+    ?Math.min(pW-PAGE_MARGIN*2,a4ContentW)
+    :pW-PAGE_MARGIN*2;
+  const MAR=(pW-usableW)/2, PT_PX=72/96;
   const vWpt=26,lWpt=32,tableBodyW=usableW-vWpt-lWpt;
   const SIG=[73,53,72],ACC=[200,168,75];
   const HDR_H=18,ROW_PAD=4,MIN_H=22;
@@ -8518,7 +8528,7 @@ async function _buildPhrasingPDF(ref, onProgress, format='a4'){
   function fnZoneH(fns){return fns.length?FN_SEP_H+fns.reduce((sum,fn)=>sum+fnH(fn),0):0;}
   function drawFns(fns){
     if(!fns.length) return;
-    let y=pH-MAR-fnZoneH(fns);
+    let y=pH-PAGE_MARGIN-fnZoneH(fns);
     doc.setDrawColor(...SIG);doc.setLineWidth(.4);doc.line(MAR,y,MAR+usableW*.3,y);y+=6;
     fns.forEach(fn=>{
       const labelW=fn.lineId.length*4.5+4;
@@ -8637,7 +8647,7 @@ async function _buildPhrasingPDF(ref, onProgress, format='a4'){
     return {rowY:nextY,sectionHeaders};
   }
 
-  let curY=drawColHeaders(drawPageHeader(MAR+12));
+  let curY=drawColHeaders(drawPageHeader(PAGE_MARGIN+12));
   let rowIdx=0,pageFns=[];
   update(0,'Exporting PDF…');
 
@@ -8659,8 +8669,8 @@ async function _buildPhrasingPDF(ref, onProgress, format='a4'){
     const rowH=Math.max(MIN_H,imageH+ROW_PAD*2);
     const annH=annotationHeight(String(rid));
     const reserved=fnZoneH(footnote?[...pageFns,footnote]:pageFns);
-    if(curY+annH+rowH>pH-MAR-reserved){
-      drawFns(pageFns);doc.addPage();curY=drawColHeaders(drawPageHeader(MAR+12));pageFns=[];
+    if(curY+annH+rowH>pH-PAGE_MARGIN-reserved){
+      drawFns(pageFns);doc.addPage();curY=drawColHeaders(drawPageHeader(PAGE_MARGIN+12));pageFns=[];
     }
     if(footnote?.text) pageFns.push(footnote);
 
@@ -8681,7 +8691,7 @@ async function _buildPhrasingPDF(ref, onProgress, format='a4'){
   }
   drawFns(pageFns);
   const lastFnZone=fnZoneH(pageFns);
-  _drawPdfCitation(doc,lastFnZone?Math.max(curY,pH-MAR-lastFnZone):curY,MAR,usableW,pH);
+  _drawPdfCitation(doc,lastFnZone?Math.max(curY,pH-PAGE_MARGIN-lastFnZone):curY,MAR,usableW,pH);
   if(studyNotebookIncludeInPdf()) appendStudyNotebookPDF(doc);
   return doc;
 }
@@ -8711,13 +8721,14 @@ function appendStudyNotebookPDF(doc){
   }
 }
 
-async function _capturePhrasingPDFBlob(ref, format='a4'){
-  const doc=await _buildPhrasingPDF(ref,undefined,format);
+async function _capturePhrasingPDFBlob(ref, format='a4', contentSizing='fit'){
+  const doc=await _buildPhrasingPDF(ref,undefined,format,contentSizing);
   return doc.output('blob');
 }
 
-function exportPDF(format='a4'){
+function exportPDF(format='a4', contentSizing='fit'){
   format=format==='a3'?'a3':'a4';
+  contentSizing=contentSizing==='original'?'original':'fit';
   const refEl=document.getElementById('refin');
   let ref=refEl.value.trim();
   if(!ref){
@@ -8726,7 +8737,7 @@ function exportPDF(format='a4'){
     ref=entered.trim();refEl.value=ref;autoSave();
   }
   showProgress(0,'Exporting PDF…');
-  _buildPhrasingPDF(ref,(pct,label)=>showProgress(pct,label),format)
+  _buildPhrasingPDF(ref,(pct,label)=>showProgress(pct,label),format,contentSizing)
     .then(doc=>{
       showProgress(95,'Saving PDF…');
       doc.save(buildFilename(ref)+' Phrasing.pdf');
