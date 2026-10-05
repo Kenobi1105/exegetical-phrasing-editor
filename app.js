@@ -5315,10 +5315,12 @@ function openStudyNotebookColorPalette(trigger){
 function _studyNotebookDashAtParagraphStart(editor){
   const selection=window.getSelection();if(!selection?.rangeCount||!selection.isCollapsed)return false;
   const range=selection.getRangeAt(0);if(!editor.contains(range.startContainer)||range.startContainer.nodeType!==Node.TEXT_NODE||range.startOffset<1)return false;
-  const block=range.startContainer.parentElement?.closest('li,p,div')||editor;
-  if(!editor.contains(block))return false;
-  const before=range.cloneRange();before.selectNodeContents(block);before.setEnd(range.startContainer,range.startOffset);
-  return before.toString()==='-'&&block.textContent==='-';
+  // Inspect only the current visual line. A note body can have earlier
+  // paragraphs, so converting "- " must not depend on the whole note being empty.
+  const before=range.cloneRange();before.selectNodeContents(editor);before.setEnd(range.startContainer,range.startOffset);
+  const scratch=document.createElement('div');scratch.appendChild(before.cloneContents());
+  const currentLine=(scratch.innerText||scratch.textContent||'').split(/\r?\n/).pop()||'';
+  return currentLine.trim()==='-';
 }
 function _studyNotebookConvertDashToBullet(editor){
   const selection=window.getSelection(),range=selection?.rangeCount?selection.getRangeAt(0):null;if(!range)return;
