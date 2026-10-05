@@ -617,6 +617,8 @@
           <button type="button" onpointerdown="event.preventDefault()" onclick="studyNotebookFormat('italic')" title="Italic"><i>I</i></button>
           <button type="button" onpointerdown="event.preventDefault()" onclick="studyNotebookFormat('underline')" title="Underline"><u>U</u></button>
           <button type="button" id="study-notebook-color" class="study-notebook-color" onpointerdown="event.preventDefault()" onclick="openStudyNotebookColorPalette(this)" data-i18n-title="study.text-color" title="Text color" aria-label="Text color"><span>A</span><i></i></button>
+          <button type="button" id="study-notebook-expand" onclick="toggleStudyNotebookExpanded()" data-i18n-title="study.expand-workspace" title="Open expanded Study Notebook workspace" aria-label="Open expanded Study Notebook workspace" data-i18n-aria-label="study.expand-workspace">⤢</button>
+          <button type="button" id="study-notebook-modal-close" onclick="toggleStudyNotebookExpanded(false)" data-i18n-title="study.close-workspace" title="Close expanded Study Notebook workspace" aria-label="Close expanded Study Notebook workspace" data-i18n-aria-label="study.close-workspace" hidden>×</button>
         </header>
         <nav id="collection-chapter-switcher" class="collection-chapter-switcher" aria-label="Collection chapters" hidden></nav>
         <section id="collection-members-popover" class="collection-members-popover" role="dialog" aria-modal="false" aria-label="Manage members" hidden></section>
@@ -642,6 +644,9 @@
 
     <div id="structure-expanded-modal" class="screen hidden" role="dialog" aria-modal="true" aria-label="Expanded Structure workspace" data-i18n-aria-label="structure.expanded-workspace">
       <div id="structure-expanded-mount"></div>
+    </div>
+    <div id="study-notebook-expanded-modal" class="screen hidden" role="dialog" aria-modal="true" aria-label="Expanded Study Notebook workspace" data-i18n-aria-label="study.expanded-workspace">
+      <div id="study-notebook-expanded-mount"></div>
     </div>
 
     <!-- ══ BRACKET EDIT POPUP ══ -->

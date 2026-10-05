@@ -166,6 +166,10 @@ let STUDY_NOTE_ACTIVE_EDITOR=null;
 let STUDY_NOTE_SELECTION=null;
 let STUDY_NOTE_TEXT_COLOR='#1F1E1E';
 const STUDY_NOTEBOOK_OPEN_KEY='exeg-study-notebook-open';
+let STUDY_NOTEBOOK_MODAL_OPEN=false;
+let STUDY_NOTEBOOK_DOCK_PARENT=null;
+let STUDY_NOTEBOOK_DOCK_NEXT=null;
+let STUDY_NOTEBOOK_MODAL_SCROLL={left:0,top:0};
 const STUDY_STAGES=['observation','question','cross-reference','insight','application'];
 
 /* ── Shared two-layer color palette (Highlight + Text Color + Line Color + Bracket Color) ──
@@ -5174,6 +5178,7 @@ function initWorkspaceChrome(){
     const reorganize=()=>setTimeout(_organizeWorkspaceTools,0);
     if(mq.addEventListener) mq.addEventListener('change',reorganize); else mq.addListener(reorganize);
   }
+  initStudyNotebookExpandedWorkspace();
   initStructureExpandedWorkspace();
   syncWorkspaceChrome();
 }
@@ -5495,6 +5500,7 @@ document.addEventListener('pointerdown',event=>{if(!COLLECTION_MEMBERS_OPEN)retu
 document.addEventListener('keydown',event=>{if(event.key==='Escape'&&COLLECTION_MEMBERS_OPEN){event.preventDefault();collectionCloseMembers();document.getElementById('collection-members-btn')?.focus();}});
 function toggleStudyNotebook(){
   const dock=document.getElementById('study-notebook');if(!dock)return;
+  if(STUDY_NOTEBOOK_MODAL_OPEN)toggleStudyNotebookExpanded(false);
   const opening=dock.classList.contains('pane-hidden');
   dock.classList.toggle('pane-hidden',!opening);
   if(opening){
@@ -5505,6 +5511,30 @@ function toggleStudyNotebook(){
   }else try{localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');}catch(_){}
   setTimeout(()=>{refreshBrackets();refreshDiagramConnectors();if(typeof renderSectionStrips==='function')renderSectionStrips();},50);
   syncWorkspaceChrome();
+}
+function toggleStudyNotebookExpanded(force){
+  const dock=document.getElementById('study-notebook'),modal=document.getElementById('study-notebook-expanded-modal'),mount=document.getElementById('study-notebook-expanded-mount');if(!dock||!modal||!mount)return;
+  const opening=force===undefined?!STUDY_NOTEBOOK_MODAL_OPEN:!!force;
+  if(opening===STUDY_NOTEBOOK_MODAL_OPEN)return;
+  if(opening){
+    if(dock.classList.contains('pane-hidden'))return;
+    const list=document.getElementById('study-notebook-list'),active=document.activeElement,restoreFocus=dock.contains(active)&&active?.id!=='study-notebook-expand'?active:null;
+    STUDY_NOTEBOOK_MODAL_SCROLL={left:list?.scrollLeft||0,top:list?.scrollTop||0};
+    STUDY_NOTEBOOK_DOCK_PARENT=dock.parentNode;STUDY_NOTEBOOK_DOCK_NEXT=dock.nextSibling;
+    mount.appendChild(dock);dock.classList.add('is-modal-expanded');modal.classList.remove('hidden');STUDY_NOTEBOOK_MODAL_OPEN=true;
+    document.getElementById('study-notebook-expand')?.setAttribute('hidden','');document.getElementById('study-notebook-modal-close')?.removeAttribute('hidden');
+    requestAnimationFrame(()=>{if(list){list.scrollLeft=STUDY_NOTEBOOK_MODAL_SCROLL.left;list.scrollTop=STUDY_NOTEBOOK_MODAL_SCROLL.top;}(restoreFocus?.isConnected?restoreFocus:document.getElementById('study-notebook-modal-close'))?.focus();});
+  }else{
+    const list=document.getElementById('study-notebook-list');STUDY_NOTEBOOK_MODAL_SCROLL={left:list?.scrollLeft||0,top:list?.scrollTop||0};
+    if(STUDY_NOTEBOOK_DOCK_PARENT)STUDY_NOTEBOOK_DOCK_PARENT.insertBefore(dock,STUDY_NOTEBOOK_DOCK_NEXT);dock.classList.remove('is-modal-expanded');modal.classList.add('hidden');STUDY_NOTEBOOK_MODAL_OPEN=false;
+    document.getElementById('study-notebook-expand')?.removeAttribute('hidden');document.getElementById('study-notebook-modal-close')?.setAttribute('hidden','');
+    requestAnimationFrame(()=>{if(list){list.scrollLeft=STUDY_NOTEBOOK_MODAL_SCROLL.left;list.scrollTop=STUDY_NOTEBOOK_MODAL_SCROLL.top;}document.getElementById('study-notebook-expand')?.focus();});
+  }
+}
+function initStudyNotebookExpandedWorkspace(){
+  const modal=document.getElementById('study-notebook-expanded-modal');if(!modal||modal.dataset.ready)return;modal.dataset.ready='1';
+  modal.addEventListener('mousedown',event=>{if(event.target===modal)toggleStudyNotebookExpanded(false);});
+  document.addEventListener('keydown',event=>{if(!STUDY_NOTEBOOK_MODAL_OPEN||event.defaultPrevented)return;if(event.key==='Escape'){event.preventDefault();event.stopPropagation();toggleStudyNotebookExpanded(false);return;}if(event.key==='Tab'){const focusable=[...modal.querySelectorAll('button:not([hidden]):not([disabled]),input:not([disabled]),select:not([disabled]),[contenteditable="true"]')].filter(el=>el.offsetParent!==null);if(!focusable.length)return;const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 }
 
 function toggleStructurePanel(){
@@ -5576,7 +5606,14 @@ function _structureGroupHTML(ann,rows,rowNo,isUnsectioned=false){
 function renderStructurePanel(){
   const canvas=document.getElementById('structure-panel-canvas');if(!canvas)return;
   const addButton=document.getElementById('structure-add-section'),help=document.getElementById('structure-panel-help');
-  if(ACTIVE_COLLECTION){if(addButton)addButton.hidden=true;if(help)help.textContent=typeof t==='function'?t('structure.collection-help'):'Sections from collection chapters';renderCollectionStructurePanel(canvas);return;}
+  if(ACTIVE_COLLECTION){
+    // Collection Structure keeps isolated member payloads. When the active
+    // editor chapter changes a section, reflect its live annotations in the
+    // cached member model before this immediate redraw.
+    const activeModel=COLLECTION_STRUCTURE_MODELS.get(CURRENT_PROJECT_ID);
+    if(activeModel?.data)activeModel.data.annotations=ANNOTATIONS.map(ann=>({...ann}));
+    if(addButton)addButton.hidden=true;if(help)help.textContent=typeof t==='function'?t('structure.collection-help'):'Sections from collection chapters';renderCollectionStructurePanel(canvas);return;
+  }
   if(addButton)addButton.hidden=false;if(help)help.textContent=typeof t==='function'?t('structure.help'):'Arrange sections to explore patterns';
   const rows=_realRows();if(!rows.length){canvas.innerHTML=`<div class="structure-empty">${escH(typeof t==='function'?t('structure.empty'):'Add phrasing rows, then organize them into sections.')}</div>`;return;}
   const index=new Map(rows.map((row,i)=>[String(row.dataset.rid),i]));
