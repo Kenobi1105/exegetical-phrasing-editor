@@ -109,6 +109,13 @@ function _applyColorSet(colors){
    SVG layers are siblings of the blocks under the same scaled parent. */
 let EDITOR_VIEW='phrasing';
 let COMPARE_PANES=[null,null];
+// Compare temporarily reuses the one Notes dock.  Its cards are rendered from
+// an isolated comparison payload and the primary project cards are restored
+// unchanged when Compare closes.
+let COMPARE_NOTE_CONTEXT=null;
+let COMPARE_PRIMARY_NOTE_NODES=[];
+const STRUCTURE_LAYOUT_VERSION=1;
+let STRUCTURE_EXPANDED=new Set();
 const STRUCTURE_PANEL_OPEN_KEY='exeg-structure-panel-open';
 let DIAGRAM_EDIT_MODE=false; // true = diagram word-edit mode active
 let DIAGRAM_DATA={connectors:[], labels:[]};
@@ -754,6 +761,7 @@ function setEditorView(view){
     toast('Open a Collection with at least two available chapters to compare.');
     return;
   }
+  if(EDITOR_VIEW==='compare'&&view!=='compare') clearCompareNotesContext();
   if(view!==EDITOR_VIEW){
     EDITOR_VIEW=view;
     autoSave();
@@ -4483,6 +4491,7 @@ function fmtCmd(cmd,val){
   if(activeEl?.classList?.contains('compare-edit')&&activeEl.dataset.comparePane!==undefined){
     compareEdit(Number(activeEl.dataset.comparePane),activeEl.dataset.rid,activeEl.dataset.col,activeEl);
   }
+  if(activeEl?.dataset?.compareNote!==undefined) compareSaveNoteInput(activeEl);
   updateTb();
   // For collapsed selections (no text selected), the browser sets a
   // "pending format" for the next typed character. Calling updateTb()
@@ -4889,6 +4898,77 @@ function closeCmt(cid){
   card.remove();_syncCommentList();autoSave();
   if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
 }
+
+function _compareNotesTitle(){
+  const pane=COMPARE_NOTE_CONTEXT&&COMPARE_PANES[COMPARE_NOTE_CONTEXT.index];
+  const label=typeof t==='function'?t('compare.notes'):'Notes';
+  return pane?.data ? `${label} · ${pane.data.verseRef||pane.data.langLabel||'Comparison chapter'}` : label;
+}
+function _compareNoteRows(index){
+  const pane=COMPARE_PANES[index],rows=pane?.data?.rows||[];
+  const order=new Map(rows.map((row,i)=>[String(row.rid),i]));
+  return [...(pane?.data?.cmts||[])].sort((a,b)=>(order.get(String(a.rid))??Infinity)-(order.get(String(b.rid))??Infinity)||Number(a.cid)-Number(b.cid));
+}
+function renderCompareNotes({focusCid=null}={}){
+  if(!COMPARE_NOTE_CONTEXT)return;
+  const {index}=COMPARE_NOTE_CONTEXT,pane=COMPARE_PANES[index],list=_commentList();
+  if(!pane?.data||!list)return;
+  const title=document.querySelector('#cmargin-hdr .cmargin-title');if(title)title.textContent=_compareNotesTitle();
+  list.replaceChildren();
+  _compareNoteRows(index).forEach(comment=>{
+    const row=pane.data.rows.find(item=>String(item.rid)===String(comment.rid));
+    const card=document.createElement('article');
+    card.className='ccard compare-note-card';card.dataset.cid=`compare-${index}-${comment.cid}`;card.dataset.rid=comment.rid;
+    const lid=row?.lineId||'';
+    card.innerHTML=`<div class="chdr"><span class="chdr-l">${typeof t==='function'?t('comment.label'):'Comment'}</span><span class="chdr-i">${escH(lid&&lid!=='—'?lid:'')}</span><button class="ccl" type="button" aria-label="Delete comment">✕</button></div><div class="cbody"><div class="cedit-c" contenteditable="true" spellcheck="false"></div></div>`;
+    const editor=card.querySelector('.cedit-c');editor.dataset.compareNote=`${index}:${comment.cid}`;editor.innerHTML=comment.html||'';
+    editor.addEventListener('focus',()=>{activeEl=editor;saveRange();});
+    editor.addEventListener('input',()=>compareSaveNoteInput(editor));
+    editor.addEventListener('keyup',saveRange);editor.addEventListener('mouseup',saveRange);
+    editor.addEventListener('keydown',event=>{if(event.key==='Tab'){event.preventDefault();document.execCommand(event.shiftKey?'outdent':'indent',false,null);compareSaveNoteInput(editor);}setTimeout(()=>{saveRange();updateTb();},0);});
+    card.querySelector('.ccl').addEventListener('click',()=>compareDeleteNote(index,comment.cid));
+    list.appendChild(card);
+  });
+  if(!list.children.length)list.innerHTML=`<div class="cmt-list-empty">Start a comment from a phrase.</div>`;
+  if(focusCid!==null)requestAnimationFrame(()=>{const editor=list.querySelector(`[data-compare-note="${index}:${focusCid}"]`);editor?.focus();activeEl=editor;});
+  syncWorkspaceChrome();
+}
+function compareSaveNoteInput(editor){
+  const [index,cid]=String(editor?.dataset?.compareNote||'').split(':');
+  const pane=COMPARE_PANES[Number(index)],comment=pane?.data?.cmts?.find(item=>String(item.cid)===cid);
+  if(!comment)return;
+  comment.html=editor.innerHTML;compareScheduleSave(Number(index));
+}
+function compareDeleteNote(index,cid){
+  const pane=COMPARE_PANES[index];if(!pane)return;
+  pane.data.cmts=(pane.data.cmts||[]).filter(comment=>String(comment.cid)!==String(cid));
+  compareScheduleSave(index);renderCompareNotes();renderCollectionCompare();
+}
+function compareOpenNotes(index,rid=null){
+  const pane=COMPARE_PANES[index];if(!pane?.data)return;
+  const list=_commentList();
+  if(!COMPARE_NOTE_CONTEXT&&list)COMPARE_PRIMARY_NOTE_NODES=[...list.childNodes];
+  COMPARE_NOTE_CONTEXT={index};
+  const cm=document.getElementById('cmargin');cm?.classList.remove('pane-hidden');
+  document.getElementById('study-notebook')?.classList.add('pane-hidden');
+  document.getElementById('structure-panel')?.classList.add('pane-hidden');
+  if(rid!==null){
+    const comments=pane.data.cmts||(pane.data.cmts=[]);let comment=comments.find(item=>String(item.rid)===String(rid));
+    if(!comment){comment={cid:String((Number(pane.data.CC)||0)+1),rid:String(rid),html:''};pane.data.CC=Number(comment.cid);comments.push(comment);compareScheduleSave(index);}
+    renderCompareNotes({focusCid:comment.cid});
+  }else renderCompareNotes();
+  document.getElementById('btn-cmt-pane')?.classList.add('active');
+}
+function compareActivateNotes(index){
+  if(COMPARE_NOTE_CONTEXT&&COMPARE_NOTE_CONTEXT.index!==index)compareOpenNotes(index);
+}
+function clearCompareNotesContext(){
+  if(!COMPARE_NOTE_CONTEXT)return;
+  const list=_commentList();if(list)list.replaceChildren(...COMPARE_PRIMARY_NOTE_NODES);
+  COMPARE_PRIMARY_NOTE_NODES=[];COMPARE_NOTE_CONTEXT=null;
+  const title=document.querySelector('#cmargin-hdr .cmargin-title');if(title)title.textContent=typeof t==='function'?t('workspace.notes'):'Notes';
+  _syncCommentList();syncWorkspaceChrome();
+}
 function drawConns(){ /* Retained as a safe no-op for legacy callers. */ }
 
 /* Scroll #cmargin so the comment card nearest to the diagram viewport
@@ -5087,6 +5167,11 @@ function initWorkspaceChrome(){
 function toggleCmtPane(){
   const cm=document.getElementById('cmargin');
   if(!cm) return;
+  if(EDITOR_VIEW==='compare'){
+    if(cm.classList.contains('pane-hidden')) compareOpenNotes(COMPARE_NOTE_CONTEXT?.index??0);
+    else cm.classList.add('pane-hidden');
+    syncWorkspaceChrome();return;
+  }
   const hidden=cm.classList.toggle('pane-hidden');
   if(!hidden){
     document.getElementById('study-notebook')?.classList.add('pane-hidden');
@@ -5290,11 +5375,12 @@ function toggleStructurePanel(){
   const opening=dock.classList.contains('pane-hidden');
   dock.classList.toggle('pane-hidden',!opening);
   if(opening){
+    STRUCTURE_EXPANDED.clear();
     document.getElementById('cmargin')?.classList.add('pane-hidden');
     document.getElementById('study-notebook')?.classList.add('pane-hidden');
     try{localStorage.setItem(WORKSPACE_NOTES_KEY,'0');localStorage.setItem(STUDY_NOTEBOOK_OPEN_KEY,'0');localStorage.setItem(STRUCTURE_PANEL_OPEN_KEY,'1');}catch(_){}
     renderStructurePanel();
-  }else try{localStorage.setItem(STRUCTURE_PANEL_OPEN_KEY,'0');}catch(_){}
+  }else{STRUCTURE_EXPANDED.clear();try{localStorage.setItem(STRUCTURE_PANEL_OPEN_KEY,'0');}catch(_){}}
   document.getElementById('btn-structure-panel')?.classList.toggle('active',opening);
   setTimeout(()=>{refreshBrackets();refreshDiagramConnectors();renderSectionStrips();},50);
   syncWorkspaceChrome();
@@ -5304,7 +5390,7 @@ function toggleStructurePanel(){
    It projects the existing section annotations into a movable analytical
    map. The only new persisted value is structureLane; source-row order and
    section ranges remain the canonical phrasing document. */
-function _structureLane(ann){return Math.max(-2,Math.min(2,Number(ann.structureLane)||0));}
+function _structureLane(ann){return Math.max(-2,Math.min(2,Number.isFinite(Number(ann?.structureLane))?Number(ann.structureLane):-2));}
 function _structureSections(){
   const rows=_realRows(),index=new Map(rows.map((row,i)=>[String(row.dataset.rid),i]));
   return ANNOTATIONS.filter(ann=>ann.type==='section').sort((a,b)=>(index.get(String(a.startRid))??Infinity)-(index.get(String(b.startRid))??Infinity));
@@ -5316,9 +5402,11 @@ function _structureRowHTML(row){
 }
 function _structureSelectOptions(selected){return _realRows().map(row=>{const rid=String(row.dataset.rid),label=(row.querySelector('.lid')?.textContent||rid);return `<option value="${rid}"${rid===String(selected)?' selected':''}>${escH(label)}</option>`;}).join('');}
 function _structureGroupHTML(ann,rows,rowNo,isUnsectioned=false){
-  if(isUnsectioned)return `<section class="structure-group is-unsectioned" style="grid-row:${rowNo}"><header class="structure-divider"><span class="structure-divider-label">${escH(typeof t==='function'?t('structure.unsectioned'):'Unsectioned')}</span></header><div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div></section>`;
+  if(isUnsectioned){const expanded=STRUCTURE_EXPANDED.has('unsectioned'),disclosure=typeof t==='function'?t(expanded?'structure.collapse':'structure.expand'):(expanded?'Collapse section':'Expand section');return `<section class="structure-group is-unsectioned${expanded?'':' is-collapsed'}" style="grid-row:${rowNo}"><header class="structure-divider"><button type="button" data-structure-unsectioned-toggle aria-expanded="${expanded}" title="${escH(disclosure)}">${expanded?'▾':'▸'}</button><span class="structure-divider-label">${escH(typeof t==='function'?t('structure.unsectioned'):'Unsectioned')}</span></header>${expanded?`<div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div>`:''}</section>`;}
   const lane=_structureLane(ann),start=lane+3;
-  return `<section class="structure-group" data-ann-id="${ann.id}" style="--structure-start:${start};--structure-color:${escH(ann.color||'#534AB7')};grid-row:${rowNo}"><header class="structure-divider" draggable="true"><button type="button" data-structure-action="left" title="Move section left">‹</button><span class="structure-divider-label" contenteditable="true" data-ph="Section…">${escH(ann.label||'')}</span><input type="color" value="${escH(ann.color||'#534AB7')}" title="Section color"><button type="button" data-structure-action="reset" title="Center section">•</button><button type="button" data-structure-action="right" title="Move section right">›</button><button type="button" data-structure-action="delete" title="Delete section">×</button></header><div class="structure-divider-meta"><select data-structure-range="start" aria-label="Section starts at">${_structureSelectOptions(ann.startRid)}</select><select data-structure-range="end" aria-label="Section ends at">${_structureSelectOptions(ann.endRid)}</select></div><div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div></section>`;
+  const expanded=STRUCTURE_EXPANDED.has(ann.id);
+  const disclosure=typeof t==='function'?t(expanded?'structure.collapse':'structure.expand'):(expanded?'Collapse section':'Expand section'),reset=typeof t==='function'?t('structure.reset-left'):'Reset section left';
+  return `<section class="structure-group${expanded?'':' is-collapsed'}" data-ann-id="${ann.id}" style="--structure-start:${start};--structure-color:${escH(ann.color||'#534AB7')};grid-row:${rowNo}"><header class="structure-divider" draggable="true"><button type="button" data-structure-action="toggle" aria-expanded="${expanded}" title="${escH(disclosure)}">${expanded?'▾':'▸'}</button><button type="button" data-structure-action="left" title="Move section left">‹</button><span class="structure-divider-label" contenteditable="true" data-ph="Section…">${escH(ann.label||'')}</span><input type="color" value="${escH(ann.color||'#534AB7')}" title="Section color"><button type="button" data-structure-action="reset" title="${escH(reset)}">•</button><button type="button" data-structure-action="right" title="Move section right">›</button><button type="button" data-structure-action="delete" title="Delete section">×</button></header>${expanded?`<div class="structure-divider-meta"><select data-structure-range="start" aria-label="Section starts at">${_structureSelectOptions(ann.startRid)}</select><select data-structure-range="end" aria-label="Section ends at">${_structureSelectOptions(ann.endRid)}</select></div><div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div>`:''}</section>`;
 }
 function renderStructurePanel(){
   const canvas=document.getElementById('structure-panel-canvas');if(!canvas)return;
@@ -5328,13 +5416,15 @@ function renderStructurePanel(){
   sections.forEach(ann=>{const a=index.get(String(ann.startRid)),b=index.get(String(ann.endRid));if(a===undefined||b===undefined)return;const lo=Math.min(a,b),hi=Math.max(a,b),members=rows.slice(lo,hi+1);members.forEach(row=>occupied.add(String(row.dataset.rid)));groups.push({ann,rows:members,at:lo});});
   const unsectioned=rows.filter(row=>!occupied.has(String(row.dataset.rid)));if(unsectioned.length)groups.push({ann:null,rows:unsectioned,at:Math.min(...unsectioned.map(row=>index.get(String(row.dataset.rid))))});
   groups.sort((a,b)=>a.at-b.at);
-  canvas.innerHTML=`<div class="structure-lanes">${groups.map((group,i)=>_structureGroupHTML(group.ann,group.rows,i+1,!group.ann)).join('')}</div>`;
+  const hasOffsets=sections.some(ann=>_structureLane(ann)>-2);
+  canvas.innerHTML=`<div class="structure-lanes${hasOffsets?' has-offsets':''}">${groups.map((group,i)=>_structureGroupHTML(group.ann,group.rows,i+1,!group.ann)).join('')}</div>`;
   canvas.querySelectorAll('.structure-row-edit').forEach(el=>{
     el.addEventListener('focus',()=>{activeEl=el;saveRange();});
     el.addEventListener('input',()=>structureSyncRow(el,el.dataset.rid,el.dataset.col));
     el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);
   });
   canvas.querySelectorAll('.structure-group[data-ann-id]').forEach(group=>_bindStructureGroup(group));
+  canvas.querySelector('[data-structure-unsectioned-toggle]')?.addEventListener('click',()=>{STRUCTURE_EXPANDED.has('unsectioned')?STRUCTURE_EXPANDED.delete('unsectioned'):STRUCTURE_EXPANDED.add('unsectioned');renderStructurePanel();});
 }
 function structureSyncRow(el,rid,col){
   const row=document.querySelector(`.xrow[data-rid="${CSS.escape(String(rid))}"]`);const target=row?.querySelector(`#${col==='t'?'tc':'oc'}-${rid} .cedit`);if(!target)return;
@@ -5347,10 +5437,10 @@ function _bindStructureGroup(group){
   label.addEventListener('input',()=>{ann.label=label.textContent.trim();autoSave();renderSectionStrips();if(EDITOR_VIEW==='diagram')renderDiagram();});
   label.addEventListener('blur',()=>_annLabelBlurSnap(ann.id,ann));
   group.querySelector('input[type="color"]')?.addEventListener('input',event=>{ann.color=event.target.value;autoSave();renderSectionStrips();if(EDITOR_VIEW==='diagram')renderDiagram();});
-  group.querySelectorAll('[data-structure-action]').forEach(button=>button.addEventListener('click',()=>{const action=button.dataset.structureAction;if(action==='delete'){deleteSection(ann.id);renderStructurePanel();return;}ann.structureLane=action==='reset'?0:Math.max(-2,Math.min(2,_structureLane(ann)+(action==='left'?-1:1)));autoSave();renderStructurePanel();}));
+  group.querySelectorAll('[data-structure-action]').forEach(button=>button.addEventListener('click',()=>{const action=button.dataset.structureAction;if(action==='toggle'){STRUCTURE_EXPANDED.has(ann.id)?STRUCTURE_EXPANDED.delete(ann.id):STRUCTURE_EXPANDED.add(ann.id);renderStructurePanel();return;}if(action==='delete'){deleteSection(ann.id);renderStructurePanel();return;}ann.structureLane=action==='reset'?-2:Math.max(-2,Math.min(2,_structureLane(ann)+(action==='left'?-1:1)));autoSave();renderStructurePanel();}));
   group.querySelectorAll('[data-structure-range]').forEach(select=>select.addEventListener('change',()=>structureSetRange(ann.id,group.querySelector('[data-structure-range="start"]').value,group.querySelector('[data-structure-range="end"]').value)));
   header.addEventListener('dragstart',event=>{if(event.target!==header){event.preventDefault();return;}event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',ann.id);});
-  header.addEventListener('dragend',event=>{const rect=document.getElementById('structure-panel-canvas')?.getBoundingClientRect();if(!rect)return;const delta=Math.round((event.clientX-(rect.left+rect.width/2))/108);ann.structureLane=Math.max(-2,Math.min(2,delta));autoSave();renderStructurePanel();});
+  header.addEventListener('dragend',event=>{const rect=document.getElementById('structure-panel-canvas')?.getBoundingClientRect();if(!rect)return;const delta=Math.round((event.clientX-rect.left)/120)-2;ann.structureLane=Math.max(-2,Math.min(2,delta));autoSave();renderStructurePanel();});
 }
 function structureSetRange(id,startRid,endRid){
   const ann=ANNOTATIONS.find(item=>item.id===id);if(!ann)return;const rids=_realRows().map(row=>String(row.dataset.rid));const start=rids.indexOf(String(startRid)),end=rids.indexOf(String(endRid));if(start<0||end<0)return;
@@ -5359,7 +5449,7 @@ function structureSetRange(id,startRid,endRid){
 }
 function structureAddSection(){
   const rids=_realRows().map(row=>String(row.dataset.rid));const first=rids.find((rid,i)=>!_rowInOtherSection(rids,i,null));if(!first){toast('Every row is already inside a section.');return;}
-  const ann={id:_annId(),type:'section',startRid:first,endRid:first,label:'',color:'#534AB7',structureLane:0};ANNOTATIONS.push(ann);autoSave();renderSectionStrips();renderStructurePanel();setTimeout(()=>document.querySelector(`.structure-group[data-ann-id="${ann.id}"] .structure-divider-label`)?.focus(),0);
+  const ann={id:_annId(),type:'section',startRid:first,endRid:first,label:'',color:'#534AB7',structureLane:-2};ANNOTATIONS.push(ann);autoSave();renderSectionStrips();renderStructurePanel();setTimeout(()=>document.querySelector(`.structure-group[data-ann-id="${ann.id}"] .structure-divider-label`)?.focus(),0);
 }
 
 /* ── Collection compare ──────────────────────────────────────────────
@@ -5383,7 +5473,8 @@ async function renderCollectionCompare(){
   for(let i=0;i<2;i++)if(!COMPARE_PANES[i]||!available.some(project=>project.id===COMPARE_PANES[i].projectId))await compareLoadPane(i,available[i]?.id);
   host.innerHTML=COMPARE_PANES.map((pane,i)=>_comparePaneHTML(pane,i,available)).join('');
   host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el));el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
-  host.querySelectorAll('[data-compare-comment]').forEach(el=>el.addEventListener('input',()=>compareSaveComment(el)));
+  host.querySelectorAll('[data-compare-annotation]').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotation.split(':');compareAnnotationLabel(Number(index),id,el);});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
+  host.querySelectorAll('[data-compare-annotation-color]').forEach(el=>el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotationColor.split(':');compareAnnotationColor(Number(index),id,el.value);}));
 }
 async function compareLoadPane(index,id){
   if(!id)return;const data=await _compareReadProject(id);if(!data)return;
@@ -5394,23 +5485,55 @@ function _comparePaneOptions(index,available,pane){
   return available.map(project=>`<option value="${project.id}"${project.id===pane.projectId?' selected':''}${project.id===other?' disabled':''}>${escH(project.name||'Untitled')} · ${escH(project.verseRef||'—')}</option>`).join('');
 }
 function _compareSectionsAt(data,rid){return (data.annotations||[]).filter(ann=>ann.type==='section'&&String(ann.startRid)===String(rid));}
+function _compareDividersAt(data,rid){return (data.annotations||[]).filter(ann=>ann.type==='divider'&&String(ann.beforeRid||ann.afterRid)===String(rid));}
+function _compareSectionsCovering(data,rid){
+  const rows=data.rows||[],at=rows.findIndex(row=>String(row.rid)===String(rid));if(at<0)return [];
+  const rowIndex=new Map(rows.map((row,index)=>[String(row.rid),index]));
+  return (data.annotations||[]).filter(ann=>{
+    if(ann.type!=='section')return false;const start=rowIndex.get(String(ann.startRid)),end=rowIndex.get(String(ann.endRid));
+    return start!==undefined&&end!==undefined&&at>=Math.min(start,end)&&at<=Math.max(start,end);
+  });
+}
+function _compareCommentButton(index,rid){return `<button type="button" class="cmtbtn compare-cmtbtn" title="Add or edit comment" aria-label="Add or edit comment" onclick="event.stopPropagation();compareToggleComment(${index},'${rid}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>`;}
+function _compareAnnotationHtml(ann,index,kind){
+  const label=ann.label||(typeof t==='function'?t(`compare.${kind}`):(kind==='section'?'Section':'Proposition'));
+  return `<div class="compare-${kind}-divider" style="--compare-annotation-color:${escH(ann.color||(kind==='section'?'#534AB7':'#C8A84B'))}" dir="auto"><span class="compare-annotation-line"></span><div class="compare-annotation-label" contenteditable="true" data-compare-annotation="${index}:${ann.id}">${escH(label)}</div><input type="color" value="${escH(ann.color||(kind==='section'?'#534AB7':'#C8A84B'))}" data-compare-annotation-color="${index}:${ann.id}" title="Annotation color"></div>`;
+}
+function _comparePhrasingContent(data,index){
+  const isRTL=!!data.isRTL;
+  return (data.rows||[]).map(row=>{
+    const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
+    const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
+    const covered=_compareSectionsCovering(data,row.rid)[0],rail=covered?` style="--compare-section-color:${escH(covered.color||'#534AB7')}"`:'';
+    return `${sections}${dividers}<article class="compare-row${covered?' has-section':''}"${rail}><div class="compare-row-meta"><span dir="auto">${escH(row.lineId||'—')}</span>${_compareCommentButton(index,row.rid)}</div><div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}</div></article>`;
+  }).join('');
+}
+function _compareDiagramContent(data,index){
+  const isRTL=!!data.isRTL;
+  return `<div class="compare-diagram${isRTL?' is-rtl':''}">${(data.rows||[]).map((row,i)=>{
+    const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
+    const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
+    const covered=_compareSectionsCovering(data,row.rid)[0],align=['flex-end','center','flex-start'][i%3],mirrored=isRTL?(align==='flex-end'?'flex-start':align==='flex-start'?'flex-end':align):align;
+    return `${sections}${dividers}<article class="compare-diagram-card${covered?' has-section':''}" data-compare-card="${index}:${row.rid}" style="--compare-align:${mirrored};${covered?`--compare-section-color:${escH(covered.color||'#534AB7')};`:''}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-diagram-card-top">${_compareCommentButton(index,row.rid)}<span dir="auto">${escH(row.lineId||'—')}</span></div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>`;
+  }).join('')}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`;
+}
 function _comparePaneHTML(pane,index,available){
   if(!pane?.data)return `<section class="compare-pane"><div class="compare-pane-body">Could not load this chapter.</div></section>`;
   const data=pane.data,rows=data.rows||[];const isDiagram=pane.view==='diagram',phraseLabel=typeof t==='function'?t('compare.phrasing'):'Phrasing',diagramLabel=typeof t==='function'?t('compare.diagram'):'Diagram';
-  const content=isDiagram?`<div class="compare-diagram">${rows.map((row,i)=>`<article class="compare-diagram-card" data-compare-card="${index}:${row.rid}" style="--compare-align:${i%3===0?'flex-end':i%3===1?'center':'flex-start'}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>`).join('')}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`:rows.map(row=>{const sections=_compareSectionsAt(data,row.rid).map(ann=>`<div class="compare-ref" contenteditable="true" oninput="compareSectionLabel(${index},'${ann.id}',this)">${escH(ann.label||'Section')}</div>`).join('');const comment=(data.cmts||[]).find(item=>String(item.rid)===String(row.rid));return `${sections}<article class="compare-row"><div class="compare-row-id"><button type="button" title="Add or edit comment" onclick="compareToggleComment(${index},'${row.rid}')">${escH(row.lineId||'—')}</button></div><div><div class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}${comment?`<div class="compare-edit compare-comment" contenteditable="true" data-compare-comment="${index}:${row.rid}">${comment.html||''}</div>`:''}</div></article>`;}).join('');
-  return `<section class="compare-pane" data-compare-pane="${index}"><header class="compare-pane-hdr"><select aria-label="Choose collection chapter" onchange="compareChoosePane(${index},this.value)">${_comparePaneOptions(index,available,pane)}</select><button type="button" class="${!isDiagram?'active':''}" onclick="compareSetView(${index},'phrasing')">${escH(phraseLabel)}</button><button type="button" class="${isDiagram?'active':''}" onclick="compareSetView(${index},'diagram')">${escH(diagramLabel)}</button><button type="button" onclick="compareAddRow(${index})" title="Add row">＋</button><button type="button" onclick="compareAddSection(${index})" title="Add section">§</button><button type="button" onclick="compareDeleteFocusedRow(${index})" title="Delete focused row">−</button></header><div class="compare-pane-hdr"><button type="button" onclick="compareFormat(${index},'bold')"><b>B</b></button><button type="button" onclick="compareFormat(${index},'italic')"><i>I</i></button><button type="button" onclick="compareFormat(${index},'underline')"><u>U</u></button><button type="button" onclick="compareIndent(${index},-1)">⇤</button><button type="button" onclick="compareIndent(${index},1)">⇥</button>${isDiagram?`<button type="button" onclick="compareRemoveLastLink(${index})" title="Remove last relationship">⌫</button>`:''}<span class="compare-ref">${escH(data.verseRef||'Untitled passage')}</span></div><div class="compare-pane-body">${content||'<div class="structure-empty">This chapter has no phrasing rows yet.</div>'}</div></section>`;
+  const content=isDiagram?_compareDiagramContent(data,index):_comparePhrasingContent(data,index);
+  return `<section class="compare-pane${data.isRTL?' is-rtl':''}" data-compare-pane="${index}" onfocusin="compareActivateNotes(${index})"><header class="compare-pane-hdr"><select aria-label="Choose collection chapter" onchange="compareChoosePane(${index},this.value)">${_comparePaneOptions(index,available,pane)}</select><button type="button" class="${!isDiagram?'active':''}" onclick="compareSetView(${index},'phrasing')">${escH(phraseLabel)}</button><button type="button" class="${isDiagram?'active':''}" onclick="compareSetView(${index},'diagram')">${escH(diagramLabel)}</button><button type="button" onclick="compareAddRow(${index})" title="Add row">＋</button><button type="button" onclick="compareAddSection(${index})" title="Add section">§</button><button type="button" onclick="compareDeleteFocusedRow(${index})" title="Delete focused row">−</button></header><div class="compare-pane-hdr"><button type="button" onclick="compareFormat(${index},'bold')"><b>B</b></button><button type="button" onclick="compareFormat(${index},'italic')"><i>I</i></button><button type="button" onclick="compareFormat(${index},'underline')"><u>U</u></button><button type="button" onclick="compareIndent(${index},-1)">⇤</button><button type="button" onclick="compareIndent(${index},1)">⇥</button>${isDiagram?`<button type="button" onclick="compareRemoveLastLink(${index})" title="Remove last relationship">⌫</button>`:''}<span class="compare-ref" dir="auto">${escH(data.verseRef||'Untitled passage')}</span></div><div class="compare-pane-body">${content||'<div class="structure-empty">This chapter has no phrasing rows yet.</div>'}</div></section>`;
 }
-async function compareChoosePane(index,id){if(COMPARE_PANES[index===0?1:0]?.projectId===id){toast('Choose a different collection chapter for each pane.');return;}await compareLoadPane(index,id);renderCollectionCompare();}
+async function compareChoosePane(index,id){if(COMPARE_PANES[index===0?1:0]?.projectId===id){toast('Choose a different collection chapter for each pane.');return;}await compareLoadPane(index,id);renderCollectionCompare();if(COMPARE_NOTE_CONTEXT?.index===index)compareOpenNotes(index);}
 function compareSetView(index,view){if(COMPARE_PANES[index]){COMPARE_PANES[index].view=view;renderCollectionCompare();}}
 function compareEdit(index,rid,col,el){const pane=COMPARE_PANES[index],row=pane?.data?.rows?.find(item=>String(item.rid)===String(rid));if(!row)return;row[col==='t'?'transHTML':'origHTML']=el.innerHTML;if(pane.projectId===CURRENT_PROJECT_ID){const primary=document.querySelector(`.xrow[data-rid="${CSS.escape(String(rid))}"] #${col==='t'?'tc':'oc'}-${rid} .cedit`);if(primary&&primary!==el)primary.innerHTML=el.innerHTML;if(EDITOR_VIEW==='diagram')renderDiagram();}compareScheduleSave(index);}
 function compareFormat(index,command){const active=activeEl;if(!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;active.focus();restoreRange();document.execCommand(command,false,null);compareEdit(index,active.dataset.rid,active.dataset.col,active);}
 function compareIndent(index,delta){const active=activeEl;if(!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const pane=COMPARE_PANES[index],row=pane.data.rows.find(item=>String(item.rid)===String(active.dataset.rid));const key=active.dataset.col==='t'?'transIndent':'origIndent';row[key]=String(Math.max(0,Number(row[key]||0)+delta));compareScheduleSave(index);renderCollectionCompare();}
 function compareAddRow(index){const pane=COMPARE_PANES[index];if(!pane)return;const data=pane.data,rid=String(Math.max(Number(data.RC)||0,...(data.rows||[]).map(row=>Number(row.rid)||0))+1);data.RC=Number(rid);data.rows.push({rid,verse:'',lineId:'—',origHTML:'',transHTML:'',origIndent:'0',transIndent:'0',cid:''});compareScheduleSave(index);renderCollectionCompare();}
-function compareAddSection(index){const pane=COMPARE_PANES[index],active=activeEl;if(!pane||!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const rid=active.dataset.rid,sections=pane.data.annotations||(pane.data.annotations=[]);if(sections.some(ann=>ann.type==='section'&&String(ann.startRid)===String(rid)))return;const id=`ann-compare-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;sections.push({id,type:'section',startRid:rid,endRid:rid,label:'Section',color:'#534AB7',structureLane:0});compareScheduleSave(index);renderCollectionCompare();}
-function compareDeleteFocusedRow(index){const pane=COMPARE_PANES[index],active=activeEl;if(!pane||!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const rid=String(active.dataset.rid);pane.data.rows=pane.data.rows.filter(row=>String(row.rid)!==rid);pane.data.cmts=(pane.data.cmts||[]).filter(comment=>String(comment.rid)!==rid);pane.data.annotations=(pane.data.annotations||[]).filter(ann=>String(ann.startRid)!==rid&&String(ann.endRid)!==rid);pane.data.diagramData={...(pane.data.diagramData||{}),connectors:(pane.data.diagramData?.connectors||[]).filter(link=>String(link.fromRid)!==rid&&String(link.toRid)!==rid)};compareScheduleSave(index);renderCollectionCompare();}
-function compareSectionLabel(index,id,el){const ann=COMPARE_PANES[index]?.data?.annotations?.find(item=>item.id===id);if(!ann)return;ann.label=el.textContent.trim();compareScheduleSave(index);}
-function compareToggleComment(index,rid){const pane=COMPARE_PANES[index];if(!pane)return;const comments=pane.data.cmts||(pane.data.cmts=[]);let comment=comments.find(item=>String(item.rid)===String(rid));if(!comment){comment={cid:String((Number(pane.data.CC)||0)+1),rid,html:''};pane.data.CC=Number(comment.cid);comments.push(comment);}compareScheduleSave(index);renderCollectionCompare();}
-function compareSaveComment(el){const [index,rid]=String(el.dataset.compareComment||'').split(':');const pane=COMPARE_PANES[Number(index)],comment=pane?.data?.cmts?.find(item=>String(item.rid)===rid);if(!comment)return;comment.html=el.innerHTML;compareScheduleSave(Number(index));}
+function compareAddSection(index){const pane=COMPARE_PANES[index],active=activeEl;if(!pane||!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const rid=active.dataset.rid,sections=pane.data.annotations||(pane.data.annotations=[]);if(sections.some(ann=>ann.type==='section'&&String(ann.startRid)===String(rid)))return;const id=`ann-compare-${Date.now()}-${Math.random().toString(36).slice(2,5)}`;sections.push({id,type:'section',startRid:rid,endRid:rid,label:'Section',color:'#534AB7',structureLane:-2});compareScheduleSave(index);renderCollectionCompare();}
+function compareDeleteFocusedRow(index){const pane=COMPARE_PANES[index],active=activeEl;if(!pane||!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const rid=String(active.dataset.rid);pane.data.rows=pane.data.rows.filter(row=>String(row.rid)!==rid);pane.data.cmts=(pane.data.cmts||[]).filter(comment=>String(comment.rid)!==rid);pane.data.annotations=(pane.data.annotations||[]).filter(ann=>String(ann.startRid)!==rid&&String(ann.endRid)!==rid);pane.data.diagramData={...(pane.data.diagramData||{}),connectors:(pane.data.diagramData?.connectors||[]).filter(link=>String(link.fromRid)!==rid&&String(link.toRid)!==rid)};compareScheduleSave(index);renderCollectionCompare();if(COMPARE_NOTE_CONTEXT?.index===index)renderCompareNotes();}
+function compareAnnotationLabel(index,id,el){const ann=COMPARE_PANES[index]?.data?.annotations?.find(item=>item.id===id);if(!ann)return;ann.label=el.textContent.trim();compareScheduleSave(index);}
+function compareAnnotationColor(index,id,value){const ann=COMPARE_PANES[index]?.data?.annotations?.find(item=>item.id===id);if(!ann)return;ann.color=value;compareScheduleSave(index);renderCollectionCompare();}
+function compareToggleComment(index,rid){compareOpenNotes(index,rid);}
 function compareDiagramLink(index,rid){const pane=COMPARE_PANES[index];if(!pane||pane.view!=='diagram')return;const previous=COMPARE_LINK_SELECTION[index];if(!previous){COMPARE_LINK_SELECTION[index]=rid;document.querySelector(`[data-compare-card="${index}:${rid}"]`)?.focus();return;}if(previous!==rid){const data=pane.data,links=data.diagramData?.connectors||(data.diagramData={...(data.diagramData||{}),connectors:[],labels:data.diagramData?.labels||[]}).connectors;links.push({id:`compare-cnx-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,fromRid:previous,toRid:rid,kind:'curve'});compareScheduleSave(index);}COMPARE_LINK_SELECTION[index]=null;renderCollectionCompare();}
 function compareRemoveLastLink(index){const links=COMPARE_PANES[index]?.data?.diagramData?.connectors;if(!links?.length)return;links.pop();compareScheduleSave(index);renderCollectionCompare();}
 function compareScheduleSave(index){const pane=COMPARE_PANES[index];if(!pane)return;clearTimeout(pane.saveTimer);pane.saveTimer=setTimeout(async()=>{try{await pIdbSet(pane.projectId,JSON.stringify(pane.data));const idx=projIndex(),entry=idx.find(item=>item.id===pane.projectId);if(entry){entry.savedAt=Date.now();entry.verseRef=pane.data.verseRef||entry.verseRef;projStoreIndex(idx);}if(typeof acctMarkDirty==='function')acctMarkDirty(pane.projectId);}catch(_){toast('Could not save this comparison chapter.');}},500);}
@@ -5714,7 +5837,8 @@ function collectData(){
       cid:row.dataset.cid||''});
   });
   const cmts=[];
-  document.querySelectorAll('.ccard').forEach(card=>{
+  const commentCards=COMPARE_NOTE_CONTEXT?COMPARE_PRIMARY_NOTE_NODES:[...document.querySelectorAll('.ccard')];
+  commentCards.forEach(card=>{
     const ed=card.querySelector('.cedit-c');
     cmts.push({cid:card.dataset.cid,rid:card.dataset.rid,html:ed?ed.innerHTML:''});
   });
@@ -5729,6 +5853,7 @@ function collectData(){
     diagramData:{connectors:[...DIAGRAM_DATA.connectors], labels:[...DIAGRAM_DATA.labels]},
     brackets: typeof collectBracketData==='function' ? collectBracketData() : [],
     annotations: ANNOTATIONS.map(a=>({...a})),
+    structureLayoutVersion:STRUCTURE_LAYOUT_VERSION,
     annCtr: ANN_CTR,
     studyNotebook:{entries:STUDY_NOTEBOOK.map(note=>({...note,attachments:(note.attachments||[]).map(link=>({...link}))})),nextId:STUDY_NOTE_CTR},
     sourceCitation: SOURCE_CITATION,
@@ -5908,7 +6033,8 @@ function loadData(data){
   // Restore brackets (after rows are in DOM, loadBracketData defers render)
   if(typeof loadBracketData==='function') loadBracketData(data.brackets||[]);
   // Restore annotations
-  ANNOTATIONS=Array.isArray(data.annotations)?data.annotations.map(a=>a.type==='section'?{...a,structureLane:_structureLane(a)}:{...a}):[];
+  const structureNeedsLeftMigration=Number(data.structureLayoutVersion||0)<STRUCTURE_LAYOUT_VERSION;
+  ANNOTATIONS=Array.isArray(data.annotations)?data.annotations.map(a=>a.type==='section'?{...a,structureLane:structureNeedsLeftMigration?-2:_structureLane(a)}:{...a}):[];
   ANN_CTR=data.annCtr||0;
   // Ensure ANN_CTR is at least as large as the highest existing id
   ANNOTATIONS.forEach(a=>{ const n=parseInt(String(a.id||'').replace(/^ann-/,''),10); if(!isNaN(n)&&n>=ANN_CTR) ANN_CTR=n+1; });
@@ -9469,7 +9595,7 @@ function addSection(){
     toast(typeof t==='function'?t('toast.section-overlap'):'This row is already inside another section.');
     return;
   }
-  const ann = { id:_annId(), type:'section', startRid:anchorRid, endRid:anchorRid, label:'', color:'#534AB7', structureLane:0 };
+  const ann = { id:_annId(), type:'section', startRid:anchorRid, endRid:anchorRid, label:'', color:'#534AB7', structureLane:-2 };
   ANNOTATIONS.push(ann);
   renderSectionStrips();
   renderStructurePanel();

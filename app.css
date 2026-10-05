@@ -4938,3 +4938,34 @@ body.hide-sections #section-strips{display:none}
 #collection-compare{flex:1;min-width:0;min-height:0;overflow:auto;padding:12px;background:#f4f2ed}#collection-compare[hidden]{display:none}#collection-compare-panes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;min-height:100%}.compare-pane{display:flex;flex-direction:column;min-width:0;min-height:460px;border:1px solid rgba(73,53,72,.16);border-radius:12px;background:var(--surface);overflow:hidden;box-shadow:0 3px 12px rgba(39,29,39,.08)}.compare-pane-hdr{display:flex;align-items:center;gap:6px;padding:8px;border-bottom:1px solid rgba(73,53,72,.11);background:rgba(73,53,72,.025)}.compare-pane-hdr select{flex:1;min-width:0;height:29px;border:1px solid rgba(73,53,72,.18);border-radius:6px;background:var(--surface);color:var(--ink);padding:0 7px;font:700 10px var(--ui)}.compare-pane-hdr button{height:28px;padding:0 8px;border:1px solid rgba(73,53,72,.16);border-radius:6px;background:transparent;color:var(--ink);font:700 10px var(--ui);cursor:pointer}.compare-pane-hdr button.active,.compare-pane-hdr button:hover,.compare-pane-hdr button:focus-visible{background:var(--sig);border-color:var(--sig);color:var(--label);outline:0}.compare-pane-body{flex:1;min-height:0;overflow:auto;padding:9px}.compare-ref{margin:0 0 8px;color:var(--muted);font:700 10px var(--ui)}.compare-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:7px;padding:8px 5px;border-bottom:1px solid rgba(73,53,72,.08)}.compare-row-id{padding-top:3px;color:var(--muted);font:800 10px var(--ui);text-align:center}.compare-edit{outline:0;min-height:22px;color:var(--ink);font:16px/1.45 var(--serif);word-break:break-word}.compare-edit+.compare-edit{margin-top:4px;padding-top:4px;border-top:1px dashed rgba(73,53,72,.12);font-size:12px;color:var(--muted)}.compare-diagram{display:flex;flex-direction:column;gap:12px;padding:12px;min-height:100%;background:linear-gradient(rgba(73,53,72,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(73,53,72,.04) 1px,transparent 1px);background-size:26px 26px}.compare-diagram-card{align-self:var(--compare-align,center);max-width:94%;padding:8px 10px;border:1px solid rgba(73,53,72,.18);border-radius:8px;background:var(--surface);box-shadow:0 2px 7px rgba(39,29,39,.06);outline:0;font:18px/1.35 var(--serif);color:var(--ink)}.compare-diagram-card small{display:block;margin-top:4px;padding-top:4px;border-top:1px dashed rgba(73,53,72,.12);color:var(--muted);font:12px/1.35 var(--serif)}#collection-compare-empty{display:grid;place-items:center;min-height:240px;text-align:center;color:var(--muted);font:italic 13px var(--serif)}
 @media (max-width:1000px){#collection-compare-panes{grid-template-columns:1fr}.compare-pane{min-height:380px}}@media (max-width:700px){#structure-panel{position:absolute;right:8px;top:8px;bottom:8px;z-index:30;width:min(360px,calc(100% - 16px));flex-basis:auto}}
 :root[data-theme='dark'] #structure-panel{background:#211f29;border-color:rgba(237,231,221,.13);box-shadow:0 4px 18px rgba(0,0,0,.24)}:root[data-theme='dark'] .structure-panel-hdr{background:#252030;border-bottom-color:rgba(237,231,221,.1)}:root[data-theme='dark'] .structure-panel-canvas,:root[data-theme='dark'] #collection-compare{background-color:#1d1a24;background-image:linear-gradient(rgba(237,231,221,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(237,231,221,.04) 1px,transparent 1px)}:root[data-theme='dark'] .structure-group,:root[data-theme='dark'] .compare-pane,:root[data-theme='dark'] .compare-diagram-card{border-color:rgba(237,231,221,.16);background:#292431}:root[data-theme='dark'] .structure-row,:root[data-theme='dark'] .compare-pane-hdr{border-color:rgba(237,231,221,.1);background:rgba(255,255,255,.025)}:root[data-theme='dark'] .structure-row-edit,:root[data-theme='dark'] .compare-edit,:root[data-theme='dark'] .compare-diagram-card{color:var(--label)}:root[data-theme='dark'] .structure-divider-meta select,:root[data-theme='dark'] .compare-pane-hdr select{border-color:rgba(237,231,221,.2);background:#211f29;color:var(--label)}
+
+/* Structure is an outline first.  It expands into a lane map only after a
+   user deliberately moves a section, so an untouched passage reads left to
+   right instead of floating in the centre of a seven-column grid. */
+.structure-lanes{grid-template-columns:repeat(3,minmax(0,1fr));min-width:0;width:100%}
+.structure-lanes.has-offsets{grid-template-columns:repeat(7,108px);min-width:816px;width:max-content}
+.structure-group,.structure-group.is-unsectioned{grid-column:var(--structure-start,1)/span 3}
+.structure-group.is-unsectioned{grid-column:1/span 3}
+.structure-group.is-collapsed .structure-divider{border-radius:9px}
+.structure-divider [data-structure-action="toggle"],.structure-divider [data-structure-unsectioned-toggle]{font-size:13px;line-height:1}
+
+/* Scoped Compare annotations and per-pane writing direction. */
+.compare-row{position:relative;grid-template-columns:48px minmax(0,1fr)}
+.compare-row.has-section,.compare-diagram-card.has-section{border-inline-start:3px solid var(--compare-section-color);}
+.compare-row-meta{display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:3px;color:var(--muted);font:800 10px var(--ui);text-align:center}
+.compare-cmtbtn{width:24px;height:24px}
+.compare-original[dir="rtl"]{text-align:right;direction:rtl}
+.compare-translation{direction:ltr;text-align:left}
+.compare-section-divider,.compare-proposition-divider{display:flex;align-items:center;gap:7px;margin:7px 0 2px;color:var(--compare-annotation-color);font:800 10px var(--ui)}
+.compare-section-divider{padding:6px 7px;border-radius:6px;background:color-mix(in srgb,var(--compare-annotation-color) 12%,transparent);border-inline-start:3px solid var(--compare-annotation-color)}
+.compare-proposition-divider{padding:3px 0}
+.compare-annotation-line{height:1px;flex:1;background:var(--compare-annotation-color);opacity:.8}
+.compare-annotation-label{min-width:24px;outline:0;word-break:break-word}
+.compare-annotation-label:focus{box-shadow:0 0 0 2px color-mix(in srgb,var(--compare-annotation-color) 38%,transparent);border-radius:3px}
+.compare-section-divider input,.compare-proposition-divider input{width:16px;height:16px;padding:0;border:0;border-radius:50%;background:transparent;cursor:pointer}
+.compare-diagram .compare-section-divider,.compare-diagram .compare-proposition-divider{width:100%;box-sizing:border-box}
+.compare-diagram-card{position:relative}
+.compare-diagram-card-top{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:4px;color:var(--muted);font:800 10px var(--ui)}
+.compare-diagram.is-rtl .compare-diagram-card-top{direction:rtl}
+.compare-diagram.is-rtl .compare-diagram-card small{direction:ltr;text-align:left}
+:root[data-theme='dark'] .compare-section-divider{background:color-mix(in srgb,var(--compare-annotation-color) 18%,transparent)}
