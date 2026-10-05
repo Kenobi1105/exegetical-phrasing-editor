@@ -635,9 +635,13 @@
         <div id="study-notebook-list"></div>
       </aside>
       <aside id="structure-panel" class="pane-hidden" aria-label="Structure panel">
-        <header class="structure-panel-hdr"><div><span class="cmargin-title" data-i18n="structure.title">Structure</span><span id="structure-panel-help" class="structure-panel-help" data-i18n="structure.help">Arrange sections to explore patterns</span></div><button id="structure-add-section" type="button" onclick="structureAddSection()" title="Add section">＋</button></header>
+        <header class="structure-panel-hdr"><div><span class="cmargin-title" data-i18n="structure.title">Structure</span><span id="structure-panel-help" class="structure-panel-help" data-i18n="structure.help">Arrange sections to explore patterns</span></div><div class="structure-panel-actions"><button id="structure-add-section" type="button" onclick="structureAddSection()" title="Add section">＋</button><button id="structure-expand-workspace" type="button" onclick="toggleStructureExpanded()" data-i18n-title="structure.expand-workspace" title="Open expanded Structure workspace" aria-label="Open expanded Structure workspace" data-i18n-aria-label="structure.expand-workspace">⤢</button><button id="structure-modal-close" type="button" onclick="toggleStructureExpanded(false)" data-i18n-title="structure.close-workspace" title="Close expanded Structure workspace" aria-label="Close expanded Structure workspace" data-i18n-aria-label="structure.close-workspace" hidden>×</button></div></header>
         <div id="structure-panel-canvas" class="structure-panel-canvas"></div>
       </aside>
+    </div>
+
+    <div id="structure-expanded-modal" class="screen hidden" role="dialog" aria-modal="true" aria-label="Expanded Structure workspace" data-i18n-aria-label="structure.expanded-workspace">
+      <div id="structure-expanded-mount"></div>
     </div>
 
     <!-- ══ BRACKET EDIT POPUP ══ -->

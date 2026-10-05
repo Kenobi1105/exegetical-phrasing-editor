@@ -117,6 +117,10 @@ let COMPARE_PRIMARY_NOTE_NODES=[];
 const STRUCTURE_LAYOUT_VERSION=1;
 let STRUCTURE_EXPANDED=new Set();
 const STRUCTURE_PANEL_OPEN_KEY='exeg-structure-panel-open';
+let STRUCTURE_MODAL_OPEN=false;
+let STRUCTURE_DOCK_PARENT=null;
+let STRUCTURE_DOCK_NEXT=null;
+let STRUCTURE_MODAL_SCROLL={left:0,top:0};
 let COLLECTION_STRUCTURE_MODELS=new Map();
 let COLLECTION_STRUCTURE_RENDER_TOKEN=0;
 let DIAGRAM_EDIT_MODE=false; // true = diagram word-edit mode active
@@ -5170,6 +5174,7 @@ function initWorkspaceChrome(){
     const reorganize=()=>setTimeout(_organizeWorkspaceTools,0);
     if(mq.addEventListener) mq.addEventListener('change',reorganize); else mq.addListener(reorganize);
   }
+  initStructureExpandedWorkspace();
   syncWorkspaceChrome();
 }
 
@@ -5504,6 +5509,7 @@ function toggleStudyNotebook(){
 
 function toggleStructurePanel(){
   const dock=document.getElementById('structure-panel');if(!dock)return;
+  if(STRUCTURE_MODAL_OPEN)toggleStructureExpanded(false);
   const opening=dock.classList.contains('pane-hidden');
   dock.classList.toggle('pane-hidden',!opening);
   if(opening){
@@ -5516,6 +5522,29 @@ function toggleStructurePanel(){
   document.getElementById('btn-structure-panel')?.classList.toggle('active',opening);
   setTimeout(()=>{refreshBrackets();refreshDiagramConnectors();renderSectionStrips();},50);
   syncWorkspaceChrome();
+}
+function toggleStructureExpanded(force){
+  const dock=document.getElementById('structure-panel'),modal=document.getElementById('structure-expanded-modal'),mount=document.getElementById('structure-expanded-mount');if(!dock||!modal||!mount)return;
+  const opening=force===undefined?!STRUCTURE_MODAL_OPEN:!!force;
+  if(opening===STRUCTURE_MODAL_OPEN)return;
+  if(opening){
+    if(dock.classList.contains('pane-hidden'))return;
+    const canvas=document.getElementById('structure-panel-canvas');STRUCTURE_MODAL_SCROLL={left:canvas?.scrollLeft||0,top:canvas?.scrollTop||0};
+    STRUCTURE_DOCK_PARENT=dock.parentNode;STRUCTURE_DOCK_NEXT=dock.nextSibling;
+    mount.appendChild(dock);dock.classList.add('is-modal-expanded');modal.classList.remove('hidden');STRUCTURE_MODAL_OPEN=true;
+    document.getElementById('structure-expand-workspace')?.setAttribute('hidden','');document.getElementById('structure-modal-close')?.removeAttribute('hidden');
+    requestAnimationFrame(()=>{if(canvas){canvas.scrollLeft=STRUCTURE_MODAL_SCROLL.left;canvas.scrollTop=STRUCTURE_MODAL_SCROLL.top;}document.getElementById('structure-modal-close')?.focus();});
+  }else{
+    const canvas=document.getElementById('structure-panel-canvas');STRUCTURE_MODAL_SCROLL={left:canvas?.scrollLeft||0,top:canvas?.scrollTop||0};
+    if(STRUCTURE_DOCK_PARENT)STRUCTURE_DOCK_PARENT.insertBefore(dock,STRUCTURE_DOCK_NEXT);dock.classList.remove('is-modal-expanded');modal.classList.add('hidden');STRUCTURE_MODAL_OPEN=false;
+    document.getElementById('structure-expand-workspace')?.removeAttribute('hidden');document.getElementById('structure-modal-close')?.setAttribute('hidden','');
+    requestAnimationFrame(()=>{if(canvas){canvas.scrollLeft=STRUCTURE_MODAL_SCROLL.left;canvas.scrollTop=STRUCTURE_MODAL_SCROLL.top;}document.getElementById('structure-expand-workspace')?.focus();});
+  }
+}
+function initStructureExpandedWorkspace(){
+  const modal=document.getElementById('structure-expanded-modal');if(!modal||modal.dataset.ready)return;modal.dataset.ready='1';
+  modal.addEventListener('mousedown',event=>{if(event.target===modal)toggleStructureExpanded(false);});
+  document.addEventListener('keydown',event=>{if(!STRUCTURE_MODAL_OPEN)return;if(event.key==='Escape'){event.preventDefault();event.stopPropagation();toggleStructureExpanded(false);return;}if(event.key==='Tab'){const focusable=[...modal.querySelectorAll('button:not([hidden]):not([disabled]),input:not([disabled]),select:not([disabled]),[contenteditable="true"]')].filter(el=>el.offsetParent!==null);if(!focusable.length)return;const first=focusable[0],last=focusable[focusable.length-1];if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
 }
 
 /* ── Structure panel ─────────────────────────────────────────────────
@@ -5533,12 +5562,16 @@ function _structureRowHTML(row){
   return `<article class="structure-row"><header class="structure-row-head"><span>${escH(verse||'—')}</span><span>${escH(line)}</span></header><div class="structure-row-edit" contenteditable="true" data-rid="${rid}" data-col="o">${orig}</div>${IS_SINGLE?'':`<div class="structure-row-edit" contenteditable="true" data-rid="${rid}" data-col="t">${trans}</div>`}</article>`;
 }
 function _structureSelectOptions(selected){return _realRows().map(row=>{const rid=String(row.dataset.rid),label=(row.querySelector('.lid')?.textContent||rid);return `<option value="${rid}"${rid===String(selected)?' selected':''}>${escH(label)}</option>`;}).join('');}
+function _structureText(key,fallback){return typeof t==='function'?t(key):fallback;}
+function _structureEditableDividerHeader(actionAttribute,expanded,color,label){
+  const disclosure=_structureText(expanded?'structure.collapse':'structure.expand',expanded?'Collapse section':'Expand section'),reset=_structureText('structure.reset-left','Reset section left'),left=_structureText('structure.move-left','Move section left'),right=_structureText('structure.move-right','Move section right'),remove=_structureText('structure.delete','Delete section'),colorLabel=_structureText('structure.color','Section color');
+  return `<header class="structure-divider"><div class="structure-divider-actions" draggable="true"><button type="button" ${actionAttribute}="toggle" aria-expanded="${expanded}" title="${escH(disclosure)}">${expanded?'▾':'▸'}</button><button type="button" ${actionAttribute}="left" title="${escH(left)}">‹</button><button type="button" ${actionAttribute}="right" title="${escH(right)}">›</button><button type="button" ${actionAttribute}="reset" title="${escH(reset)}">↤</button><button type="button" ${actionAttribute}="delete" title="${escH(remove)}">×</button></div><div class="structure-divider-title-row"><label class="structure-color-control" title="${escH(colorLabel)}"><input type="color" value="${escH(color||'#534AB7')}" aria-label="${escH(colorLabel)}"></label><span class="structure-divider-label" contenteditable="true" data-ph="Section…">${escH(label||'')}</span></div></header>`;
+}
 function _structureGroupHTML(ann,rows,rowNo,isUnsectioned=false){
-  if(isUnsectioned){const expanded=STRUCTURE_EXPANDED.has('unsectioned'),disclosure=typeof t==='function'?t(expanded?'structure.collapse':'structure.expand'):(expanded?'Collapse section':'Expand section');return `<section class="structure-group is-unsectioned${expanded?'':' is-collapsed'}" style="grid-row:${rowNo}"><header class="structure-divider"><button type="button" data-structure-unsectioned-toggle aria-expanded="${expanded}" title="${escH(disclosure)}">${expanded?'▾':'▸'}</button><span class="structure-divider-label">${escH(typeof t==='function'?t('structure.unsectioned'):'Unsectioned')}</span></header>${expanded?`<div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div>`:''}</section>`;}
+  if(isUnsectioned){const expanded=STRUCTURE_EXPANDED.has('unsectioned'),disclosure=typeof t==='function'?t(expanded?'structure.collapse':'structure.expand'):(expanded?'Collapse section':'Expand section');return `<section class="structure-group is-unsectioned${expanded?'':' is-collapsed'}" style="grid-row:${rowNo}"><header class="structure-divider structure-divider--compact"><button type="button" data-structure-unsectioned-toggle aria-expanded="${expanded}" title="${escH(disclosure)}">${expanded?'▾':'▸'}</button><span class="structure-divider-label">${escH(typeof t==='function'?t('structure.unsectioned'):'Unsectioned')}</span></header>${expanded?`<div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div>`:''}</section>`;}
   const lane=_structureLane(ann),start=lane+3;
   const expanded=STRUCTURE_EXPANDED.has(ann.id);
-  const disclosure=typeof t==='function'?t(expanded?'structure.collapse':'structure.expand'):(expanded?'Collapse section':'Expand section'),reset=typeof t==='function'?t('structure.reset-left'):'Reset section left';
-  return `<section class="structure-group${expanded?'':' is-collapsed'}" data-ann-id="${ann.id}" style="--structure-start:${start};--structure-color:${escH(ann.color||'#534AB7')};grid-row:${rowNo}"><header class="structure-divider" draggable="true"><button type="button" data-structure-action="toggle" aria-expanded="${expanded}" title="${escH(disclosure)}">${expanded?'▾':'▸'}</button><button type="button" data-structure-action="left" title="Move section left">‹</button><span class="structure-divider-label" contenteditable="true" data-ph="Section…">${escH(ann.label||'')}</span><input type="color" value="${escH(ann.color||'#534AB7')}" title="Section color"><button type="button" data-structure-action="reset" title="${escH(reset)}">•</button><button type="button" data-structure-action="right" title="Move section right">›</button><button type="button" data-structure-action="delete" title="Delete section">×</button></header>${expanded?`<div class="structure-divider-meta"><select data-structure-range="start" aria-label="Section starts at">${_structureSelectOptions(ann.startRid)}</select><select data-structure-range="end" aria-label="Section ends at">${_structureSelectOptions(ann.endRid)}</select></div><div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div>`:''}</section>`;
+  return `<section class="structure-group${expanded?'':' is-collapsed'}" data-ann-id="${ann.id}" style="--structure-start:${start};--structure-color:${escH(ann.color||'#534AB7')};grid-row:${rowNo}">${_structureEditableDividerHeader('data-structure-action',expanded,ann.color,ann.label)}${expanded?`<div class="structure-divider-meta"><select data-structure-range="start" aria-label="Section starts at">${_structureSelectOptions(ann.startRid)}</select><select data-structure-range="end" aria-label="Section ends at">${_structureSelectOptions(ann.endRid)}</select></div><div class="structure-rows">${rows.map(_structureRowHTML).join('')}</div>`:''}</section>`;
 }
 function renderStructurePanel(){
   const canvas=document.getElementById('structure-panel-canvas');if(!canvas)return;
@@ -5567,15 +5600,15 @@ function structureSyncRow(el,rid,col){
 }
 function _bindStructureGroup(group){
   const ann=ANNOTATIONS.find(item=>item.id===group.dataset.annId);if(!ann)return;
-  const header=group.querySelector('.structure-divider'),label=group.querySelector('.structure-divider-label');
+  const header=group.querySelector('.structure-divider'),dragHandle=group.querySelector('.structure-divider-actions'),label=group.querySelector('.structure-divider-label');
   label.addEventListener('focus',()=>_annLabelFocusSnap(ann.id,label));
   label.addEventListener('input',()=>{ann.label=label.textContent.trim();autoSave();renderSectionStrips();if(EDITOR_VIEW==='diagram')renderDiagram();});
   label.addEventListener('blur',()=>_annLabelBlurSnap(ann.id,ann));
   group.querySelector('input[type="color"]')?.addEventListener('input',event=>{ann.color=event.target.value;autoSave();renderSectionStrips();if(EDITOR_VIEW==='diagram')renderDiagram();});
   group.querySelectorAll('[data-structure-action]').forEach(button=>button.addEventListener('click',()=>{const action=button.dataset.structureAction;if(action==='toggle'){STRUCTURE_EXPANDED.has(ann.id)?STRUCTURE_EXPANDED.delete(ann.id):STRUCTURE_EXPANDED.add(ann.id);renderStructurePanel();return;}if(action==='delete'){deleteSection(ann.id);renderStructurePanel();return;}ann.structureLane=action==='reset'?-2:Math.max(-2,Math.min(2,_structureLane(ann)+(action==='left'?-1:1)));autoSave();renderStructurePanel();}));
   group.querySelectorAll('[data-structure-range]').forEach(select=>select.addEventListener('change',()=>structureSetRange(ann.id,group.querySelector('[data-structure-range="start"]').value,group.querySelector('[data-structure-range="end"]').value)));
-  header.addEventListener('dragstart',event=>{if(event.target!==header){event.preventDefault();return;}event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',ann.id);});
-  header.addEventListener('dragend',event=>{const rect=document.getElementById('structure-panel-canvas')?.getBoundingClientRect();if(!rect)return;const delta=Math.round((event.clientX-rect.left)/80)-2;ann.structureLane=Math.max(-2,Math.min(2,delta));autoSave();renderStructurePanel();});
+  dragHandle?.addEventListener('dragstart',event=>{if(event.target.closest('button')){event.preventDefault();return;}event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',ann.id);});
+  dragHandle?.addEventListener('dragend',event=>{const rect=document.getElementById('structure-panel-canvas')?.getBoundingClientRect();if(!rect)return;const delta=Math.round((event.clientX-rect.left)/80)-2;ann.structureLane=Math.max(-2,Math.min(2,delta));autoSave();renderStructurePanel();});
 }
 function structureSetRange(id,startRid,endRid){
   const ann=ANNOTATIONS.find(item=>item.id===id);if(!ann)return;const rids=_realRows().map(row=>String(row.dataset.rid));const start=rids.indexOf(String(startRid)),end=rids.indexOf(String(endRid));if(start<0||end<0)return;
@@ -5609,9 +5642,9 @@ function _collectionStructureRowHTML(model,row){
 function _collectionStructureSelectOptions(model,selected){return (model.data.rows||[]).map(row=>{const rid=String(row.rid),label=row.lineId||rid;return `<option value="${rid}"${rid===String(selected)?' selected':''}>${escH(label)}</option>`;}).join('');}
 function _collectionStructureGroupHTML(model,group,rowNo){
   const projectId=model.projectId,memberLabel=model.project?.name||model.member.label||'Untitled',memberColor=_collectionStructureMemberColor(projectId),cardStyle=`--collection-member-color:${memberColor};grid-row:${rowNo}`;
-  if(!group.ann){const key=_collectionStructureExpandKey(projectId,'unsectioned'),expanded=STRUCTURE_EXPANDED.has(key),label=typeof t==='function'?t('structure.unsectioned'):'Unsectioned';return `<section class="structure-group is-unsectioned${expanded?'':' is-collapsed'}" data-structure-project="${projectId}" style="${cardStyle}" title="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(label)}" aria-label="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(label)}"><header class="structure-divider"><button type="button" data-collection-structure-unsectioned="${projectId}" aria-expanded="${expanded}" title="${escH(expanded?(typeof t==='function'?t('structure.collapse'):'Collapse section'):(typeof t==='function'?t('structure.expand'):'Expand section'))}">${expanded?'▾':'▸'}</button><span class="structure-divider-label">${escH(label)}</span></header>${expanded?`<div class="structure-rows">${group.rows.map(row=>_collectionStructureRowHTML(model,row)).join('')}</div>`:''}</section>`;}
-  const ann=group.ann,lane=_structureLane(ann),start=lane+3,key=_collectionStructureExpandKey(projectId,ann.id),expanded=STRUCTURE_EXPANDED.has(key),reset=typeof t==='function'?t('structure.reset-left'):'Reset section left';
-  return `<section class="structure-group${expanded?'':' is-collapsed'}" data-structure-project="${projectId}" data-ann-id="${ann.id}" style="--structure-start:${start};--structure-color:${escH(ann.color||'#534AB7')};${cardStyle}" title="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(ann.label||'Section')}" aria-label="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(ann.label||'Section')}"><header class="structure-divider" draggable="true"><button type="button" data-collection-structure-action="toggle" aria-expanded="${expanded}" title="${escH(expanded?(typeof t==='function'?t('structure.collapse'):'Collapse section'):(typeof t==='function'?t('structure.expand'):'Expand section'))}">${expanded?'▾':'▸'}</button><button type="button" data-collection-structure-action="left" title="Move section left">‹</button><span class="structure-divider-label" contenteditable="true" data-ph="Section…">${escH(ann.label||'')}</span><input type="color" value="${escH(ann.color||'#534AB7')}" title="Section color"><button type="button" data-collection-structure-action="reset" title="${escH(reset)}">•</button><button type="button" data-collection-structure-action="right" title="Move section right">›</button><button type="button" data-collection-structure-action="delete" title="Delete section">×</button></header>${expanded?`<div class="structure-divider-meta"><select data-collection-structure-range="start" aria-label="Section starts at">${_collectionStructureSelectOptions(model,ann.startRid)}</select><select data-collection-structure-range="end" aria-label="Section ends at">${_collectionStructureSelectOptions(model,ann.endRid)}</select></div><div class="structure-rows">${group.rows.map(row=>_collectionStructureRowHTML(model,row)).join('')}</div>`:''}</section>`;
+  if(!group.ann){const key=_collectionStructureExpandKey(projectId,'unsectioned'),expanded=STRUCTURE_EXPANDED.has(key),label=typeof t==='function'?t('structure.unsectioned'):'Unsectioned';return `<section class="structure-group is-unsectioned${expanded?'':' is-collapsed'}" data-structure-project="${projectId}" style="${cardStyle}" title="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(label)}" aria-label="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(label)}"><header class="structure-divider structure-divider--compact"><button type="button" data-collection-structure-unsectioned="${projectId}" aria-expanded="${expanded}" title="${escH(expanded?(typeof t==='function'?t('structure.collapse'):'Collapse section'):(typeof t==='function'?t('structure.expand'):'Expand section'))}">${expanded?'▾':'▸'}</button><span class="structure-divider-label">${escH(label)}</span></header>${expanded?`<div class="structure-rows">${group.rows.map(row=>_collectionStructureRowHTML(model,row)).join('')}</div>`:''}</section>`;}
+  const ann=group.ann,lane=_structureLane(ann),start=lane+3,key=_collectionStructureExpandKey(projectId,ann.id),expanded=STRUCTURE_EXPANDED.has(key);
+  return `<section class="structure-group${expanded?'':' is-collapsed'}" data-structure-project="${projectId}" data-ann-id="${ann.id}" style="--structure-start:${start};--structure-color:${escH(ann.color||'#534AB7')};${cardStyle}" title="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(ann.label||'Section')}" aria-label="${_studyEscAttr(memberLabel)} — ${_studyEscAttr(ann.label||'Section')}">${_structureEditableDividerHeader('data-collection-structure-action',expanded,ann.color,ann.label)}${expanded?`<div class="structure-divider-meta"><select data-collection-structure-range="start" aria-label="Section starts at">${_collectionStructureSelectOptions(model,ann.startRid)}</select><select data-collection-structure-range="end" aria-label="Section ends at">${_collectionStructureSelectOptions(model,ann.endRid)}</select></div><div class="structure-rows">${group.rows.map(row=>_collectionStructureRowHTML(model,row)).join('')}</div>`:''}</section>`;
 }
 function _collectionStructureMemberCardsHTML(model,startRow){
   const {rows,sections,groups}=_collectionStructureGroups(model.data),memberLabel=model.project?.name||model.member.label||'Untitled',memberColor=_collectionStructureMemberColor(model.projectId);
@@ -5636,13 +5669,13 @@ function collectionStructureSyncRow(el){const model=COLLECTION_STRUCTURE_MODELS.
 function collectionStructureSetRange(projectId,id,startRid,endRid){const model=COLLECTION_STRUCTURE_MODELS.get(projectId),ann=model?.data?.annotations?.find(item=>item.id===id);if(!model||!ann)return;const rows=model.data.rows||[],rids=rows.map(row=>String(row.rid)),start=rids.indexOf(String(startRid)),end=rids.indexOf(String(endRid));if(start<0||end<0)return;const lo=Math.min(start,end),hi=Math.max(start,end),index=new Map(rids.map((rid,at)=>[rid,at]));if((model.data.annotations||[]).some(other=>{if(other.id===id||other.type!=='section')return false;const a=index.get(String(other.startRid)),b=index.get(String(other.endRid));return a!==undefined&&b!==undefined&&lo<=Math.max(a,b)&&hi>=Math.min(a,b);})){toast('Sections cannot overlap.');renderStructurePanel();return;}ann.startRid=rids[lo];ann.endRid=rids[hi];_collectionStructureSyncPrimaryAnnotations(model);collectionStructureScheduleSave(model);renderStructurePanel();}
 function _bindCollectionStructureGroup(group){
   const projectId=group.dataset.structureProject,annId=group.dataset.annId,model=COLLECTION_STRUCTURE_MODELS.get(projectId),ann=model?.data?.annotations?.find(item=>item.id===annId);if(!model||!ann)return;
-  const header=group.querySelector('.structure-divider'),label=group.querySelector('.structure-divider-label');
+  const header=group.querySelector('.structure-divider'),dragHandle=group.querySelector('.structure-divider-actions'),label=group.querySelector('.structure-divider-label');
   label.addEventListener('input',()=>{ann.label=label.textContent.trim();_collectionStructureSyncPrimaryAnnotations(model);collectionStructureScheduleSave(model);});
   group.querySelector('input[type="color"]')?.addEventListener('input',event=>{ann.color=event.target.value;_collectionStructureSyncPrimaryAnnotations(model);collectionStructureScheduleSave(model);});
   group.querySelectorAll('[data-collection-structure-action]').forEach(button=>button.addEventListener('click',()=>{const action=button.dataset.collectionStructureAction,key=_collectionStructureExpandKey(projectId,ann.id);if(action==='toggle'){STRUCTURE_EXPANDED.has(key)?STRUCTURE_EXPANDED.delete(key):STRUCTURE_EXPANDED.add(key);renderStructurePanel();return;}if(action==='delete'){model.data.annotations=model.data.annotations.filter(item=>item.id!==ann.id);_collectionStructureSyncPrimaryAnnotations(model);collectionStructureScheduleSave(model);renderStructurePanel();return;}ann.structureLane=action==='reset'?-2:Math.max(-2,Math.min(2,_structureLane(ann)+(action==='left'?-1:1)));_collectionStructureSyncPrimaryAnnotations(model);collectionStructureScheduleSave(model);renderStructurePanel();}));
   group.querySelectorAll('[data-collection-structure-range]').forEach(select=>select.addEventListener('change',()=>collectionStructureSetRange(projectId,ann.id,group.querySelector('[data-collection-structure-range="start"]').value,group.querySelector('[data-collection-structure-range="end"]').value)));
-  header.addEventListener('dragstart',event=>{if(event.target!==header){event.preventDefault();return;}event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',`${projectId}:${ann.id}`);});
-  header.addEventListener('dragend',event=>{const rect=document.getElementById('structure-panel-canvas')?.getBoundingClientRect();if(!rect)return;const delta=Math.round((event.clientX-rect.left)/80)-2;ann.structureLane=Math.max(-2,Math.min(2,delta));_collectionStructureSyncPrimaryAnnotations(model);collectionStructureScheduleSave(model);renderStructurePanel();});
+  dragHandle?.addEventListener('dragstart',event=>{if(event.target.closest('button')){event.preventDefault();return;}event.dataTransfer.effectAllowed='move';event.dataTransfer.setData('text/plain',`${projectId}:${ann.id}`);});
+  dragHandle?.addEventListener('dragend',event=>{const rect=document.getElementById('structure-panel-canvas')?.getBoundingClientRect();if(!rect)return;const delta=Math.round((event.clientX-rect.left)/80)-2;ann.structureLane=Math.max(-2,Math.min(2,delta));_collectionStructureSyncPrimaryAnnotations(model);collectionStructureScheduleSave(model);renderStructurePanel();});
 }
 async function renderCollectionStructurePanel(canvas){
   const collection=ACTIVE_COLLECTION;if(!collection)return;const token=++COLLECTION_STRUCTURE_RENDER_TOKEN,members=[...collection.members];canvas.innerHTML=`<div class="structure-empty">${escH(typeof t==='function'?t('structure.loading'):'Loading collection structure…')}</div>`;
