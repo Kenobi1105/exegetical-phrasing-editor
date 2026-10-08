@@ -5851,14 +5851,16 @@ function _compareSpacersFor(projectId){
   const map=ACTIVE_COLLECTION?.compareSpacers;
   return Array.isArray(map?.[projectId])?map[projectId]:[];
 }
-function _compareSpacerHTML(spacer,index){
+function _compareSpacerHTML(spacer,index,data,view='phrasing'){
   const removeLabel=typeof t==='function'?t('compare.spacer.remove'):'Remove alignment blank';
-  return `<div class="compare-alignment-spacer" data-compare-spacer="${escH(spacer.id)}"><button type="button" onclick="compareRemoveSpacer(${index},'${spacer.id}')" title="${escH(removeLabel)}" aria-label="${escH(removeLabel)}">×</button></div>`;
+  const copy=`<div class="compare-alignment-spacer-copy" aria-hidden="true"><div class="compare-edit compare-original">&nbsp;</div>${data.isSingle?'':`<div class="compare-edit compare-translation">&nbsp;</div>`}</div>`;
+  const remove=`<button type="button" onclick="compareRemoveSpacer(${index},'${spacer.id}')" title="${escH(removeLabel)}" aria-label="${escH(removeLabel)}">×</button>`;
+  return view==='diagram'?`<div class="compare-alignment-spacer compare-diagram-spacer" data-compare-spacer="${escH(spacer.id)}">${copy}${remove}</div>`:`<div class="compare-row compare-alignment-spacer" data-compare-spacer="${escH(spacer.id)}"><div class="compare-row-meta" aria-hidden="true"></div>${copy}${remove}</div>`;
 }
-function _compareSpacersAfter(projectId,rid,index){return _compareSpacersFor(projectId).filter(spacer=>String(spacer.afterRid||'')===String(rid)).map(spacer=>_compareSpacerHTML(spacer,index)).join('');}
-function _compareEndSpacers(data,projectId,index){
+function _compareSpacersAfter(projectId,rid,index,data,view){return _compareSpacersFor(projectId).filter(spacer=>String(spacer.afterRid||'')===String(rid)).map(spacer=>_compareSpacerHTML(spacer,index,data,view)).join('');}
+function _compareEndSpacers(data,projectId,index,view){
   const rowIds=new Set((data.rows||[]).map(row=>String(row.rid)));
-  return _compareSpacersFor(projectId).filter(spacer=>!spacer.afterRid||!rowIds.has(String(spacer.afterRid))).map(spacer=>_compareSpacerHTML(spacer,index)).join('');
+  return _compareSpacersFor(projectId).filter(spacer=>!spacer.afterRid||!rowIds.has(String(spacer.afterRid))).map(spacer=>_compareSpacerHTML(spacer,index,data,view)).join('');
 }
 function _compareSectionsCovering(data,rid){
   const rows=data.rows||[],at=rows.findIndex(row=>String(row.rid)===String(rid));if(at<0)return [];
@@ -5879,8 +5881,8 @@ function _comparePhrasingContent(data,index){
     const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
     const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
     const covered=_compareSectionsCovering(data,row.rid)[0],rail=covered?` style="--compare-section-color:${escH(covered.color||'#534AB7')}"`:'';
-    return `${sections}${dividers}<article class="compare-row${covered?' has-section':''}"${rail}><div class="compare-row-meta"><span dir="auto">${escH(row.lineId||'—')}</span>${_compareCommentButton(index,row.rid)}</div><div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}</div></article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index)}`;
-  }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index);
+    return `${sections}${dividers}<article class="compare-row${covered?' has-section':''}"${rail}><div class="compare-row-meta"><span dir="auto">${escH(row.lineId||'—')}</span>${_compareCommentButton(index,row.rid)}</div><div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}</div></article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index,data,'phrasing')}`;
+  }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index,'phrasing');
 }
 function _compareDiagramContent(data,index){
   const isRTL=!!data.isRTL;
@@ -5888,8 +5890,8 @@ function _compareDiagramContent(data,index){
     const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
     const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
     const covered=_compareSectionsCovering(data,row.rid)[0],align=['flex-end','center','flex-start'][i%3],mirrored=isRTL?(align==='flex-end'?'flex-start':align==='flex-start'?'flex-end':align):align;
-    return `${sections}${dividers}<article class="compare-diagram-card${covered?' has-section':''}" dir="${isRTL?'rtl':'ltr'}" data-compare-card="${index}:${row.rid}" style="--compare-align:${mirrored};${covered?`--compare-section-color:${escH(covered.color||'#534AB7')};`:''}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-diagram-card-top">${_compareCommentButton(index,row.rid)}<span dir="auto">${escH(row.lineId||'—')}</span></div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index)}`;
-  }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index)}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`;
+    return `${sections}${dividers}<article class="compare-diagram-card${covered?' has-section':''}" dir="${isRTL?'rtl':'ltr'}" data-compare-card="${index}:${row.rid}" style="--compare-align:${mirrored};${covered?`--compare-section-color:${escH(covered.color||'#534AB7')};`:''}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-diagram-card-top">${_compareCommentButton(index,row.rid)}<span dir="auto">${escH(row.lineId||'—')}</span></div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index,data,'diagram')}`;
+  }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index,'diagram')}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`;
 }
 function _comparePaneHTML(pane,index,available){
   if(!pane?.data)return `<section class="compare-pane"><div class="compare-pane-body">Could not load this chapter.</div></section>`;
