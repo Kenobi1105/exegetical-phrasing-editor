@@ -842,7 +842,6 @@
 
 <!-- ══ EXPORT POPUP ══ -->
 <div id="export-popup">
-  <label class="export-study-option"><input id="export-study-notebook" type="checkbox"/> <span data-i18n="study.export.include">Include Study Notebook</span></label>
   <button id="export-pdf-btn"        onclick="openPhrasingPdfModal();closeExportPopup()" data-i18n="export.pdf"        style="display:none">Export as PDF</button>
   <button id="export-diag-pdf-btn"   onclick="openDiagPdfModal();closeExportPopup()"      data-i18n="export.diag-pdf"   style="display:none">Export Diagram as PDF</button>
   <button                            onclick="doExportJSON();closeExportPopup()"           data-i18n="export.json">Export as JSON</button>
@@ -858,6 +857,13 @@
       </button>
     </div>
     <div class="diag-pdf-fields">
+      <div id="phrasing-pdf-scope-row" class="diag-pdf-field" hidden>
+        <label class="diag-pdf-label" for="phrasing-pdf-scope" data-i18n="export.collection.scope">Export</label>
+        <select id="phrasing-pdf-scope" class="diag-pdf-select" onchange="updatePhrasingPdfCollectionOptions()">
+          <option value="current" data-i18n="export.collection.current">Current chapter</option>
+          <option value="collection" data-i18n="export.collection.all">Entire collection — one PDF</option>
+        </select>
+      </div>
       <div class="diag-pdf-field">
         <label class="diag-pdf-label" for="phrasing-pdf-size" data-i18n="export.pdf.size-label">Page Size</label>
         <select id="phrasing-pdf-size" class="diag-pdf-select">
@@ -872,6 +878,14 @@
           <option value="original" data-i18n="export.pdf.keep-a4-size">Keep A4 content size</option>
         </select>
       </div>
+      <div id="phrasing-pdf-orientation-row" class="diag-pdf-field" hidden>
+        <label class="diag-pdf-label" for="phrasing-pdf-orient" data-i18n="export.pdf.orient-label">Orientation</label>
+        <select id="phrasing-pdf-orient" class="diag-pdf-select">
+          <option value="landscape" selected data-i18n="export.pdf.landscape">Landscape</option>
+          <option value="portrait" data-i18n="export.pdf.portrait">Portrait</option>
+        </select>
+      </div>
+      <label class="diag-pdf-check"><input id="phrasing-pdf-study-notebook" type="checkbox"/> <span id="phrasing-pdf-study-notebook-label" data-i18n="study.export.include">Include Study Notebook</span></label>
     </div>
     <div class="diag-pdf-footer">
       <button class="diag-pdf-cancel" onclick="closePhrasingPdfModal()" data-i18n="export.pdf.cancel">Cancel</button>
@@ -892,6 +906,13 @@
     </div>
     <!-- Fields -->
     <div class="diag-pdf-fields">
+      <div id="diag-pdf-scope-row" class="diag-pdf-field" hidden>
+        <label class="diag-pdf-label" for="diag-pdf-scope" data-i18n="export.collection.scope">Export</label>
+        <select id="diag-pdf-scope" class="diag-pdf-select" onchange="updateDiagPdfCollectionOptions()">
+          <option value="current" data-i18n="export.collection.current">Current chapter</option>
+          <option value="collection" data-i18n="export.collection.all">Entire collection — one PDF</option>
+        </select>
+      </div>
       <div class="diag-pdf-field">
         <label class="diag-pdf-label" for="diag-pdf-size" data-i18n="export.pdf.size-label">Page Size</label>
         <select id="diag-pdf-size" class="diag-pdf-select">
@@ -908,6 +929,7 @@
           <option value="portrait"  data-i18n="export.pdf.portrait">Portrait</option>
         </select>
       </div>
+      <label class="diag-pdf-check"><input id="diag-pdf-study-notebook" type="checkbox"/> <span id="diag-pdf-study-notebook-label" data-i18n="study.export.include">Include Study Notebook</span></label>
     </div>
     <!-- Footer -->
     <div class="diag-pdf-footer">

@@ -3130,6 +3130,9 @@ sup.bfn:hover { opacity: .7; }
 .diag-pdf-close:hover{background:var(--alt);color:var(--ink);}
 .diag-pdf-fields{display:flex;flex-direction:column;gap:12px;}
 .diag-pdf-field{display:flex;flex-direction:column;gap:5px;}
+.diag-pdf-check{display:flex;align-items:center;gap:7px;color:var(--ink);font:600 12px var(--ui);cursor:pointer;}
+.diag-pdf-check input{width:15px;height:15px;margin:0;accent-color:var(--sig);}
+.diag-pdf-check:focus-within{outline:2px solid var(--focus-ring,var(--sig));outline-offset:3px;border-radius:4px;}
 .diag-pdf-label{
   font-family:var(--ui);font-size:10px;font-weight:700;
   letter-spacing:.07em;text-transform:uppercase;color:var(--muted);

@@ -5934,6 +5934,8 @@ document.addEventListener('keydown',function(e){
   if(e.key!=='Escape')return;
   var phrasingPdfModal=document.getElementById('phrasing-pdf-modal');
   if(phrasingPdfModal&&!phrasingPdfModal.classList.contains('hidden')){e.preventDefault();closePhrasingPdfModal();return;}
+  var diagPdfModal=document.getElementById('diag-pdf-modal');
+  if(diagPdfModal&&!diagPdfModal.classList.contains('hidden')){e.preventDefault();closeDiagPdfModal();return;}
   var setModal=document.getElementById('set-modal');
   if(setModal&&!setModal.classList.contains('hidden')){e.preventDefault();if(typeof settingsEscOrClickOutside==='function')settingsEscOrClickOutside();return;}
   var helpModal=document.getElementById('help-modal');
@@ -6352,6 +6354,7 @@ let ACTIVE_COLLECTION_ID=null;
 let ACTIVE_COLLECTION=null;
 let COLLECTION_MEMBERS_OPEN=false;
 let collectionSaveTimer=null;
+let COLLECTION_PDF_EXPORTING=false;
 
 function projIndex(){
   try{ return JSON.parse(localStorage.getItem(PROJ_INDEX_KEY)||'[]'); }
@@ -7788,6 +7791,7 @@ function renderS1Recent(){
 
 /* ── Auto-save to localStorage project ── */
 function autoSave(){
+  if(COLLECTION_PDF_EXPORTING)return;
   if(!SESS)return;
   // Keep comment HTML available while the Notes dock is collapsed.
   document.querySelectorAll('.ccard').forEach(card=>{
@@ -7868,9 +7872,41 @@ async function doExportPDF(){
 }
 
 /* ── Phrasing PDF export ─────────────────────────────────────────────── */
+function _collectionExportMembers(){
+  if(!ACTIVE_COLLECTION) return [];
+  const index=projIndex();
+  return ACTIVE_COLLECTION.members.map(member=>({member,entry:index.find(project=>project.id===member.projectId)}));
+}
+function _collectionExportAvailableMembers(){return _collectionExportMembers().filter(item=>item.entry&&!projIsTrashed(item.entry));}
+function _exportText(key,fallback,values={}){
+  let text=typeof t==='function'?t(key):fallback;
+  Object.entries(values).forEach(([name,value])=>{text=text.replace('{'+name+'}',String(value));});
+  return text;
+}
+function _setCollectionPdfOptionState(kind){
+  const isCollection=!!ACTIVE_COLLECTION;
+  const available=_collectionExportAvailableMembers();
+  const scope=document.getElementById(kind+'-pdf-scope');
+  const scopeRow=document.getElementById(kind+'-pdf-scope-row');
+  const notebookLabel=document.getElementById(kind+'-pdf-study-notebook-label');
+  if(scopeRow) scopeRow.hidden=!isCollection;
+  if(scope){
+    const collectionOption=scope.querySelector('option[value="collection"]');
+    if(collectionOption) collectionOption.disabled=!available.length;
+    if(!isCollection||!available.length) scope.value='current';
+  }
+  const entire=isCollection&&scope?.value==='collection';
+  if(kind==='phrasing') document.getElementById('phrasing-pdf-orientation-row').hidden=!entire;
+  if(notebookLabel) notebookLabel.textContent=entire
+    ?_exportText('export.collection.notebook','Include Collection Study Notebook')
+    :_exportText('study.export.include','Include Study Notebook');
+}
+function updatePhrasingPdfCollectionOptions(){_setCollectionPdfOptionState('phrasing');}
+function updateDiagPdfCollectionOptions(){_setCollectionPdfOptionState('diag');}
 function openPhrasingPdfModal(){
   document.getElementById('phrasing-pdf-modal')?.classList.remove('hidden');
   applyLang();
+  _setCollectionPdfOptionState('phrasing');
 }
 function closePhrasingPdfModal(){
   document.getElementById('phrasing-pdf-modal')?.classList.add('hidden');
@@ -7878,14 +7914,19 @@ function closePhrasingPdfModal(){
 function exportPhrasingPDFFromModal(){
   const format=document.getElementById('phrasing-pdf-size')?.value||'a4';
   const contentSizing=document.getElementById('phrasing-pdf-content-size')?.value||'fit';
+  const scope=document.getElementById('phrasing-pdf-scope')?.value||'current';
+  const orientation=document.getElementById('phrasing-pdf-orient')?.value||'landscape';
+  const includeNotebook=!!document.getElementById('phrasing-pdf-study-notebook')?.checked;
   closePhrasingPdfModal();
-  exportPDF(format,contentSizing);
+  if(scope==='collection'&&ACTIVE_COLLECTION) exportCollectionPhrasingPDF(format,contentSizing,orientation,includeNotebook);
+  else exportPDF(format,contentSizing,{appendNotebook:includeNotebook});
 }
 
 /* ── Diagram PDF export ──────────────────────────────────────────────── */
 function openDiagPdfModal(){
   document.getElementById('diag-pdf-modal').classList.remove('hidden');
   applyLang(); // ensure i18n strings are fresh
+  _setCollectionPdfOptionState('diag');
 }
 function closeDiagPdfModal(){
   document.getElementById('diag-pdf-modal').classList.add('hidden');
@@ -7895,10 +7936,13 @@ function closeDiagPdfModal(){
 function exportDiagramPDFFromModal(){
   const format     =(document.getElementById('diag-pdf-size')?.value    ||'a4');
   const orientation=(document.getElementById('diag-pdf-orient')?.value  ||'landscape');
-  exportDiagramPDF(format, orientation);
+  const scope=document.getElementById('diag-pdf-scope')?.value||'current';
+  const includeNotebook=!!document.getElementById('diag-pdf-study-notebook')?.checked;
+  if(scope==='collection'&&ACTIVE_COLLECTION){closeDiagPdfModal();exportCollectionDiagramPDF(format,orientation,includeNotebook);}
+  else exportDiagramPDF(format, orientation,{appendNotebook:includeNotebook});
 }
 
-async function exportDiagramPDF(format, orientation){
+async function exportDiagramPDF(format, orientation, options={}){
   closeDiagPdfModal();
   const canvas=document.getElementById('dcanvas');
   if(!canvas){ toast('No diagram canvas found.'); return; }
@@ -7906,7 +7950,7 @@ async function exportDiagramPDF(format, orientation){
   if(!jsPDF){ toast('PDF library not loaded.'); return; }
   toast(typeof t==='function'?t('export.pdf.generating'):'Generating PDF\u2026');
   const ref=(document.getElementById('refin')?.value||'').trim()||'Diagram';
-  const doc=await _runDiagramPDFExport(ref, LANG||'', format, orientation);
+  const doc=await _runDiagramPDFExport(ref, LANG||'', format, orientation,options);
   if(!doc){ toast('PDF export failed.'); return; }
   doc.save(buildDiagramFilename(ref)+'.pdf');
 }
@@ -7915,7 +7959,7 @@ async function exportDiagramPDF(format, orientation){
    Captures the live #dcanvas, slices into pages with footnotes and
    block-snap anti-cut logic, returns a jsPDF doc (or null on failure).
    Used by both exportDiagramPDF (single) and _exportAllDiagPDF (bulk). */
-async function _runDiagramPDFExport(ref, langSrc, format, orientation){
+async function _runDiagramPDFExport(ref, langSrc, format, orientation, options={}){
   const canvas=document.getElementById('dcanvas');
   if(!canvas) return null;
   const {jsPDF}=window.jspdf;
@@ -7929,6 +7973,8 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   };
   const [pW,pH]=PAGE_SIZES[format]?.[orientation]||PAGE_SIZES.a4.landscape;
   const MAR=28, usableW=pW-MAR*2;
+
+  let doc=options.doc||null;
 
   // ── Clone canvas off-screen ────────────────────────────────────────
   const host=document.createElement('div');
@@ -7990,6 +8036,8 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
     document.body.removeChild(host);
   }
   if(!capturedCanvas) return null;
+  if(!doc) doc=new jsPDF({orientation,unit:'pt',format});
+  else if(options.appendPageBefore) doc.addPage(format,orientation);
 
   // ── Build footnote map ────────────────────────────────────────────
   const FN_LINE_H=13, FN_GAP=5, FN_SEP_H=10, FN_SPACE_ABOVE=14;
@@ -8051,8 +8099,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
     });
   });
 
-  // ── Build jsPDF doc ──────────────────────────────────────────────
-  const doc=new jsPDF({orientation,unit:'pt',format});
+  // ── Build jsPDF pages ─────────────────────────────────────────────
   const HEADER_H=34;
   const imgW=usableW;
   const imgH=(capturedCanvas.height/capturedCanvas.width)*imgW;
@@ -8166,7 +8213,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation){
   // last page: the diagram image or the pinned-to-bottom footnote zone.
   _drawPdfCitation(doc, lastContentBottom, MAR, usableW, pH);
 
-  if(studyNotebookIncludeInPdf()) appendStudyNotebookPDF(doc);
+  if(options.appendNotebook??studyNotebookIncludeInPdf('diag')) appendStudyNotebookPDF(doc,options.notebookEntries,options.notebookTitle);
   return doc;
 }
 async function doExportJSON(){
@@ -8477,13 +8524,15 @@ function _pdfCommentHtml(cid){
 /* Returns a jsPDF document.  Both a normal download and a bulk ZIP call this
    function so page layout, PDF-only sizing, and performance behavior cannot
    drift apart. */
-async function _buildPhrasingPDF(ref, onProgress, format='a4', contentSizing='fit'){
+async function _buildPhrasingPDF(ref, onProgress, format='a4', contentSizing='fit', options={}){
   const {jsPDF}=window.jspdf||{};
   if(!jsPDF) throw new Error('PDF library not loaded.');
 
   format=format==='a3'?'a3':'a4';
   contentSizing=contentSizing==='original'?'original':'fit';
-  const doc=new jsPDF({orientation:IS_SINGLE?'portrait':'landscape',unit:'pt',format});
+  const orientation=options.orientation||((IS_SINGLE)?'portrait':'landscape');
+  const doc=options.doc||new jsPDF({orientation,unit:'pt',format});
+  if(options.doc&&options.appendPageBefore) doc.addPage(format,orientation);
   const pW=doc.internal.pageSize.getWidth();
   const pH=doc.internal.pageSize.getHeight();
   const PAGE_MARGIN=28;
@@ -8694,16 +8743,20 @@ async function _buildPhrasingPDF(ref, onProgress, format='a4', contentSizing='fi
   drawFns(pageFns);
   const lastFnZone=fnZoneH(pageFns);
   _drawPdfCitation(doc,lastFnZone?Math.max(curY,pH-PAGE_MARGIN-lastFnZone):curY,MAR,usableW,pH);
-  if(studyNotebookIncludeInPdf()) appendStudyNotebookPDF(doc);
+  if(options.appendNotebook??studyNotebookIncludeInPdf('phrasing')) appendStudyNotebookPDF(doc,options.notebookEntries,options.notebookTitle);
   return doc;
 }
 
-function studyNotebookIncludeInPdf(){return !!document.getElementById('export-study-notebook')?.checked&&STUDY_NOTEBOOK.length>0;}
-function appendStudyNotebookPDF(doc){
-  const margin=36,width=doc.internal.pageSize.getWidth()-margin*2,height=doc.internal.pageSize.getHeight(),stageGroups=STUDY_STAGES.map(stage=>[stage,STUDY_NOTEBOOK.filter(note=>note.stage===stage)]).filter(([,notes])=>notes.length);
+function studyNotebookIncludeInPdf(kind){
+  const exportKind=kind||(EDITOR_VIEW==='diagram'?'diag':'phrasing');
+  const control=document.getElementById(exportKind+'-pdf-study-notebook');
+  return !!control?.checked&&STUDY_NOTEBOOK.length>0;
+}
+function appendStudyNotebookPDF(doc,entries=STUDY_NOTEBOOK,title){
+  const margin=36,width=doc.internal.pageSize.getWidth()-margin*2,height=doc.internal.pageSize.getHeight(),notes=Array.isArray(entries)?entries:[],stageGroups=STUDY_STAGES.map(stage=>[stage,notes.filter(note=>note.stage===stage)]).filter(([,items])=>items.length);
   if(!stageGroups.length)return;
   doc.addPage();let y=margin;
-  const pageHeader=()=>{doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(73,53,72);doc.text(typeof t==='function'?t('study.notebook.title'):'Study Notebook',margin,y);y+=26;};
+  const pageHeader=()=>{doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(73,53,72);doc.text(title||(typeof t==='function'?t('study.notebook.title'):'Study Notebook'),margin,y);y+=26;};
   const ensure=need=>{if(y+need>height-margin){doc.addPage();y=margin;pageHeader();}};
   pageHeader();
   for(const [stage,notes] of stageGroups){
@@ -8728,7 +8781,7 @@ async function _capturePhrasingPDFBlob(ref, format='a4', contentSizing='fit'){
   return doc.output('blob');
 }
 
-function exportPDF(format='a4', contentSizing='fit'){
+function exportPDF(format='a4', contentSizing='fit', options={}){
   format=format==='a3'?'a3':'a4';
   contentSizing=contentSizing==='original'?'original':'fit';
   const refEl=document.getElementById('refin');
@@ -8739,7 +8792,7 @@ function exportPDF(format='a4', contentSizing='fit'){
     ref=entered.trim();refEl.value=ref;autoSave();
   }
   showProgress(0,'Exporting PDF…');
-  _buildPhrasingPDF(ref,(pct,label)=>showProgress(pct,label),format,contentSizing)
+  _buildPhrasingPDF(ref,(pct,label)=>showProgress(pct,label),format,contentSizing,options)
     .then(doc=>{
       showProgress(95,'Saving PDF…');
       doc.save(buildFilename(ref)+' Phrasing.pdf');
@@ -8747,6 +8800,100 @@ function exportPDF(format='a4', contentSizing='fit'){
     })
     .catch(err=>{toast((typeof t==='function'?t('toast.pdf-error'):'Export error: ')+err.message);console.error(err);})
     .finally(()=>hideProgress());
+}
+
+function _collectionPdfRef(data,entry){return String(data?.verseRef||entry?.verseRef||entry?.name||'Untitled').trim()||'Untitled';}
+function _collectionPdfSession(){
+  clearTimeout(asT);COLLECTION_PDF_EXPORTING=true;
+  return {data:collectData(),projectId:CURRENT_PROJECT_ID,view:EDITOR_VIEW,session:SESS,language:LANG,isRTL:IS_RTL,isSingle:IS_SINGLE,diagramZoom:DIAGRAM_ZOOM,collection:ACTIVE_COLLECTION,collectionId:ACTIVE_COLLECTION_ID};
+}
+async function _collectionPdfReadProject(entry){
+  let raw=null;
+  try{raw=await pIdbGet(entry.id);}catch(_){ }
+  if(!raw)raw=localStorage.getItem(PROJ_DATA_KEY(entry.id));
+  try{return raw?JSON.parse(raw):null;}catch(_){return null;}
+}
+async function _collectionPdfLoadProject(entry,data,view){
+  if(!data||!projValidPayload(data))return false;
+  SESS=data.lang||SESS;LANG=data.langLabel||LANG;IS_RTL=data.isRTL||false;IS_SINGLE=data.isSingle||false;
+  if(typeof _applySessionFontDefaults==='function')_applySessionFontDefaults();
+  CURRENT_PROJECT_ID=entry.id;
+  loadData(data);recomputeIds();
+  if(EDITOR_VIEW!==view)setEditorView(view);
+  await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+  return true;
+}
+async function _collectionPdfRestoreSession(saved){
+  SESS=saved.session;LANG=saved.language;IS_RTL=saved.isRTL;IS_SINGLE=saved.isSingle;
+  if(typeof _applySessionFontDefaults==='function')_applySessionFontDefaults();
+  ACTIVE_COLLECTION=saved.collection;ACTIVE_COLLECTION_ID=saved.collectionId;CURRENT_PROJECT_ID=saved.projectId;
+  loadData(saved.data);recomputeIds();
+  if(Number.isFinite(saved.diagramZoom))setDiagramZoom(saved.diagramZoom);
+  if(EDITOR_VIEW!==saved.view)setEditorView(saved.view);
+  await new Promise(resolve=>requestAnimationFrame(resolve));
+  COLLECTION_PDF_EXPORTING=false;
+  syncWorkspaceChrome();
+}
+function _collectionPdfToast(count,skipped){
+  let message=_exportText('export.collection.done','Downloaded Collection PDF: {count} chapter(s).',{count});
+  if(skipped)message+=_exportText('export.collection.done-skipped',' Download skipped {count} unavailable chapter(s).',{count:skipped});
+  toast(message);
+}
+function _collectionPdfRollback(doc,pageCount){
+  if(!doc||!Number.isFinite(pageCount)||typeof doc.deletePage!=='function')return;
+  while(doc.getNumberOfPages&&doc.getNumberOfPages()>pageCount)doc.deletePage(doc.getNumberOfPages());
+}
+async function exportCollectionPhrasingPDF(format='a4',contentSizing='fit',orientation='landscape',includeNotebook=false){
+  const collection=ACTIVE_COLLECTION,members=_collectionExportMembers();
+  if(!collection||!members.length){toast(_exportText('export.collection.empty','This Collection has no available chapters to export.'));return;}
+  const {jsPDF}=window.jspdf||{};if(!jsPDF){toast('PDF library not loaded.');return;}
+  const saved=_collectionPdfSession();let doc=null,count=0,skipped=0;
+  try{
+    for(let index=0;index<members.length;index++){
+      const {entry,member}=members[index],name=entry?.name||member.label||'Unavailable chapter';
+      showProgress(Math.round((index/Math.max(1,members.length))*90),_exportText('export.collection.progress','Exporting collection chapter {current} of {total}: {name}',{current:index+1,total:members.length,name}));
+      if(!entry||projIsTrashed(entry)){skipped++;continue;}
+      try{
+        const data=await _collectionPdfReadProject(entry);
+        if(!await _collectionPdfLoadProject(entry,data,'phrasing')){skipped++;continue;}
+        const ref=_collectionPdfRef(data,entry),pageCount=doc?.getNumberOfPages?.()||0;
+        try{doc=await _buildPhrasingPDF(ref,(pct,label)=>showProgress(Math.round(((index+pct/100)/members.length)*90),label),format,contentSizing,{doc,appendPageBefore:!!doc,orientation,appendNotebook:false});count++;}
+        catch(error){console.warn('Collection phrasing PDF chapter skipped',name,error);_collectionPdfRollback(doc,pageCount);skipped++;}
+      }catch(error){console.warn('Collection phrasing PDF member skipped',name,error);skipped++;}
+    }
+    if(!doc){toast(_exportText('export.collection.none','No Collection PDF was created. Skipped {count} unavailable chapter(s).',{count:skipped}));return;}
+    if(includeNotebook)appendStudyNotebookPDF(doc,collection.notebook?.entries||[],collection.name+' — '+_exportText('study.notebook.title','Study Notebook'));
+    showProgress(95,_exportText('export.saving','Saving…'));
+    doc.save(_safeName(collection.name)+' Phrasing Collection.pdf');
+    _collectionPdfToast(count,skipped);
+  }catch(error){console.error('Collection phrasing PDF export failed',error);toast(_exportText('export.collection.failed','Could not create a Collection PDF.'));}
+  finally{try{await _collectionPdfRestoreSession(saved);}finally{COLLECTION_PDF_EXPORTING=false;hideProgress();}}
+}
+async function exportCollectionDiagramPDF(format='a4',orientation='landscape',includeNotebook=false){
+  const collection=ACTIVE_COLLECTION,members=_collectionExportMembers();
+  if(!collection||!members.length){toast(_exportText('export.collection.empty','This Collection has no available chapters to export.'));return;}
+  const {jsPDF}=window.jspdf||{};if(!jsPDF){toast('PDF library not loaded.');return;}
+  const saved=_collectionPdfSession();let doc=null,count=0,skipped=0;
+  try{
+    for(let index=0;index<members.length;index++){
+      const {entry,member}=members[index],name=entry?.name||member.label||'Unavailable chapter';
+      showProgress(Math.round((index/Math.max(1,members.length))*90),_exportText('export.collection.progress','Exporting collection chapter {current} of {total}: {name}',{current:index+1,total:members.length,name}));
+      if(!entry||projIsTrashed(entry)){skipped++;continue;}
+      try{
+        const data=await _collectionPdfReadProject(entry);
+        if(!await _collectionPdfLoadProject(entry,data,'diagram')){skipped++;continue;}
+        const ref=_collectionPdfRef(data,entry),pageCount=doc?.getNumberOfPages?.()||0;
+        try{const next=await _runDiagramPDFExport(ref,data.langLabel||LANG||'',format,orientation,{doc,appendPageBefore:!!doc,appendNotebook:false});if(!next){skipped++;continue;}doc=next;count++;}
+        catch(error){console.warn('Collection diagram PDF chapter skipped',name,error);_collectionPdfRollback(doc,pageCount);skipped++;}
+      }catch(error){console.warn('Collection diagram PDF member skipped',name,error);skipped++;}
+    }
+    if(!doc){toast(_exportText('export.collection.none','No Collection PDF was created. Skipped {count} unavailable chapter(s).',{count:skipped}));return;}
+    if(includeNotebook)appendStudyNotebookPDF(doc,collection.notebook?.entries||[],collection.name+' — '+_exportText('study.notebook.title','Study Notebook'));
+    showProgress(95,_exportText('export.saving','Saving…'));
+    doc.save(_safeName(collection.name)+' Diagram Collection.pdf');
+    _collectionPdfToast(count,skipped);
+  }catch(error){console.error('Collection diagram PDF export failed',error);toast(_exportText('export.collection.failed','Could not create a Collection PDF.'));}
+  finally{try{await _collectionPdfRestoreSession(saved);}finally{COLLECTION_PDF_EXPORTING=false;hideProgress();}}
 }
 
 /* ════════════════════════════════════════
