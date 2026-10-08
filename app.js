@@ -5815,6 +5815,7 @@ async function renderCollectionStructurePanel(canvas){
    Each pane owns a parsed project payload. It never calls projLoad(), so
    editing either chapter cannot replace the primary editor's active project. */
 let COMPARE_LINK_SELECTION=[null,null];
+let COMPARE_ACTIVE_ROWS=[null,null];
 function _collectionAvailableProjects(){
   if(!ACTIVE_COLLECTION)return [];
   return ACTIVE_COLLECTION.members.map(member=>projIndex().find(project=>project.id===member.projectId)).filter(project=>project&&!projIsTrashed(project)).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
@@ -5831,13 +5832,14 @@ async function renderCollectionCompare(){
   if(empty)empty.hidden=true;
   for(let i=0;i<2;i++)if(!COMPARE_PANES[i]||!available.some(project=>project.id===COMPARE_PANES[i].projectId))await compareLoadPane(i,available[i]?.id);
   host.innerHTML=COMPARE_PANES.map((pane,i)=>_comparePaneHTML(pane,i,available)).join('');
-  host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el));el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
+  host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;COMPARE_ACTIVE_ROWS[Number(el.dataset.comparePane)]=el.dataset.rid;saveRange();});el.addEventListener('input',()=>compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el));el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
   host.querySelectorAll('[data-compare-annotation]').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotation.split(':');compareAnnotationLabel(Number(index),id,el);});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
   host.querySelectorAll('[data-compare-annotation-color]').forEach(el=>el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotationColor.split(':');compareAnnotationColor(Number(index),id,el.value);}));
 }
 async function compareLoadPane(index,id){
   if(!id)return;const data=await _compareReadProject(id);if(!data)return;
   COMPARE_PANES[index]={projectId:id,data,view:COMPARE_PANES[index]?.view||'phrasing',saveTimer:null};
+  COMPARE_ACTIVE_ROWS[index]=null;COMPARE_LINK_SELECTION[index]=null;
 }
 function _comparePaneOptions(index,available,pane){
   const other=COMPARE_PANES[index===0?1:0]?.projectId;
@@ -5845,6 +5847,19 @@ function _comparePaneOptions(index,available,pane){
 }
 function _compareSectionsAt(data,rid){return (data.annotations||[]).filter(ann=>ann.type==='section'&&String(ann.startRid)===String(rid));}
 function _compareDividersAt(data,rid){return (data.annotations||[]).filter(ann=>ann.type==='divider'&&String(ann.beforeRid||ann.afterRid)===String(rid));}
+function _compareSpacersFor(projectId){
+  const map=ACTIVE_COLLECTION?.compareSpacers;
+  return Array.isArray(map?.[projectId])?map[projectId]:[];
+}
+function _compareSpacerHTML(spacer,index){
+  const removeLabel=typeof t==='function'?t('compare.spacer.remove'):'Remove alignment blank';
+  return `<div class="compare-alignment-spacer" data-compare-spacer="${escH(spacer.id)}"><button type="button" onclick="compareRemoveSpacer(${index},'${spacer.id}')" title="${escH(removeLabel)}" aria-label="${escH(removeLabel)}">×</button></div>`;
+}
+function _compareSpacersAfter(projectId,rid,index){return _compareSpacersFor(projectId).filter(spacer=>String(spacer.afterRid||'')===String(rid)).map(spacer=>_compareSpacerHTML(spacer,index)).join('');}
+function _compareEndSpacers(data,projectId,index){
+  const rowIds=new Set((data.rows||[]).map(row=>String(row.rid)));
+  return _compareSpacersFor(projectId).filter(spacer=>!spacer.afterRid||!rowIds.has(String(spacer.afterRid))).map(spacer=>_compareSpacerHTML(spacer,index)).join('');
+}
 function _compareSectionsCovering(data,rid){
   const rows=data.rows||[],at=rows.findIndex(row=>String(row.rid)===String(rid));if(at<0)return [];
   const rowIndex=new Map(rows.map((row,index)=>[String(row.rid),index]));
@@ -5864,8 +5879,8 @@ function _comparePhrasingContent(data,index){
     const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
     const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
     const covered=_compareSectionsCovering(data,row.rid)[0],rail=covered?` style="--compare-section-color:${escH(covered.color||'#534AB7')}"`:'';
-    return `${sections}${dividers}<article class="compare-row${covered?' has-section':''}"${rail}><div class="compare-row-meta"><span dir="auto">${escH(row.lineId||'—')}</span>${_compareCommentButton(index,row.rid)}</div><div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}</div></article>`;
-  }).join('');
+    return `${sections}${dividers}<article class="compare-row${covered?' has-section':''}"${rail}><div class="compare-row-meta"><span dir="auto">${escH(row.lineId||'—')}</span>${_compareCommentButton(index,row.rid)}</div><div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}</div></article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index)}`;
+  }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index);
 }
 function _compareDiagramContent(data,index){
   const isRTL=!!data.isRTL;
@@ -5873,17 +5888,33 @@ function _compareDiagramContent(data,index){
     const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
     const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
     const covered=_compareSectionsCovering(data,row.rid)[0],align=['flex-end','center','flex-start'][i%3],mirrored=isRTL?(align==='flex-end'?'flex-start':align==='flex-start'?'flex-end':align):align;
-    return `${sections}${dividers}<article class="compare-diagram-card${covered?' has-section':''}" data-compare-card="${index}:${row.rid}" style="--compare-align:${mirrored};${covered?`--compare-section-color:${escH(covered.color||'#534AB7')};`:''}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-diagram-card-top">${_compareCommentButton(index,row.rid)}<span dir="auto">${escH(row.lineId||'—')}</span></div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>`;
-  }).join('')}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`;
+    return `${sections}${dividers}<article class="compare-diagram-card${covered?' has-section':''}" dir="${isRTL?'rtl':'ltr'}" data-compare-card="${index}:${row.rid}" style="--compare-align:${mirrored};${covered?`--compare-section-color:${escH(covered.color||'#534AB7')};`:''}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-diagram-card-top">${_compareCommentButton(index,row.rid)}<span dir="auto">${escH(row.lineId||'—')}</span></div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index)}`;
+  }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index)}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`;
 }
 function _comparePaneHTML(pane,index,available){
   if(!pane?.data)return `<section class="compare-pane"><div class="compare-pane-body">Could not load this chapter.</div></section>`;
   const data=pane.data,rows=data.rows||[];const isDiagram=pane.view==='diagram',phraseLabel=typeof t==='function'?t('compare.phrasing'):'Phrasing',diagramLabel=typeof t==='function'?t('compare.diagram'):'Diagram';
   const content=isDiagram?_compareDiagramContent(data,index):_comparePhrasingContent(data,index);
-  return `<section class="compare-pane${data.isRTL?' is-rtl':''}" data-compare-pane="${index}" onfocusin="compareActivateNotes(${index})"><header class="compare-pane-hdr"><select aria-label="Choose collection chapter" onchange="compareChoosePane(${index},this.value)">${_comparePaneOptions(index,available,pane)}</select><button type="button" class="${!isDiagram?'active':''}" onclick="compareSetView(${index},'phrasing')">${escH(phraseLabel)}</button><button type="button" class="${isDiagram?'active':''}" onclick="compareSetView(${index},'diagram')">${escH(diagramLabel)}</button><button type="button" onclick="compareAddRow(${index})" title="Add row">＋</button><button type="button" onclick="compareAddSection(${index})" title="Add section">§</button><button type="button" onclick="compareDeleteFocusedRow(${index})" title="Delete focused row">−</button></header><div class="compare-pane-hdr"><button type="button" onclick="compareFormat(${index},'bold')"><b>B</b></button><button type="button" onclick="compareFormat(${index},'italic')"><i>I</i></button><button type="button" onclick="compareFormat(${index},'underline')"><u>U</u></button><button type="button" onclick="compareIndent(${index},-1)">⇤</button><button type="button" onclick="compareIndent(${index},1)">⇥</button>${isDiagram?`<button type="button" onclick="compareRemoveLastLink(${index})" title="Remove last relationship">⌫</button>`:''}<span class="compare-ref" dir="auto">${escH(data.verseRef||'Untitled passage')}</span></div><div class="compare-pane-body">${content||'<div class="structure-empty">This chapter has no phrasing rows yet.</div>'}</div></section>`;
+  const spacerLabel=typeof t==='function'?t('compare.spacer.add'):'Add alignment blank';
+  return `<section class="compare-pane${data.isRTL?' is-rtl':''}" data-compare-pane="${index}" onfocusin="compareActivateNotes(${index})"><header class="compare-pane-hdr"><select aria-label="Choose collection chapter" onchange="compareChoosePane(${index},this.value)">${_comparePaneOptions(index,available,pane)}</select><button type="button" class="${!isDiagram?'active':''}" onclick="compareSetView(${index},'phrasing')">${escH(phraseLabel)}</button><button type="button" class="${isDiagram?'active':''}" onclick="compareSetView(${index},'diagram')">${escH(diagramLabel)}</button><button type="button" onclick="compareAddRow(${index})" title="Add row">＋</button><button type="button" class="compare-add-spacer" onclick="compareAddSpacer(${index})" title="${escH(spacerLabel)}" aria-label="${escH(spacerLabel)}">↕</button><button type="button" onclick="compareAddSection(${index})" title="Add section">§</button><button type="button" onclick="compareDeleteFocusedRow(${index})" title="Delete focused row">−</button></header><div class="compare-pane-hdr"><button type="button" onclick="compareFormat(${index},'bold')"><b>B</b></button><button type="button" onclick="compareFormat(${index},'italic')"><i>I</i></button><button type="button" onclick="compareFormat(${index},'underline')"><u>U</u></button><button type="button" onclick="compareIndent(${index},-1)">⇤</button><button type="button" onclick="compareIndent(${index},1)">⇥</button>${isDiagram?`<button type="button" onclick="compareRemoveLastLink(${index})" title="Remove last relationship">⌫</button>`:''}<span class="compare-ref" dir="auto">${escH(data.verseRef||'Untitled passage')}</span></div><div class="compare-pane-body">${content||'<div class="structure-empty">This chapter has no phrasing rows yet.</div>'}</div></section>`;
 }
 async function compareChoosePane(index,id){if(COMPARE_PANES[index===0?1:0]?.projectId===id){toast('Choose a different collection chapter for each pane.');return;}await compareLoadPane(index,id);renderCollectionCompare();if(COMPARE_NOTE_CONTEXT?.index===index)compareOpenNotes(index);}
 function compareSetView(index,view){if(COMPARE_PANES[index]){COMPARE_PANES[index].view=view;renderCollectionCompare();}}
+function compareAddSpacer(index){
+  const pane=COMPARE_PANES[index];if(!pane||!ACTIVE_COLLECTION)return;
+  const active=activeEl?.matches?.(`.compare-edit[data-compare-pane="${index}"]`)?activeEl.dataset.rid:null;
+  const afterRid=active||COMPARE_ACTIVE_ROWS[index]||null;
+  const map=ACTIVE_COLLECTION.compareSpacers||(ACTIVE_COLLECTION.compareSpacers={});
+  const spacers=map[pane.projectId]||(map[pane.projectId]=[]);
+  spacers.push({id:`compare-space-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,afterRid:afterRid?String(afterRid):null,createdAt:Date.now()});
+  collectionSaveActive();renderCollectionCompare();
+}
+function compareRemoveSpacer(index,id){
+  const pane=COMPARE_PANES[index],map=ACTIVE_COLLECTION?.compareSpacers;if(!pane||!map?.[pane.projectId])return;
+  map[pane.projectId]=map[pane.projectId].filter(spacer=>spacer.id!==id);
+  if(!map[pane.projectId].length)delete map[pane.projectId];
+  collectionSaveActive();renderCollectionCompare();
+}
 function compareEdit(index,rid,col,el){const pane=COMPARE_PANES[index],row=pane?.data?.rows?.find(item=>String(item.rid)===String(rid));if(!row)return;row[col==='t'?'transHTML':'origHTML']=el.innerHTML;if(pane.projectId===CURRENT_PROJECT_ID){const primary=document.querySelector(`.xrow[data-rid="${CSS.escape(String(rid))}"] #${col==='t'?'tc':'oc'}-${rid} .cedit`);if(primary&&primary!==el)primary.innerHTML=el.innerHTML;if(EDITOR_VIEW==='diagram')renderDiagram();}compareScheduleSave(index);}
 function compareFormat(index,command){const active=activeEl;if(!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;active.focus();restoreRange();document.execCommand(command,false,null);compareEdit(index,active.dataset.rid,active.dataset.col,active);}
 function compareIndent(index,delta){const active=activeEl;if(!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;const pane=COMPARE_PANES[index],row=pane.data.rows.find(item=>String(item.rid)===String(active.dataset.rid));const key=active.dataset.col==='t'?'transIndent':'origIndent';row[key]=String(Math.max(0,Number(row[key]||0)+delta));compareScheduleSave(index);renderCollectionCompare();}
@@ -5893,7 +5924,7 @@ function compareDeleteFocusedRow(index){const pane=COMPARE_PANES[index],active=a
 function compareAnnotationLabel(index,id,el){const ann=COMPARE_PANES[index]?.data?.annotations?.find(item=>item.id===id);if(!ann)return;ann.label=el.textContent.trim();compareScheduleSave(index);}
 function compareAnnotationColor(index,id,value){const ann=COMPARE_PANES[index]?.data?.annotations?.find(item=>item.id===id);if(!ann)return;ann.color=value;compareScheduleSave(index);renderCollectionCompare();}
 function compareToggleComment(index,rid){compareOpenNotes(index,rid);}
-function compareDiagramLink(index,rid){const pane=COMPARE_PANES[index];if(!pane||pane.view!=='diagram')return;const previous=COMPARE_LINK_SELECTION[index];if(!previous){COMPARE_LINK_SELECTION[index]=rid;document.querySelector(`[data-compare-card="${index}:${rid}"]`)?.focus();return;}if(previous!==rid){const data=pane.data,links=data.diagramData?.connectors||(data.diagramData={...(data.diagramData||{}),connectors:[],labels:data.diagramData?.labels||[]}).connectors;links.push({id:`compare-cnx-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,fromRid:previous,toRid:rid,kind:'curve'});compareScheduleSave(index);}COMPARE_LINK_SELECTION[index]=null;renderCollectionCompare();}
+function compareDiagramLink(index,rid){const pane=COMPARE_PANES[index];if(!pane||pane.view!=='diagram')return;COMPARE_ACTIVE_ROWS[index]=rid;const previous=COMPARE_LINK_SELECTION[index];if(!previous){COMPARE_LINK_SELECTION[index]=rid;document.querySelector(`[data-compare-card="${index}:${rid}"]`)?.focus();return;}if(previous!==rid){const data=pane.data,links=data.diagramData?.connectors||(data.diagramData={...(data.diagramData||{}),connectors:[],labels:data.diagramData?.labels||[]}).connectors;links.push({id:`compare-cnx-${Date.now()}-${Math.random().toString(36).slice(2,5)}`,fromRid:previous,toRid:rid,kind:'curve'});compareScheduleSave(index);}COMPARE_LINK_SELECTION[index]=null;renderCollectionCompare();}
 function compareRemoveLastLink(index){const links=COMPARE_PANES[index]?.data?.diagramData?.connectors;if(!links?.length)return;links.pop();compareScheduleSave(index);renderCollectionCompare();}
 function compareScheduleSave(index){const pane=COMPARE_PANES[index];if(!pane)return;clearTimeout(pane.saveTimer);pane.saveTimer=setTimeout(async()=>{try{await pIdbSet(pane.projectId,JSON.stringify(pane.data));const idx=projIndex(),entry=idx.find(item=>item.id===pane.projectId);if(entry){entry.savedAt=Date.now();entry.verseRef=pane.data.verseRef||entry.verseRef;projStoreIndex(idx);}if(typeof acctMarkDirty==='function')acctMarkDirty(pane.projectId);}catch(_){toast('Could not save this comparison chapter.');}},500);}
 
@@ -6482,9 +6513,18 @@ function collectionNewId(){return 'collection-'+Date.now()+'-'+Math.random().toS
 function collectionIsTrashed(item){return Number.isFinite(item?.trashedAt)&&item.trashedAt>0;}
 function collectionActiveEntries(){return collectionIndex().filter(item=>!collectionIsTrashed(item));}
 function collectionSummary(data){return {id:data.id,name:data.name||'Untitled collection',savedAt:data.updatedAt||Date.now(),trashedAt:data.trashedAt,memberCount:(data.members||[]).length,cloudAt:data.cloudAt};}
+function collectionCompareSpacers(raw){
+  if(!raw||typeof raw!=='object'||Array.isArray(raw))return {};
+  return Object.entries(raw).reduce((result,[projectId,items])=>{
+    if(!Array.isArray(items))return result;
+    const spacers=items.filter(item=>item&&typeof item.id==='string'&&/^[A-Za-z0-9_-]+$/.test(item.id)).map(item=>({id:item.id,afterRid:typeof item.afterRid==='string'?item.afterRid:null,createdAt:Number(item.createdAt)||Date.now()}));
+    if(spacers.length)result[String(projectId)]=spacers;
+    return result;
+  },{});
+}
 function collectionNormalise(data){
   const raw=data&&typeof data==='object'?data:{};
-  return {id:String(raw.id||collectionNewId()),name:String(raw.name||'Untitled collection'),createdAt:Number(raw.createdAt)||Date.now(),updatedAt:Number(raw.updatedAt)||Date.now(),trashedAt:Number(raw.trashedAt)||undefined,cloudAt:Number(raw.cloudAt)||undefined,members:Array.isArray(raw.members)?raw.members.filter(m=>m&&m.projectId).map(m=>({projectId:String(m.projectId),label:String(m.label||''),reference:String(m.reference||''),addedAt:Number(m.addedAt)||Date.now()})):[],notebook:{entries:Array.isArray(raw.notebook?.entries)?raw.notebook.entries:[],nextId:Number(raw.notebook?.nextId)||0}};
+  return {id:String(raw.id||collectionNewId()),name:String(raw.name||'Untitled collection'),createdAt:Number(raw.createdAt)||Date.now(),updatedAt:Number(raw.updatedAt)||Date.now(),trashedAt:Number(raw.trashedAt)||undefined,cloudAt:Number(raw.cloudAt)||undefined,members:Array.isArray(raw.members)?raw.members.filter(m=>m&&m.projectId).map(m=>({projectId:String(m.projectId),label:String(m.label||''),reference:String(m.reference||''),addedAt:Number(m.addedAt)||Date.now()})):[],notebook:{entries:Array.isArray(raw.notebook?.entries)?raw.notebook.entries:[],nextId:Number(raw.notebook?.nextId)||0},compareSpacers:collectionCompareSpacers(raw.compareSpacers)};
 }
 async function collectionRead(id){try{const raw=await cIdbGet(id);return raw?collectionNormalise(JSON.parse(raw)):null;}catch(_){return null;}}
 async function collectionWrite(data,{queue=true}={}){
