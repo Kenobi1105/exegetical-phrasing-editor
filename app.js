@@ -5832,6 +5832,8 @@ async function renderCollectionCompare(){
   if(empty)empty.hidden=true;
   for(let i=0;i<2;i++)if(!COMPARE_PANES[i]||!available.some(project=>project.id===COMPARE_PANES[i].projectId))await compareLoadPane(i,available[i]?.id);
   host.innerHTML=COMPARE_PANES.map((pane,i)=>_comparePaneHTML(pane,i,available)).join('');
+  _compareMatchSpacerHeights(host);
+  requestAnimationFrame(()=>_compareMatchSpacerHeights(host));
   host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;COMPARE_ACTIVE_ROWS[Number(el.dataset.comparePane)]=el.dataset.rid;saveRange();});el.addEventListener('input',()=>compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el));el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
   host.querySelectorAll('[data-compare-annotation]').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotation.split(':');compareAnnotationLabel(Number(index),id,el);});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
   host.querySelectorAll('[data-compare-annotation-color]').forEach(el=>el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotationColor.split(':');compareAnnotationColor(Number(index),id,el.value);}));
@@ -5851,11 +5853,21 @@ function _compareSpacersFor(projectId){
   const map=ACTIVE_COLLECTION?.compareSpacers;
   return Array.isArray(map?.[projectId])?map[projectId]:[];
 }
+function _compareMatchSpacerHeights(host){
+  host.querySelectorAll('[data-compare-spacer]').forEach(spacer=>{
+    const pane=spacer.closest('[data-compare-pane]');
+    const anchor=spacer.dataset.compareAfter;
+    const rows=[...pane.querySelectorAll('[data-compare-row]')];
+    const source=rows.find(row=>row.dataset.compareRow===anchor)||rows.at(-1);
+    if(source)spacer.style.height=`${Math.ceil(source.getBoundingClientRect().height)}px`;
+  });
+}
 function _compareSpacerHTML(spacer,index,data,view='phrasing'){
   const removeLabel=typeof t==='function'?t('compare.spacer.remove'):'Remove alignment blank';
   const copy=`<div class="compare-alignment-spacer-copy" aria-hidden="true"><div class="compare-edit compare-original">&nbsp;</div>${data.isSingle?'':`<div class="compare-edit compare-translation">&nbsp;</div>`}</div>`;
   const remove=`<button type="button" onclick="compareRemoveSpacer(${index},'${spacer.id}')" title="${escH(removeLabel)}" aria-label="${escH(removeLabel)}">×</button>`;
-  return view==='diagram'?`<div class="compare-alignment-spacer compare-diagram-spacer" data-compare-spacer="${escH(spacer.id)}">${copy}${remove}</div>`:`<div class="compare-row compare-alignment-spacer" data-compare-spacer="${escH(spacer.id)}"><div class="compare-row-meta" aria-hidden="true"></div>${copy}${remove}</div>`;
+  const anchor=escH(spacer.afterRid||'');
+  return view==='diagram'?`<div class="compare-alignment-spacer compare-diagram-spacer" data-compare-spacer="${escH(spacer.id)}" data-compare-after="${anchor}">${copy}${remove}</div>`:`<div class="compare-row compare-alignment-spacer" data-compare-spacer="${escH(spacer.id)}" data-compare-after="${anchor}"><div class="compare-row-meta" aria-hidden="true"></div>${copy}${remove}</div>`;
 }
 function _compareSpacersAfter(projectId,rid,index,data,view){return _compareSpacersFor(projectId).filter(spacer=>String(spacer.afterRid||'')===String(rid)).map(spacer=>_compareSpacerHTML(spacer,index,data,view)).join('');}
 function _compareEndSpacers(data,projectId,index,view){
@@ -5881,7 +5893,7 @@ function _comparePhrasingContent(data,index){
     const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
     const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
     const covered=_compareSectionsCovering(data,row.rid)[0],rail=covered?` style="--compare-section-color:${escH(covered.color||'#534AB7')}"`:'';
-    return `${sections}${dividers}<article class="compare-row${covered?' has-section':''}"${rail}><div class="compare-row-meta"><span dir="auto">${escH(row.lineId||'—')}</span>${_compareCommentButton(index,row.rid)}</div><div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}</div></article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index,data,'phrasing')}`;
+    return `${sections}${dividers}<article class="compare-row${covered?' has-section':''}" data-compare-row="${escH(row.rid)}"${rail}><div class="compare-row-meta"><span dir="auto">${escH(row.lineId||'—')}</span>${_compareCommentButton(index,row.rid)}</div><div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<div class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t" style="margin-inline-start:${Number(row.transIndent||0)*18}px">${row.transHTML||''}</div>`}</div></article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index,data,'phrasing')}`;
   }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index,'phrasing');
 }
 function _compareDiagramContent(data,index){
@@ -5890,7 +5902,7 @@ function _compareDiagramContent(data,index){
     const sections=_compareSectionsAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'section')).join('');
     const dividers=_compareDividersAt(data,row.rid).map(ann=>_compareAnnotationHtml(ann,index,'proposition')).join('');
     const covered=_compareSectionsCovering(data,row.rid)[0],align=['flex-end','center','flex-start'][i%3],mirrored=isRTL?(align==='flex-end'?'flex-start':align==='flex-start'?'flex-end':align):align;
-    return `${sections}${dividers}<article class="compare-diagram-card${covered?' has-section':''}" dir="${isRTL?'rtl':'ltr'}" data-compare-card="${index}:${row.rid}" style="--compare-align:${mirrored};${covered?`--compare-section-color:${escH(covered.color||'#534AB7')};`:''}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-diagram-card-top">${_compareCommentButton(index,row.rid)}<span dir="auto">${escH(row.lineId||'—')}</span></div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index,data,'diagram')}`;
+    return `${sections}${dividers}<article class="compare-diagram-card${covered?' has-section':''}" dir="${isRTL?'rtl':'ltr'}" data-compare-card="${index}:${row.rid}" data-compare-row="${escH(row.rid)}" style="--compare-align:${mirrored};${covered?`--compare-section-color:${escH(covered.color||'#534AB7')};`:''}" onclick="compareDiagramLink(${index},'${row.rid}')"><div class="compare-diagram-card-top">${_compareCommentButton(index,row.rid)}<span dir="auto">${escH(row.lineId||'—')}</span></div><div class="compare-edit compare-original" dir="${isRTL?'rtl':'ltr'}" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="o" style="margin-inline-start:${Number(row.origIndent||0)*18}px">${row.origHTML||''}</div>${data.isSingle?'':`<small class="compare-edit compare-translation" dir="ltr" contenteditable="true" data-compare-pane="${index}" data-rid="${row.rid}" data-col="t">${row.transHTML||''}</small>`}</article>${_compareSpacersAfter(COMPARE_PANES[index]?.projectId,row.rid,index,data,'diagram')}`;
   }).join('')+_compareEndSpacers(data,COMPARE_PANES[index]?.projectId,index,'diagram')}<p class="compare-ref">${(data.diagramData?.connectors||[]).length} relationship${(data.diagramData?.connectors||[]).length===1?'':'s'} · click two cards to link</p></div>`;
 }
 function _comparePaneHTML(pane,index,available){
