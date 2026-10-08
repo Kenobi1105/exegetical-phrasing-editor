@@ -91,6 +91,11 @@ const LANGS = {
     'study.attachment.unavailable':'This source is no longer available.',
     'study.delete.confirm':'Delete this notebook entry?',
     'study.delete':        'Delete entry',
+    'study.reorder.handle':'Reorder entry',
+    'study.reorder.earlier':'Move entry earlier',
+    'study.reorder.later':'Move entry later',
+    'study.reorder.filtered':'Clear search and stage filters to rearrange entries.',
+    'study.reorder.moved':'Entry moved to position {position} of {total}.',
     'study.detach':        'Remove attachment',
     'study.export.include':'Include Study Notebook',
     /* ── Study Collections ── */
@@ -711,6 +716,11 @@ const LANGS = {
     'study.attachment.unavailable':'此来源已不可用。',
     'study.delete.confirm':'删除此笔记本条目？',
     'study.delete':        '删除条目',
+    'study.reorder.handle':'重新排列条目',
+    'study.reorder.earlier':'向前移动条目',
+    'study.reorder.later':'向后移动条目',
+    'study.reorder.filtered':'请清除搜索和阶段筛选后再重新排列条目。',
+    'study.reorder.moved':'条目已移动到第 {position} 位（共 {total} 项）。',
     'study.detach':        '移除附加来源',
     'study.export.include':'包含研读笔记本',
     /* ── 研读集合 ── */

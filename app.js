@@ -170,6 +170,7 @@ let STUDY_NOTEBOOK_MODAL_OPEN=false;
 let STUDY_NOTEBOOK_DOCK_PARENT=null;
 let STUDY_NOTEBOOK_DOCK_NEXT=null;
 let STUDY_NOTEBOOK_MODAL_SCROLL={left:0,top:0};
+let STUDY_NOTE_DRAG=null;
 const STUDY_STAGES=['observation','question','cross-reference','insight','application'];
 
 /* ── Shared two-layer color palette (Highlight + Text Color + Line Color + Bracket Color) ──
@@ -5232,6 +5233,79 @@ function _studyStripHtml(html){
 function _studyEscAttr(value){return escH(String(value||'')).replace(/"/g,'&quot;');}
 function _studyEntries(){return ACTIVE_COLLECTION?.notebook?.entries||STUDY_NOTEBOOK;}
 function _studyFind(id){return _studyEntries().find(note=>note.id===id);}
+function _studyNotebookCanReorder(){
+  const query=(document.getElementById('study-notebook-search')?.value||'').trim();
+  const stage=document.getElementById('study-notebook-filter')?.value||'all';
+  return !query&&stage==='all';
+}
+function _studyNotebookReorderMessage(position,total){
+  const template=typeof t==='function'?t('study.reorder.moved'):'Entry moved to position {position} of {total}.';
+  return template.replace('{position}',String(position)).replace('{total}',String(total));
+}
+function _studyNotebookAnnounce(message){
+  const status=document.getElementById('study-notebook-reorder-status');
+  if(!status)return;
+  status.textContent='';
+  requestAnimationFrame(()=>{status.textContent=message;});
+}
+function _studyNotebookFinishReorder(id){
+  const list=document.getElementById('study-notebook-list');
+  const scrollTop=list?.scrollTop||0,scrollLeft=list?.scrollLeft||0;
+  const entries=_studyEntries(),position=entries.findIndex(note=>note.id===id)+1;
+  _studyCommit();renderStudyNotebook();
+  requestAnimationFrame(()=>{
+    const nextList=document.getElementById('study-notebook-list');
+    if(nextList){nextList.scrollTop=scrollTop;nextList.scrollLeft=scrollLeft;}
+    document.querySelector(`.study-note-reorder-handle[data-study-id="${CSS.escape(String(id))}"]`)?.focus();
+    _studyNotebookAnnounce(_studyNotebookReorderMessage(position,entries.length));
+  });
+}
+function studyNotebookMove(id,delta){
+  if(!_studyNotebookCanReorder())return;
+  const entries=_studyEntries(),from=entries.findIndex(note=>note.id===id),to=from+Number(delta);
+  if(from<0||to<0||to>=entries.length)return;
+  const [note]=entries.splice(from,1);entries.splice(to,0,note);
+  _studyNotebookFinishReorder(id);
+}
+function _studyNotebookClearDropTarget(){
+  document.querySelectorAll('.study-note-card.is-drop-before,.study-note-card.is-drop-after').forEach(card=>card.classList.remove('is-drop-before','is-drop-after'));
+}
+function studyNotebookBeginReorder(event,handle){
+  if(!_studyNotebookCanReorder()||event.button!==0||!event.isPrimary)return;
+  const card=handle.closest('.study-note-card[data-study-id]');if(!card)return;
+  event.preventDefault();handle.focus();
+  STUDY_NOTE_DRAG={id:card.dataset.studyId,pointerId:event.pointerId,handle,source:card,startX:event.clientX,startY:event.clientY,active:false,targetId:null,after:false};
+  try{handle.setPointerCapture(event.pointerId);}catch(_){}
+}
+function _studyNotebookPointerMove(event){
+  const drag=STUDY_NOTE_DRAG;if(!drag||event.pointerId!==drag.pointerId)return;
+  if(!drag.active&&Math.hypot(event.clientX-drag.startX,event.clientY-drag.startY)<5)return;
+  drag.active=true;drag.source?.classList.add('is-reorder-dragging');
+  const hit=document.elementFromPoint(event.clientX,event.clientY);
+  const target=hit?.closest?.('.study-note-card[data-study-id]');
+  _studyNotebookClearDropTarget();
+  if(!target||target.dataset.studyId===drag.id){drag.targetId=null;return;}
+  const rect=target.getBoundingClientRect();drag.targetId=target.dataset.studyId;drag.after=event.clientY>rect.top+rect.height/2;
+  target.classList.add(drag.after?'is-drop-after':'is-drop-before');
+}
+function _studyNotebookPointerEnd(event){
+  const drag=STUDY_NOTE_DRAG;if(!drag||event.pointerId!==drag.pointerId)return;
+  STUDY_NOTE_DRAG=null;_studyNotebookClearDropTarget();drag.source?.classList.remove('is-reorder-dragging');
+  if(!drag.active||!drag.targetId||!_studyNotebookCanReorder())return;
+  const entries=_studyEntries(),from=entries.findIndex(note=>note.id===drag.id),target=entries.findIndex(note=>note.id===drag.targetId);
+  if(from<0||target<0||from===target)return;
+  const [note]=entries.splice(from,1);
+  const destination=entries.findIndex(item=>item.id===drag.targetId)+(drag.after?1:0);
+  entries.splice(destination,0,note);
+  _studyNotebookFinishReorder(drag.id);
+}
+function _studyNotebookPointerCancel(event){
+  const drag=STUDY_NOTE_DRAG;if(!drag||event.pointerId!==drag.pointerId)return;
+  STUDY_NOTE_DRAG=null;_studyNotebookClearDropTarget();drag.source?.classList.remove('is-reorder-dragging');
+}
+document.addEventListener('pointermove',_studyNotebookPointerMove);
+document.addEventListener('pointerup',_studyNotebookPointerEnd);
+document.addEventListener('pointercancel',_studyNotebookPointerCancel);
 function _studyCommit(){
   if(ACTIVE_COLLECTION){ collectionSaveActive(); }
   else autoSave();
@@ -5443,15 +5517,21 @@ async function studyNotebookJump(link){
   setTimeout(()=>row?.classList.remove('study-note-source-focus'),1500);
 }
 function studyNotebookJumpByIndex(id,index){studyNotebookJump(_studyFind(id)?.attachments?.[index]);}
-function _studyNoteCard(note){
+function _studyNoteCard(note,index,reorderEnabled){
   const deleteLabel=typeof t==='function'?t('study.delete'):'Delete entry';
   const detachLabel=typeof t==='function'?t('study.detach'):'Remove attachment';
+  const reorderHint=typeof t==='function'?t('study.reorder.filtered'):'Clear search and stage filters to rearrange entries.';
+  const handleLabel=typeof t==='function'?t('study.reorder.handle'):'Reorder entry';
+  const earlierLabel=typeof t==='function'?t('study.reorder.earlier'):'Move entry earlier';
+  const laterLabel=typeof t==='function'?t('study.reorder.later'):'Move entry later';
+  const disabled=!reorderEnabled;
+  const reorderControls=`<button class="study-note-reorder-handle" type="button" data-study-id="${note.id}" onpointerdown="studyNotebookBeginReorder(event,this)" title="${_studyEscAttr(disabled?reorderHint:handleLabel)}" aria-label="${_studyEscAttr(handleLabel)}" ${disabled?'disabled':''}>⠿</button><span class="study-note-reorder-actions"><button type="button" onclick="studyNotebookMove('${note.id}',-1)" title="${_studyEscAttr(disabled?reorderHint:earlierLabel)}" aria-label="${_studyEscAttr(earlierLabel)}" ${(disabled||index===0)?'disabled':''}>↑</button><button type="button" onclick="studyNotebookMove('${note.id}',1)" title="${_studyEscAttr(disabled?reorderHint:laterLabel)}" aria-label="${_studyEscAttr(laterLabel)}" ${(disabled||index===_studyEntries().length-1)?'disabled':''}>↓</button></span>`;
   const attachments=(note.attachments||[]).map((link,index)=>{
     const available=studyNotebookAttachmentAvailable(link);
     return `<span class="study-note-attachment${available?'':' is-orphan'}" title="${_studyEscAttr(link.label)}"><button type="button" onclick="studyNotebookJumpByIndex('${note.id}',${index})">${escH(link.label||'Source')}</button><button type="button" class="study-note-detach" onclick="studyNotebookDetach('${note.id}',${index})" aria-label="${_studyEscAttr(detachLabel)}">×</button></span>`;
   }).join('');
   const stamp=new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleDateString([],{month:'short',day:'numeric'})+' · '+new Date(note.updatedAt||note.createdAt||Date.now()).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});
-  return `<article class="study-note-card" data-study-id="${note.id}"><div class="study-note-card-hdr"><select class="study-note-stage" onchange="studyNotebookSetStage('${note.id}',this.value)">${STUDY_STAGES.map(stage=>`<option value="${stage}"${note.stage===stage?' selected':''}>${escH(_studyStageLabel(stage))}</option>`).join('')}</select><button class="study-note-delete" type="button" onclick="studyNotebookDelete('${note.id}')" title="${_studyEscAttr(deleteLabel)}" aria-label="${_studyEscAttr(deleteLabel)}">×</button></div><div class="study-note-title" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.title.placeholder'):'Entry title') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookSave('${note.id}','title',this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${escH(note.title||'')}</div><div class="study-note-body" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.body.placeholder'):'Write your study note…') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookBodyInput(event,this)" onkeydown="studyNotebookKeydown(event,this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${note.bodyHTML||''}</div>${attachments?`<div class="study-note-attachments">${attachments}</div>`:''}<footer class="study-note-footer"><span>${escH(stamp)}</span><button class="study-note-attach" type="button" onclick="studyNotebookAttachCurrent('${note.id}')">${typeof t==='function'?t('study.attach'):'Attach current source'}</button></footer></article>`;
+  return `<article class="study-note-card" data-study-id="${note.id}"><div class="study-note-card-hdr">${reorderControls}<select class="study-note-stage" onchange="studyNotebookSetStage('${note.id}',this.value)">${STUDY_STAGES.map(stage=>`<option value="${stage}"${note.stage===stage?' selected':''}>${escH(_studyStageLabel(stage))}</option>`).join('')}</select><button class="study-note-delete" type="button" onclick="studyNotebookDelete('${note.id}')" title="${_studyEscAttr(deleteLabel)}" aria-label="${_studyEscAttr(deleteLabel)}">×</button></div><div class="study-note-title" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.title.placeholder'):'Entry title') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookSave('${note.id}','title',this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${escH(note.title||'')}</div><div class="study-note-body" data-note-id="${note.id}" contenteditable="true" spellcheck="true" data-placeholder="${_studyEscAttr(typeof t==='function'?t('study.body.placeholder'):'Write your study note…') }" onfocus="studyNotebookRememberFocus(this)" oninput="studyNotebookBodyInput(event,this)" onkeydown="studyNotebookKeydown(event,this)" onkeyup="studyNotebookRememberFocus(this)" onmouseup="studyNotebookRememberFocus(this)">${note.bodyHTML||''}</div>${attachments?`<div class="study-note-attachments">${attachments}</div>`:''}<footer class="study-note-footer"><span>${escH(stamp)}</span><button class="study-note-attach" type="button" onclick="studyNotebookAttachCurrent('${note.id}')">${typeof t==='function'?t('study.attach'):'Attach current source'}</button></footer></article>`;
 }
 function renderStudyNotebook(){
   const list=document.getElementById('study-notebook-list');if(!list)return;
@@ -5462,11 +5542,13 @@ function renderStudyNotebook(){
   const query=(document.getElementById('study-notebook-search')?.value||'').trim().toLowerCase();
   const stage=document.getElementById('study-notebook-filter')?.value||'all';
   const entries=_studyEntries();
+  const reorderEnabled=_studyNotebookCanReorder();
   const notes=entries.filter(note=>{
     if(stage!=='all'&&note.stage!==stage)return false;
     return !query||_studyStripHtml(note.title+' '+note.bodyHTML+' '+(note.attachments||[]).map(a=>a.label).join(' ')).toLowerCase().includes(query);
   });
-  list.innerHTML=notes.length?notes.map(_studyNoteCard).join(''):`<div class="study-notebook-empty">${typeof t==='function'?t('study.empty'):'Start with an observation, question, or insight.'}</div>`;
+  const reorderNotice=reorderEnabled?'':`<p class="study-note-reorder-filter-note">${escH(typeof t==='function'?t('study.reorder.filtered'):'Clear search and stage filters to rearrange entries.')}</p>`;
+  list.innerHTML=(reorderNotice+(notes.length?notes.map(note=>_studyNoteCard(note,entries.indexOf(note),reorderEnabled)).join(''):`<div class="study-notebook-empty">${typeof t==='function'?t('study.empty'):'Start with an observation, question, or insight.'}</div>`));
   const total=document.getElementById('study-notebook-count');if(total)total.textContent=entries.length;
   syncWorkspaceChrome();
 }
