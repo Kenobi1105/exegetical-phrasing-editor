@@ -5833,8 +5833,9 @@ async function renderCollectionCompare(){
   for(let i=0;i<2;i++)if(!COMPARE_PANES[i]||!available.some(project=>project.id===COMPARE_PANES[i].projectId))await compareLoadPane(i,available[i]?.id);
   host.innerHTML=COMPARE_PANES.map((pane,i)=>_comparePaneHTML(pane,i,available)).join('');
   _compareMatchSpacerHeights(host);
-  requestAnimationFrame(()=>_compareMatchSpacerHeights(host));
-  host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;COMPARE_ACTIVE_ROWS[Number(el.dataset.comparePane)]=el.dataset.rid;saveRange();});el.addEventListener('input',()=>compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el));el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
+  const reflowSpacers=()=>requestAnimationFrame(()=>{_compareMatchSpacerHeights(host);_compareAlignSpacersToDividers(host);});
+  reflowSpacers();
+  host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;COMPARE_ACTIVE_ROWS[Number(el.dataset.comparePane)]=el.dataset.rid;saveRange();});el.addEventListener('input',()=>{compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el);reflowSpacers();});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
   host.querySelectorAll('[data-compare-annotation]').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotation.split(':');compareAnnotationLabel(Number(index),id,el);});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
   host.querySelectorAll('[data-compare-annotation-color]').forEach(el=>el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotationColor.split(':');compareAnnotationColor(Number(index),id,el.value);}));
 }
@@ -5860,6 +5861,27 @@ function _compareMatchSpacerHeights(host){
     const rows=[...pane.querySelectorAll('[data-compare-row]')];
     const source=rows.find(row=>row.dataset.compareRow===anchor)||rows.at(-1);
     if(source)spacer.style.height=`${Math.ceil(source.getBoundingClientRect().height)}px`;
+  });
+}
+function _compareDividerKey(divider){
+  const kind=divider.classList.contains('compare-section-divider')?'section':'proposition';
+  const label=divider.querySelector('[data-compare-annotation]')?.textContent?.trim().replace(/\s+/g,' ').toLocaleLowerCase();
+  return label?`${kind}:${label}`:'';
+}
+function _compareAlignSpacersToDividers(host){
+  const panes=[...host.querySelectorAll('[data-compare-pane]')];if(panes.length!==2)return;
+  panes.forEach((pane,index)=>{
+    const peer=panes[index===0?1:0],peerDividers=[...peer.querySelectorAll('.compare-section-divider,.compare-proposition-divider')];
+    pane.querySelectorAll('[data-compare-spacer]').forEach(spacer=>{
+      const divider=[...pane.querySelectorAll('.compare-section-divider,.compare-proposition-divider')].find(item=>Boolean(spacer.compareDocumentPosition(item)&Node.DOCUMENT_POSITION_FOLLOWING));
+      const key=divider&&_compareDividerKey(divider);if(!key)return;
+      const match=peerDividers.find(item=>_compareDividerKey(item)===key);if(!match)return;
+      const delta=match.getBoundingClientRect().top-divider.getBoundingClientRect().top;
+      if(Math.abs(delta)>1){
+        const height=spacer.getBoundingClientRect().height;
+        spacer.style.height=`${Math.max(1,Math.round(height+delta))}px`;
+      }
+    });
   });
 }
 function _compareSpacerHTML(spacer,index,data,view='phrasing'){
