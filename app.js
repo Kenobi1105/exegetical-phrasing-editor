@@ -5816,6 +5816,8 @@ async function renderCollectionStructurePanel(canvas){
    editing either chapter cannot replace the primary editor's active project. */
 let COMPARE_LINK_SELECTION=[null,null];
 let COMPARE_ACTIVE_ROWS=[null,null];
+let COMPARE_ALIGNMENT_FRAME=0;
+let COMPARE_ALIGNMENT_OBSERVER=null;
 function _collectionAvailableProjects(){
   if(!ACTIVE_COLLECTION)return [];
   return ACTIVE_COLLECTION.members.map(member=>projIndex().find(project=>project.id===member.projectId)).filter(project=>project&&!projIsTrashed(project)).sort((a,b)=>(b.savedAt||0)-(a.savedAt||0));
@@ -5828,15 +5830,13 @@ async function renderCollectionCompare(){
   const host=document.getElementById('collection-compare-panes'),empty=document.getElementById('collection-compare-empty');if(!host)return;
   const available=_collectionAvailableProjects();
   document.getElementById('view-btn-compare')?.toggleAttribute('hidden',available.length<2);
-  if(available.length<2){host.innerHTML='';if(empty){empty.hidden=false;empty.textContent=typeof t==='function'?t('compare.empty'):'Open a Collection with at least two available chapters to compare them here.';}return;}
+  if(available.length<2){COMPARE_ALIGNMENT_OBSERVER?.disconnect();host.innerHTML='';if(empty){empty.hidden=false;empty.textContent=typeof t==='function'?t('compare.empty'):'Open a Collection with at least two available chapters to compare them here.';}return;}
   if(empty)empty.hidden=true;
   for(let i=0;i<2;i++)if(!COMPARE_PANES[i]||!available.some(project=>project.id===COMPARE_PANES[i].projectId))await compareLoadPane(i,available[i]?.id);
   host.innerHTML=COMPARE_PANES.map((pane,i)=>_comparePaneHTML(pane,i,available)).join('');
-  _compareMatchSpacerHeights(host);
-  const reflowSpacers=()=>requestAnimationFrame(()=>{_compareMatchSpacerHeights(host);_compareAlignSpacersToDividers(host);});
-  reflowSpacers();
-  host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;COMPARE_ACTIVE_ROWS[Number(el.dataset.comparePane)]=el.dataset.rid;saveRange();});el.addEventListener('input',()=>{compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el);reflowSpacers();});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
-  host.querySelectorAll('[data-compare-annotation]').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotation.split(':');compareAnnotationLabel(Number(index),id,el);});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
+  _compareObserveAlignment(host);_compareScheduleAlignment(host);
+  host.querySelectorAll('.compare-edit').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;COMPARE_ACTIVE_ROWS[Number(el.dataset.comparePane)]=el.dataset.rid;saveRange();});el.addEventListener('input',()=>{compareEdit(Number(el.dataset.comparePane),el.dataset.rid,el.dataset.col,el);_compareScheduleAlignment(host);});el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
+  host.querySelectorAll('[data-compare-annotation]').forEach(el=>{el.addEventListener('focus',()=>{activeEl=el;saveRange();});el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotation.split(':');compareAnnotationLabel(Number(index),id,el);_compareScheduleAlignment(host);});el.addEventListener('blur',()=>_compareScheduleAlignment(host));el.addEventListener('keyup',saveRange);el.addEventListener('mouseup',saveRange);});
   host.querySelectorAll('[data-compare-annotation-color]').forEach(el=>el.addEventListener('input',()=>{const [index,id]=el.dataset.compareAnnotationColor.split(':');compareAnnotationColor(Number(index),id,el.value);}));
 }
 async function compareLoadPane(index,id){
@@ -5854,42 +5854,60 @@ function _compareSpacersFor(projectId){
   const map=ACTIVE_COLLECTION?.compareSpacers;
   return Array.isArray(map?.[projectId])?map[projectId]:[];
 }
-function _compareMatchSpacerHeights(host){
-  host.querySelectorAll('[data-compare-spacer]').forEach(spacer=>{
-    const pane=spacer.closest('[data-compare-pane]');
-    const anchor=spacer.dataset.compareAfter;
-    const rows=[...pane.querySelectorAll('[data-compare-row]')];
+function _comparePaneRoots(host){return [...host.children].filter(node=>node.matches?.('.compare-pane[data-compare-pane]'));}
+function _compareSetManualSpacerHeights(host){
+  _comparePaneRoots(host).forEach(pane=>pane.querySelectorAll('[data-compare-spacer]').forEach(spacer=>{
+    const anchor=spacer.dataset.compareAfter,rows=[...pane.querySelectorAll('[data-compare-row]')];
     const source=rows.find(row=>row.dataset.compareRow===anchor)||rows.at(-1);
-    if(source)spacer.style.height=`${Math.ceil(source.getBoundingClientRect().height)}px`;
+    const base=Math.ceil(source?.getBoundingClientRect().height||56),offset=Number(spacer.dataset.compareManualOffset)||0;
+    spacer.dataset.compareBase=String(base);spacer.style.height=`${Math.max(28,base+offset)}px`;
+  }));
+}
+function _compareAlignmentSlots(pane){
+  const seen=new Map();
+  return [...pane.querySelectorAll('.compare-auto-align-slot')].flatMap(slot=>{
+    const divider=slot.nextElementSibling,kind=divider?.classList.contains('compare-section-divider')?'section':divider?.classList.contains('compare-proposition-divider')?'proposition':'';
+    const label=divider?.querySelector('[data-compare-annotation]')?.textContent?.trim().replace(/\s+/g,' ').toLocaleLowerCase();
+    if(!kind||!label)return [];
+    const base=`${kind}:${label}`,ordinal=(seen.get(base)||0)+1;seen.set(base,ordinal);
+    return [{slot,divider,key:`${base}:${ordinal}`}];
   });
 }
-function _compareDividerKey(divider){
-  const kind=divider.classList.contains('compare-section-divider')?'section':'proposition';
-  const label=divider.querySelector('[data-compare-annotation]')?.textContent?.trim().replace(/\s+/g,' ').toLocaleLowerCase();
-  return label?`${kind}:${label}`:'';
-}
-function _compareAlignSpacersToDividers(host){
-  const panes=[...host.querySelectorAll('[data-compare-pane]')];if(panes.length!==2)return;
-  panes.forEach((pane,index)=>{
-    const peer=panes[index===0?1:0],peerDividers=[...peer.querySelectorAll('.compare-section-divider,.compare-proposition-divider')];
-    pane.querySelectorAll('[data-compare-spacer]').forEach(spacer=>{
-      const divider=[...pane.querySelectorAll('.compare-section-divider,.compare-proposition-divider')].find(item=>Boolean(spacer.compareDocumentPosition(item)&Node.DOCUMENT_POSITION_FOLLOWING));
-      const key=divider&&_compareDividerKey(divider);if(!key)return;
-      const match=peerDividers.find(item=>_compareDividerKey(item)===key);if(!match)return;
-      const delta=match.getBoundingClientRect().top-divider.getBoundingClientRect().top;
-      if(Math.abs(delta)>1){
-        const height=spacer.getBoundingClientRect().height;
-        spacer.style.height=`${Math.max(1,Math.round(height+delta))}px`;
-      }
-    });
+function _compareContentY(element,body){const rect=element.getBoundingClientRect(),bodyRect=body.getBoundingClientRect();return rect.top-bodyRect.top+body.scrollTop;}
+function _compareAlignDividers(host){
+  const panes=_comparePaneRoots(host);if(panes.length!==2)return;
+  const [left,right]=panes,bodies=panes.map(pane=>pane.querySelector('.compare-pane-body'));
+  if(!bodies[0]||!bodies[1])return;
+  const leftSlots=_compareAlignmentSlots(left),rightSlots=_compareAlignmentSlots(right),rightByKey=new Map(rightSlots.map(item=>[item.key,item]));
+  [...leftSlots,...rightSlots].forEach(({slot})=>{slot.style.height='0px';});
+  leftSlots.forEach(leftSlot=>{
+    const rightSlot=rightByKey.get(leftSlot.key);if(!rightSlot)return;
+    const delta=_compareContentY(rightSlot.divider,bodies[1])-_compareContentY(leftSlot.divider,bodies[0]);
+    if(Math.abs(delta)<1)return;
+    const target=delta>0?leftSlot.slot:rightSlot.slot;
+    target.style.height=`${Math.ceil(Math.abs(delta))}px`;
   });
+}
+function _compareScheduleAlignment(host=document.getElementById('collection-compare-panes')){
+  if(!host?.isConnected)return;cancelAnimationFrame(COMPARE_ALIGNMENT_FRAME);
+  COMPARE_ALIGNMENT_FRAME=requestAnimationFrame(()=>{_compareSetManualSpacerHeights(host);_compareAlignDividers(host);});
+}
+function _compareObserveAlignment(host){
+  COMPARE_ALIGNMENT_OBSERVER?.disconnect();
+  if(!('ResizeObserver'in window))return;
+  COMPARE_ALIGNMENT_OBSERVER=new ResizeObserver(()=>_compareScheduleAlignment(host));
+  COMPARE_ALIGNMENT_OBSERVER.observe(host);_comparePaneRoots(host).forEach(pane=>COMPARE_ALIGNMENT_OBSERVER.observe(pane.querySelector('.compare-pane-body')));
+  document.fonts?.ready?.then(()=>_compareScheduleAlignment(host)).catch(()=>{});
 }
 function _compareSpacerHTML(spacer,index,data,view='phrasing'){
   const removeLabel=typeof t==='function'?t('compare.spacer.remove'):'Remove alignment blank';
+  const smallerLabel=typeof t==='function'?t('compare.spacer.smaller'):'Make alignment blank smaller';
+  const largerLabel=typeof t==='function'?t('compare.spacer.larger'):'Make alignment blank larger';
   const copy=`<div class="compare-alignment-spacer-copy" aria-hidden="true"><div class="compare-edit compare-original">&nbsp;</div>${data.isSingle?'':`<div class="compare-edit compare-translation">&nbsp;</div>`}</div>`;
-  const remove=`<button type="button" onclick="compareRemoveSpacer(${index},'${spacer.id}')" title="${escH(removeLabel)}" aria-label="${escH(removeLabel)}">×</button>`;
+  const controls=`<div class="compare-spacer-controls"><button type="button" onclick="compareAdjustSpacer(${index},'${spacer.id}',-4)" title="${escH(smallerLabel)}" aria-label="${escH(smallerLabel)}">−</button><button type="button" onclick="compareAdjustSpacer(${index},'${spacer.id}',4)" title="${escH(largerLabel)}" aria-label="${escH(largerLabel)}">+</button><button type="button" class="compare-spacer-remove" onclick="compareRemoveSpacer(${index},'${spacer.id}')" title="${escH(removeLabel)}" aria-label="${escH(removeLabel)}">×</button></div>`;
   const anchor=escH(spacer.afterRid||'');
-  return view==='diagram'?`<div class="compare-alignment-spacer compare-diagram-spacer" data-compare-spacer="${escH(spacer.id)}" data-compare-after="${anchor}">${copy}${remove}</div>`:`<div class="compare-row compare-alignment-spacer" data-compare-spacer="${escH(spacer.id)}" data-compare-after="${anchor}"><div class="compare-row-meta" aria-hidden="true"></div>${copy}${remove}</div>`;
+  const offset=Number(spacer.manualOffset)||0;
+  return view==='diagram'?`<div class="compare-alignment-spacer compare-diagram-spacer" data-compare-spacer="${escH(spacer.id)}" data-compare-after="${anchor}" data-compare-manual-offset="${offset}">${copy}${controls}</div>`:`<div class="compare-row compare-alignment-spacer" data-compare-spacer="${escH(spacer.id)}" data-compare-after="${anchor}" data-compare-manual-offset="${offset}"><div class="compare-row-meta" aria-hidden="true"></div>${copy}${controls}</div>`;
 }
 function _compareSpacersAfter(projectId,rid,index,data,view){return _compareSpacersFor(projectId).filter(spacer=>String(spacer.afterRid||'')===String(rid)).map(spacer=>_compareSpacerHTML(spacer,index,data,view)).join('');}
 function _compareEndSpacers(data,projectId,index,view){
@@ -5907,7 +5925,7 @@ function _compareSectionsCovering(data,rid){
 function _compareCommentButton(index,rid){return `<button type="button" class="cmtbtn compare-cmtbtn" title="Add or edit comment" aria-label="Add or edit comment" onclick="event.stopPropagation();compareToggleComment(${index},'${rid}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>`;}
 function _compareAnnotationHtml(ann,index,kind){
   const label=ann.label||(typeof t==='function'?t(`compare.${kind}`):(kind==='section'?'Section':'Proposition'));
-  return `<div class="compare-${kind}-divider" style="--compare-annotation-color:${escH(ann.color||(kind==='section'?'#534AB7':'#C8A84B'))}" dir="auto"><span class="compare-annotation-line"></span><div class="compare-annotation-label" contenteditable="true" data-compare-annotation="${index}:${ann.id}">${escH(label)}</div><input type="color" value="${escH(ann.color||(kind==='section'?'#534AB7':'#C8A84B'))}" data-compare-annotation-color="${index}:${ann.id}" title="Annotation color"></div>`;
+  return `<div class="compare-auto-align-slot" aria-hidden="true"></div><div class="compare-${kind}-divider" style="--compare-annotation-color:${escH(ann.color||(kind==='section'?'#534AB7':'#C8A84B'))}" dir="auto"><span class="compare-annotation-line"></span><div class="compare-annotation-label" contenteditable="true" data-compare-annotation="${index}:${ann.id}">${escH(label)}</div><input type="color" value="${escH(ann.color||(kind==='section'?'#534AB7':'#C8A84B'))}" data-compare-annotation-color="${index}:${ann.id}" title="Annotation color"></div>`;
 }
 function _comparePhrasingContent(data,index){
   const isRTL=!!data.isRTL;
@@ -5942,7 +5960,13 @@ function compareAddSpacer(index){
   const afterRid=active||COMPARE_ACTIVE_ROWS[index]||null;
   const map=ACTIVE_COLLECTION.compareSpacers||(ACTIVE_COLLECTION.compareSpacers={});
   const spacers=map[pane.projectId]||(map[pane.projectId]=[]);
-  spacers.push({id:`compare-space-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,afterRid:afterRid?String(afterRid):null,createdAt:Date.now()});
+  spacers.push({id:`compare-space-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,afterRid:afterRid?String(afterRid):null,manualOffset:0,createdAt:Date.now()});
+  collectionSaveActive();renderCollectionCompare();
+}
+function compareAdjustSpacer(index,id,delta){
+  const pane=COMPARE_PANES[index],map=ACTIVE_COLLECTION?.compareSpacers,spacer=map?.[pane?.projectId]?.find(item=>item.id===id);if(!spacer)return;
+  const element=[...document.querySelectorAll('[data-compare-spacer]')].find(item=>item.dataset.compareSpacer===id),base=Number(element?.dataset.compareBase)||56;
+  spacer.manualOffset=Math.max(28-base,Math.min(600,(Number(spacer.manualOffset)||0)+Number(delta||0)));
   collectionSaveActive();renderCollectionCompare();
 }
 function compareRemoveSpacer(index,id){
@@ -6553,7 +6577,7 @@ function collectionCompareSpacers(raw){
   if(!raw||typeof raw!=='object'||Array.isArray(raw))return {};
   return Object.entries(raw).reduce((result,[projectId,items])=>{
     if(!Array.isArray(items))return result;
-    const spacers=items.filter(item=>item&&typeof item.id==='string'&&/^[A-Za-z0-9_-]+$/.test(item.id)).map(item=>({id:item.id,afterRid:typeof item.afterRid==='string'?item.afterRid:null,createdAt:Number(item.createdAt)||Date.now()}));
+    const spacers=items.filter(item=>item&&typeof item.id==='string'&&/^[A-Za-z0-9_-]+$/.test(item.id)).map(item=>({id:item.id,afterRid:typeof item.afterRid==='string'?item.afterRid:null,manualOffset:Math.max(-1000,Math.min(1000,Number(item.manualOffset)||0)),createdAt:Number(item.createdAt)||Date.now()}));
     if(spacers.length)result[String(projectId)]=spacers;
     return result;
   },{});
