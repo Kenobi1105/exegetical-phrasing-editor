@@ -2084,58 +2084,6 @@ input[type=color].hpick{position:absolute;width:0;height:0;opacity:0;pointer-eve
   text-align: center;
 }
 
-/* ── S1/S2 floating lang pill + settings gear ──
-   Mirrors the main toolbar's own gear+EN cluster (top-right), since the
-   real toolbar buttons sit behind the S1/S2 full-screen scrim and can't
-   be clicked through it — same reason the lang pill itself is a separate
-   clone rather than trying to poke a hole through to the real one. */
-#lang-toggle-s12 {
-  position: fixed;
-  top: 11px;
-  right: 14px;
-  z-index: 9999;
-  display: none; /* shown as flex via JS on S1/S2 */
-  align-items: center;
-  gap: 6px;
-}
-/* Card surface + guaranteed-contrast ink text — same pairing as
-   .mcard/.ccard/.dblock, rather than --bg+--sig (which both go dark
-   together under Dark mode, since --bg is no longer guaranteed light). */
-#lang-toggle-s12 .lang-pill,
-#lang-toggle-s12 .s12-gear-btn {
-  border: 1.5px solid rgba(var(--ink-rgb),.28);
-  background: var(--surface, #fff);
-  color: var(--ink, #1F1E1E);
-  box-shadow: 0 1px 6px rgba(0,0,0,.09);
-}
-#lang-toggle-s12 .s12-gear-btn {
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: background .15s, color .15s, border-color .15s;
-}
-/* Mirrors the main toolbar's .tsep between its settings icon and EN pill —
-   ink-based rather than .tsep's hardcoded translucent white, since this
-   cluster sits on var(--surface) (light in 4 themes) rather than the
-   toolbar's always-dark --sig. */
-#lang-toggle-s12 .s12-sep {
-  width: 1px;
-  height: 20px;
-  background: rgba(var(--ink-rgb), .15);
-  flex-shrink: 0;
-}
-#lang-toggle-s12 .lang-pill:hover,
-#lang-toggle-s12 .s12-gear-btn:hover {
-  background: var(--sig, #493548);
-  color: var(--label, #F7F3E9);
-  border-color: var(--sig, #493548);
-}
-
 /* ════════════════════════════════════════
    EXPORT ALL POPUP (Projects panel footer)
    Lives inside #proj-export-all-wrap so it
@@ -4913,6 +4861,14 @@ body.hide-sections #section-strips{display:none}
 .proj-library-tabs{display:flex;gap:3px;padding:8px 12px 0;background:var(--surface);border-bottom:1px solid rgba(var(--ink-rgb),.08)}.proj-library-tab{display:inline-flex;align-items:center;gap:5px;height:28px;padding:0 9px;border:0;border-bottom:2px solid transparent;background:transparent;color:var(--muted);font:700 10px var(--ui);cursor:pointer}.proj-library-tab:hover,.proj-library-tab:focus-visible{color:var(--ink);background:rgba(73,53,72,.05);outline:0}.proj-library-tab.active{color:var(--sig);border-bottom-color:var(--sig)}.proj-view-count{display:grid;place-items:center;min-width:15px;height:15px;padding:0 3px;border-radius:99px;background:rgba(73,53,72,.09);font-size:8px;color:inherit}
 .proj-card{display:grid;grid-template-columns:minmax(0,1fr) auto;column-gap:7px}.proj-card-meta{grid-column:1/-1}.proj-card-actions{grid-column:2;grid-row:1;display:flex;gap:2px}.proj-card-actions button{width:24px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);cursor:pointer;display:grid;place-items:center}.proj-card-actions button:hover,.proj-card-actions button:focus-visible{background:rgba(73,53,72,.1);color:var(--sig);outline:0}.proj-card-actions .proj-card-trash:hover,.proj-card-actions .proj-card-trash:focus-visible,.proj-card-actions .proj-card-permanent:hover,.proj-card-actions .proj-card-permanent:focus-visible{background:rgba(180,40,40,.12);color:#b42828}.proj-card.is-pinned{border-color:rgba(200,168,75,.54)}.proj-pin-marker{color:#a47b28;font-size:11px;margin-left:4px}.proj-card.is-trashed{opacity:.82}.proj-trash-meta{color:#9a7628}.proj-trash-actions{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding:7px 8px;border-radius:7px;background:rgba(200,168,75,.12);font:10px/1.35 var(--ui);color:#80621d}.proj-trash-actions button{border:0;background:transparent;color:#a42e2e;font:800 10px var(--ui);cursor:pointer}.proj-backup-actions{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:0 0 7px}.proj-backup-actions button{height:30px;border:1px solid rgba(73,53,72,.18);border-radius:7px;background:transparent;color:var(--sig);font:700 10px var(--ui);cursor:pointer}.proj-backup-actions button:hover,.proj-backup-actions button:focus-visible{background:rgba(73,53,72,.07);border-color:var(--sig);outline:0}
 :root[data-theme='dark'] .s1-continue-card{background:linear-gradient(135deg,#292431,#211f29);border-color:rgba(237,231,221,.18);box-shadow:0 5px 15px rgba(0,0,0,.22)}:root[data-theme='dark'] .s1-continue-card:hover,:root[data-theme='dark'] .s1-continue-card:focus-visible{border-color:var(--accent);box-shadow:0 8px 20px rgba(0,0,0,.32)}:root[data-theme='dark'] .s1-new-project{border-top-color:rgba(237,231,221,.14)}:root[data-theme='dark'] .s1-action-btn{border-color:rgba(237,231,221,.2);color:var(--label)}:root[data-theme='dark'] .s1-action-btn:hover,:root[data-theme='dark'] .s1-action-btn:focus-visible{background:var(--surface-interactive-hover-bg);border-color:var(--accent);color:var(--label)}:root[data-theme='dark'] .proj-library-tabs{background:#211f29;border-bottom-color:rgba(237,231,221,.1)}:root[data-theme='dark'] .proj-library-tab.active{color:var(--label);border-bottom-color:var(--accent)}:root[data-theme='dark'] .proj-trash-actions{background:rgba(232,201,122,.14);color:#f0d08f}:root[data-theme='dark'] .proj-backup-actions button{border-color:rgba(237,231,221,.2);color:var(--label)}:root[data-theme='dark'] .proj-backup-actions button:hover,:root[data-theme='dark'] .proj-backup-actions button:focus-visible{background:var(--surface-interactive-hover-bg);border-color:var(--accent)}
+
+/* Landing-only preferences intentionally live inside the card, rather than
+   floating over the application shell where they can survive a transition. */
+.s1-preferences{display:flex;align-items:center;flex-wrap:wrap;gap:7px;margin-top:13px;padding-top:12px;border-top:1px solid rgba(73,53,72,.1)}
+.s1-preferences-label{margin-right:2px;color:var(--muted);font:800 9px var(--ui);letter-spacing:.09em;text-transform:uppercase}
+.s1-preference-btn{display:inline-flex;align-items:center;gap:6px;min-height:29px;padding:0 9px;border:1px solid rgba(73,53,72,.17);border-radius:6px;background:transparent;color:var(--ink);font:700 10px var(--ui);cursor:pointer;transition:background .14s,border-color .14s,color .14s}
+.s1-preference-btn svg{flex:0 0 auto}.s1-preference-btn:hover,.s1-preference-btn:focus-visible{background:rgba(73,53,72,.07);border-color:var(--sig);color:var(--sig);outline:0}.s1-language-value{display:inline-flex;align-items:center;min-height:16px;padding:0 5px;border-radius:99px;background:rgba(73,53,72,.09);font-size:9px;letter-spacing:.03em}
+:root[data-theme='dark'] .s1-preferences{border-top-color:rgba(237,231,221,.14)}:root[data-theme='dark'] .s1-preference-btn{border-color:rgba(237,231,221,.2);color:var(--label)}:root[data-theme='dark'] .s1-preference-btn:hover,:root[data-theme='dark'] .s1-preference-btn:focus-visible{background:var(--surface-interactive-hover-bg);border-color:var(--accent);color:var(--label)}:root[data-theme='dark'] .s1-language-value{background:rgba(237,231,221,.1)}
 
 @media (max-width:700px){#s1 .s1-card{padding:28px 22px}.s1-language-list,.s1-recent-list{grid-template-columns:1fr}.s1-support-actions{flex-direction:column}.s1-action-btn{width:100%}}
 

@@ -33,6 +33,8 @@ const LANGS = {
     's1.local-note':       'Projects save privately in this browser until you choose to back them up or sync.',
     's1.all-projects':     'All projects',
     's1.import':           'Import project or backup',
+    's1.preferences':      'Preferences',
+    's1.language':         'Language',
     /* ── Study Notebook ── */
     'study.notebook.title':'Study Notebook',
     'study.notebook.toggle':'Study Notebook (Alt+4)',
@@ -641,6 +643,8 @@ const LANGS = {
     's1.local-note':       '项目会私密保存在此浏览器中，直到您选择备份或同步。',
     's1.all-projects':     '所有项目',
     's1.import':           '导入项目或备份',
+    's1.preferences':      '偏好设置',
+    's1.language':         '语言',
     /* ── 研读笔记本 ── */
     'study.notebook.title':'研读笔记本',
     'study.notebook.toggle':'研读笔记本（Alt+4）',
@@ -1262,17 +1266,13 @@ function applyLang() {
     el.placeholder = t(el.getAttribute('data-i18n-ph'));
   });
 
-  // Sync both toggle labels (toolbar + S1/S2 pill)
+  // Sync the editor toolbar and landing-page language labels.
   // Label shows the CURRENT language so user knows which mode is active.
   const newLabel = LANG_UI === 'en' ? 'EN' : '简体';
   const toggleLabel = document.getElementById('lang-toggle-label');
   if (toggleLabel) toggleLabel.textContent = newLabel;
-  document.querySelectorAll('.lang-toggle-s12-label').forEach(el => {
-    el.textContent = newLabel;
-  });
-
-  // Show/hide the S1/S2 pill — only visible when the editor (#app) is not open
-  _updateS12Pill();
+  const s1LanguageLabel = document.getElementById('s1-language-label');
+  if (s1LanguageLabel) s1LanguageLabel.textContent = newLabel;
 
   // Update dynamically-rendered project empty state
   const projEmpty = document.getElementById('proj-list-empty');
@@ -1355,15 +1355,6 @@ function applyLang() {
   // Re-render Diagram View if it's the active canvas (verse-separator labels
   // and empty-block placeholder text are localized)
   if (typeof refreshDiagramIfActive === 'function') refreshDiagramIfActive();
-}
-
-/* ── Show S1/S2 pill when app is not visible ── */
-function _updateS12Pill() {
-  const pill = document.getElementById('lang-toggle-s12');
-  if (!pill) return;
-  const app = document.getElementById('app');
-  const inEditor = app && (app.style.display === 'flex' || app.style.display === 'block');
-  pill.style.display = inEditor ? 'none' : 'flex';
 }
 
 /* ── Toggle language ── */

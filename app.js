@@ -616,9 +616,15 @@ function _applySessionLabels(){
   if(tHdr) tHdr.textContent=isChinese?'译文':'Translation';
 }
 
+function showEditorShell(){
+  document.getElementById('s1')?.classList.add('hidden');
+  document.getElementById('s2')?.classList.add('hidden');
+  const app=document.getElementById('app');
+  if(app) app.style.display='flex';
+}
+
 function openEditor(){
-  document.getElementById('s2').classList.add('hidden');
-  document.getElementById('app').style.display='flex';
+  showEditorShell();
   _applySessionLabels();
   document.getElementById('ch-t').style.display=IS_SINGLE?'none':'';
   // Restore comment pane button
@@ -639,7 +645,6 @@ function openEditor(){
   EDITOR_VIEW=''; // force setEditorView to apply the change
   setEditorView('phrasing');
   autoSave();
-  if(typeof _updateS12Pill==='function') _updateS12Pill();
   // Restore Bible Module pin state now that #app is visible
   if(typeof bPinned!=='undefined'&&bPinned&&typeof bApplyPin==='function'){
     setTimeout(()=>bApplyPin(),50);
@@ -5996,7 +6001,6 @@ function restartSess(){
   document.getElementById('app').style.display='none';
   document.getElementById('s2').classList.add('hidden');
   document.getElementById('s1').classList.remove('hidden');
-  if(typeof _updateS12Pill==='function') _updateS12Pill();
   if(typeof renderS1Recent==='function')renderS1Recent();
 }
 
@@ -6425,9 +6429,7 @@ async function collectionOpen(id){
   if(available.length&&available[0].id!==CURRENT_PROJECT_ID){
     await projLoad(available[0].id,{keepCollection:true});
   }else{
-    document.getElementById('s1')?.classList.add('hidden');
-    document.getElementById('s2')?.classList.add('hidden');
-    const app=document.getElementById('app');if(app)app.style.display='flex';
+    showEditorShell();
   }
   const dock=document.getElementById('study-notebook');if(dock?.classList.contains('pane-hidden'))toggleStudyNotebook();else renderStudyNotebook();
   COMPARE_PANES=[null,null];

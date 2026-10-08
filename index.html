@@ -14,17 +14,6 @@
 </head>
 <body>
 
-<!-- ══ LANG TOGGLE for Screens 1+2 (hidden in Screen 3, toolbar has its own) ══ -->
-<div id="lang-toggle-s12">
-  <button class="s12-gear-btn" data-i18n-title="toolbar.settings" title="Settings (Ctrl+,)" onclick="openSettings()">
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 2a1 1 0 0 1 1 1v1.07a7 7 0 0 1 2.83 1.17l.76-.76a1 1 0 0 1 1.41 0l1.41 1.41a1 1 0 0 1 0 1.41l-.76.76A7 7 0 0 1 19.93 11H21a1 1 0 0 1 0 2h-1.07a7 7 0 0 1-1.17 2.83l.76.76a1 1 0 0 1 0 1.41l-1.41 1.41a1 1 0 0 1-1.41 0l-.76-.76A7 7 0 0 1 13 19.93V21a1 1 0 0 1-2 0v-1.07a7 7 0 0 1-2.83-1.17l-.76.76a1 1 0 0 1-1.41 0L4.59 18.1a1 1 0 0 1 0-1.41l.76-.76A7 7 0 0 1 4.07 13H3a1 1 0 0 1 0-2h1.07A7 7 0 0 1 5.34 8.17l-.76-.76a1 1 0 0 1 0-1.41L5.99 4.59a1 1 0 0 1 1.41 0l.76.76A7 7 0 0 1 11 4.07V3a1 1 0 0 1 1-1z"/></svg>
-  </button>
-  <div class="s12-sep"></div>
-  <button class="lang-pill" onclick="toggleLang()" data-i18n-title="lang.toggle.title" title="Switch to Simplified Chinese (Ctrl+Space)">
-    <span class="lang-toggle-s12-label">EN</span>
-  </button>
-</div>
-
 <!-- ══ SCREEN 1: LANGUAGE ══ -->
 <div class="screen" id="s1">
   <div class="mcard s1-card">
@@ -85,6 +74,17 @@
           <button class="s1-action-btn" type="button" onclick="openAccount()">
             <span data-i18n="account.title">Account &amp; Sync</span>
             <span id="s1-account-dot" class="acct-dot" style="display:none"></span>
+          </button>
+        </div>
+        <div class="s1-preferences" role="group" data-i18n-aria-label="s1.preferences" aria-label="Preferences">
+          <span class="s1-preferences-label" data-i18n="s1.preferences">Preferences</span>
+          <button class="s1-preference-btn" type="button" onclick="openSettings()" data-i18n-title="toolbar.settings" title="Settings (Ctrl+,)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2a1 1 0 0 1 1 1v1.07a7 7 0 0 1 2.83 1.17l.76-.76a1 1 0 0 1 1.41 0l1.41 1.41a1 1 0 0 1 0 1.41l-.76.76A7 7 0 0 1 19.93 11H21a1 1 0 0 1 0 2h-1.07a7 7 0 0 1-1.17 2.83l.76.76a1 1 0 0 1 0 1.41l-1.41 1.41a1 1 0 0 1-1.41 0l-.76-.76A7 7 0 0 1 13 19.93V21a1 1 0 0 1-2 0v-1.07a7 7 0 0 1-2.83-1.17l-.76.76a1 1 0 0 1-1.41 0L4.59 18.1a1 1 0 0 1 0-1.41l.76-.76A7 7 0 0 1 4.07 13H3a1 1 0 0 1 0-2h1.07A7 7 0 0 1 5.34 8.17l-.76-.76a1 1 0 0 1 0-1.41L5.99 4.59a1 1 0 0 1 1.41 0l.76.76A7 7 0 0 1 11 4.07V3a1 1 0 0 1 1-1z"/></svg>
+            <span data-i18n="settings.title">Settings</span>
+          </button>
+          <button class="s1-preference-btn" type="button" onclick="toggleLang()" data-i18n-title="lang.toggle.title" title="Switch to Simplified Chinese (Ctrl+Space)">
+            <span data-i18n="s1.language">Language</span>
+            <span id="s1-language-label" class="s1-language-value">EN</span>
           </button>
         </div>
       </div>
