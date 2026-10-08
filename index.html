@@ -635,7 +635,7 @@
           <button type="button" class="study-note-add" onclick="addStudyNote()" data-i18n="study.add">Add entry</button>
         </div>
         <div id="study-notebook-reorder-status" class="study-reorder-status" aria-live="polite" aria-atomic="true"></div>
-        <div id="study-notebook-list"></div>
+        <div id="study-notebook-list" role="region" tabindex="0" aria-label="Study Notebook entries" data-i18n-aria-label="study.entries"></div>
       </aside>
       <aside id="structure-panel" class="pane-hidden" aria-label="Structure panel">
         <header class="structure-panel-hdr"><div><span class="cmargin-title" data-i18n="structure.title">Structure</span><span id="structure-panel-help" class="structure-panel-help" data-i18n="structure.help">Arrange sections to explore patterns</span></div><div class="structure-panel-actions"><button id="structure-add-section" type="button" onclick="structureAddSection()" title="Add section">＋</button><button id="structure-expand-workspace" type="button" onclick="toggleStructureExpanded()" data-i18n-title="structure.expand-workspace" title="Open expanded Structure workspace" aria-label="Open expanded Structure workspace" data-i18n-aria-label="structure.expand-workspace">⤢</button><button id="structure-modal-close" type="button" onclick="toggleStructureExpanded(false)" data-i18n-title="structure.close-workspace" title="Close expanded Structure workspace" aria-label="Close expanded Structure workspace" data-i18n-aria-label="structure.close-workspace" hidden>×</button></div></header>

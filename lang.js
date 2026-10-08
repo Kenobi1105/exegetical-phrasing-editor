@@ -38,6 +38,7 @@ const LANGS = {
     /* ── Study Notebook ── */
     'study.notebook.title':'Study Notebook',
     'study.notebook.toggle':'Study Notebook (Alt+4)',
+    'study.entries':      'Study Notebook entries',
     'study.text-color':   'Text color',
     'study.indent':       'Indent note block',
     'study.outdent':      'Outdent note block',
@@ -667,6 +668,7 @@ const LANGS = {
     /* ── 研读笔记本 ── */
     'study.notebook.title':'研读笔记本',
     'study.notebook.toggle':'研读笔记本（Alt+4）',
+    'study.entries':      '研读笔记本条目',
     'study.text-color':   '文字颜色',
     'study.indent':       '缩进笔记段落',
     'study.outdent':      '减少笔记段落缩进',
