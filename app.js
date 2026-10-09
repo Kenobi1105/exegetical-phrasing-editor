@@ -2192,11 +2192,11 @@ function _snapFracY(fracY){ return fracY<0.5 ? 0 : 1; }
    Default color: #C8A84B (gold), weight: 1.5 — matching the arc connector.
    Escape during drag cancels. */
 /* Returns the index (0-based) of the .ann-word span that contains targetNode */
-/* ── Connector draw mode (toolbar button / Alt+C) ───────────────────────────
-   Clicking the connector button (or pressing Alt+C) toggles connector-draw
+/* ── Connector draw mode (toolbar button / Ctrl+Alt+C) ──────────────────────
+   Clicking the connector button (or pressing Ctrl+Alt+C) toggles connector-draw
    mode. While active, the canvas shows a crosshair cursor over blocks and
    a hint toast. The user then Ctrl+drags from any block or word.
-   Pressing Escape, clicking the button again, or Alt+C again exits the mode. */
+   Pressing Escape, clicking the button again, or Ctrl+Alt+C again exits the mode. */
 let _connectorModeActive=false;
 
 function startConnectorMode(){
@@ -10157,10 +10157,10 @@ let SELECTED_ANN_ID=null;
    with an editable relationship label.
    Stored: {id, afterRid, label, color}
 ═══════════════════════════════════════════ */
-/* ── Bracket mode toggle (toolbar button / Alt+B) ──────────────────────────
+/* ── Bracket mode toggle (toolbar button / Ctrl+Alt+B) ─────────────────────
    Toggles 'brk-locked' on body, which shows pips persistently (same CSS as
    brk-shift) so the user can click them without holding Shift.
-   Dismissed by: clicking the button again, Alt+B again, or Escape. */
+   Dismissed by: clicking the button again, Ctrl+Alt+B again, or Escape. */
 function addBracketHint(){
   if(EDITOR_VIEW!=='diagram') return;
   const body=document.body;
@@ -11884,16 +11884,50 @@ document.addEventListener('keydown',function(ev){
   if(typeof toggleLang==='function')toggleLang();
 });
 
-/* ── Alt+1/2/3/4/T/L/D/A/B/S/J/K/H hotkeys ── */
+/* ── Core authoring shortcuts ────────────────────────────────────────────
+   These deliberately use the primary modifier plus Alt/Option. Bare Alt
+   letter keys are claimed by browsers and operating systems (notably Alt+D
+   focusing Chrome's address bar), so they cannot reliably be editor tools. */
+function _authoringShortcutBlocked(target){
+  const s1=document.getElementById('s1'),s2=document.getElementById('s2');
+  if((s1&&!s1.classList.contains('hidden'))||(s2&&!s2.classList.contains('hidden')))return true;
+  if(document.querySelector('.screen:not(.hidden):not(#s1):not(#s2)'))return true;
+  return false;
+}
+function _authoringShortcutEditableTarget(target){
+  return target?.closest?.('input,textarea,select,[contenteditable="true"]')||null;
+}
+document.addEventListener('keydown',function(ev){
+  if(!(ev.ctrlKey||ev.metaKey)||!ev.altKey||ev.shiftKey)return;
+  const key=String(ev.key||'').toLowerCase();
+  if(!'sdmnotelcab'.includes(key))return;
+  const consume=()=>{ev.preventDefault();ev.stopImmediatePropagation();};
+  if(_authoringShortcutBlocked(ev.target)){consume();return;}
+  const editable=_authoringShortcutEditableTarget(ev.target);
+  const passageEditor=!!editable?.closest?.('.xrow');
+  const rowCommand=key==='s'||key==='d'||key==='m';
+  if(editable&&!passageEditor){consume();return;}
+  if(rowCommand&&EDITOR_VIEW==='compare'){consume();return;}
+  if(key==='s'&&(EDITOR_VIEW==='phrasing'||EDITOR_VIEW==='diagram'))addSection();
+  else if(key==='d'&&EDITOR_VIEW==='phrasing')addDivider();
+  else if(key==='m'&&(EDITOR_VIEW==='phrasing'||EDITOR_VIEW==='diagram'))addCommentOnFocusedRow();
+  else if(!editable&&key==='o')toggleStructurePanel();
+  else if(!editable&&key==='n')toggleStudyNotebook();
+  else if(!editable&&key==='t'&&EDITOR_VIEW!=='compare')setEditorView(EDITOR_VIEW==='diagram'?'phrasing':'diagram');
+  else if(!editable&&EDITOR_VIEW==='diagram'&&key==='e')toggleDiagramEditMode();
+  else if(!editable&&EDITOR_VIEW==='diagram'&&key==='l')addDiagramLabel();
+  else if(!editable&&EDITOR_VIEW==='diagram'&&key==='c')startConnectorMode();
+  else if(!editable&&EDITOR_VIEW==='diagram'&&key==='a')startFreeArrow();
+  else if(!editable&&EDITOR_VIEW==='diagram'&&key==='b')addBracketHint();
+  consume();
+},true);
+
+/* ── Alt+1/2/3/J/K/H navigation and visibility shortcuts ──────────────── */
 document.addEventListener('keydown',function(ev){
   if(!ev.altKey||ev.shiftKey||ev.ctrlKey||ev.metaKey)return;
-  if(!'1234tTlLdDaAbBcCeEsSjJkKhH'.includes(ev.key))return;
+  if(!'123jJkKhH'.includes(ev.key))return;
   const tag=(ev.target.tagName||'').toLowerCase();
-  // Section and proposition dividers are intentional editor commands. Keep
-  // them available while a row is being edited; otherwise Alt+D falls
-  // through to Chrome's address-bar shortcut before the app can prevent it.
-  const annotationShortcut=ev.key==='d'||ev.key==='D'||ev.key==='s'||ev.key==='S';
-  if((tag==='input'||tag==='textarea'||ev.target.isContentEditable)&&!annotationShortcut)return;
+  if(tag==='input'||tag==='textarea'||ev.target.isContentEditable)return;
   const s2Visible=!document.getElementById('s2')?.classList.contains('hidden');
   if(s2Visible)return;
   const s1Visible=!document.getElementById('s1')?.classList.contains('hidden');
@@ -11903,22 +11937,8 @@ document.addEventListener('keydown',function(ev){
   if(ev.key==='1'&&typeof openProjects==='function')openProjects();
   if(ev.key==='2'&&typeof window.openBible==='function')window.openBible();
   if(ev.key==='3'&&!s1Visible) toggleCmtPane();
-  if(ev.key==='4'&&!s1Visible) toggleStudyNotebook();
-  if((ev.key==='t'||ev.key==='T')&&!s1Visible){
-    setEditorView(EDITOR_VIEW==='diagram'?'phrasing':'diagram');
-  }
-  if((ev.key==='l'||ev.key==='L')&&!s1Visible&&EDITOR_VIEW==='diagram'){
-    addDiagramLabel();
-  }
-  // Annotation shortcuts
-  if((ev.key==='d'||ev.key==='D')&&!s1Visible&&EDITOR_VIEW==='phrasing'){
-    addDivider();
-  }
   if((ev.key==='h'||ev.key==='H')&&!s1Visible&&EDITOR_VIEW==='phrasing'){
     toggleDividersVisible();
-  }
-  if((ev.key==='s'||ev.key==='S')&&!s1Visible){
-    addSection(); // view-aware internally (Phrasing vs Diagram anchor)
   }
   if((ev.key==='j'||ev.key==='J')&&!s1Visible&&EDITOR_VIEW==='diagram'){
     toggleDgTransVisible();
@@ -11927,12 +11947,6 @@ document.addEventListener('keydown',function(ev){
     // Same key, contextual per view — each toggle only exists/matters in its own view
     if(EDITOR_VIEW==='diagram') toggleDgSecEndVisible();
     else if(EDITOR_VIEW==='phrasing') toggleSectionsVisible();
-  }
-  if((ev.key==='a'||ev.key==='A')&&!s1Visible&&EDITOR_VIEW==='diagram'){
-    startFreeArrow();
-  }
-  if((ev.key==='e'||ev.key==='E')&&!s1Visible&&EDITOR_VIEW==='diagram'){
-    toggleDiagramEditMode();
   }
 });
 
