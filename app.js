@@ -5576,8 +5576,36 @@ function _renderCollectionChapterSwitcher(){
   if(!ACTIVE_COLLECTION){host.hidden=true;host.innerHTML='';return;}
   host.hidden=false;
   const active=ACTIVE_COLLECTION.members.map(member=>({member,project:projIndex().find(project=>project.id===member.projectId)}));
-  host.innerHTML=`<span class="collection-chapter-label">${typeof t==='function'?t('collection.chapters'):'Chapters'}</span><div class="collection-chapter-list">${active.map(({member,project})=>{const unavailable=!project||projIsTrashed(project),selected=project?.id===CURRENT_PROJECT_ID;const label=project?.name||member.label||'Unavailable project';return `<button type="button" class="collection-chapter-btn${selected?' is-active':''}${unavailable?' is-unavailable':''}" onclick="collectionOpenMember('${member.projectId}')" ${unavailable?'disabled':''} aria-current="${selected?'page':'false'}" title="${_studyEscAttr(unavailable?(typeof t==='function'?t('study.attachment.unavailable'):'Unavailable'):label)}">${escH(label)}</button>`;}).join('')||`<span class="collection-chapter-empty">${typeof t==='function'?t('collection.empty-members'):'Add saved projects with Manage Members.'}</span>`}</div>`;
+  const chaptersLabel=typeof t==='function'?t('collection.chapters'):'Collection Chapters';
+  const unavailableLabel=typeof t==='function'?t('study.attachment.unavailable'):'Unavailable';
+  const previousLabel=typeof t==='function'?t('collection.chapter.previous'):'Previous chapters';
+  const nextLabel=typeof t==='function'?t('collection.chapter.next'):'Next chapters';
+  host.setAttribute('aria-label',chaptersLabel);
+  host.innerHTML=`<div class="collection-chapter-rail-hdr"><div class="collection-chapter-heading"><span class="collection-chapter-label">${escH(chaptersLabel)}</span><span class="collection-chapter-count">${active.length}</span></div><div class="collection-chapter-rail-nav"><button type="button" id="collection-chapter-previous" onclick="collectionChapterRailScroll(-1)" title="${_studyEscAttr(previousLabel)}" aria-label="${_studyEscAttr(previousLabel)}" hidden>‹</button><button type="button" id="collection-chapter-next" onclick="collectionChapterRailScroll(1)" title="${_studyEscAttr(nextLabel)}" aria-label="${_studyEscAttr(nextLabel)}" hidden>›</button></div></div><div class="collection-chapter-list" tabindex="0" onwheel="collectionChapterRailWheel(event)" onscroll="_syncCollectionChapterRail()" aria-label="${_studyEscAttr(chaptersLabel)}">${active.map(({member,project})=>{const unavailable=!project||projIsTrashed(project),selected=project?.id===CURRENT_PROJECT_ID;const label=project?.name||member.label||unavailableLabel;const detail=unavailable?unavailableLabel:(project?.verseRef||member.reference||'—');const accessible=`${label} — ${detail}`;return `<button type="button" class="collection-chapter-btn${selected?' is-active':''}${unavailable?' is-unavailable':''}" onclick="collectionOpenMember('${member.projectId}')" ${unavailable?'disabled aria-disabled="true"':''} ${selected?'aria-current="page"':''} aria-label="${_studyEscAttr(accessible)}" title="${_studyEscAttr(accessible)}"><span class="collection-chapter-btn-title">${escH(label)}</span><span class="collection-chapter-btn-detail">${escH(detail)}</span></button>`;}).join('')||`<span class="collection-chapter-empty">${typeof t==='function'?t('collection.empty-members'):'Add saved projects with Manage Members.'}</span>`}</div>`;
+  requestAnimationFrame(()=>_syncCollectionChapterRail(true));
 }
+function _syncCollectionChapterRail(revealActive=false){
+  const host=document.getElementById('collection-chapter-switcher'),list=host?.querySelector('.collection-chapter-list');if(!host||!list)return;
+  const overflow=list.scrollWidth>list.clientWidth+2;
+  host.classList.toggle('has-overflow',overflow);
+  const previous=host.querySelector('#collection-chapter-previous'),next=host.querySelector('#collection-chapter-next');
+  if(previous){previous.hidden=!overflow;previous.disabled=!overflow||list.scrollLeft<=1;}
+  if(next){next.hidden=!overflow;next.disabled=!overflow||list.scrollLeft+list.clientWidth>=list.scrollWidth-1;}
+  if(revealActive)list.querySelector('.collection-chapter-btn.is-active')?.scrollIntoView({block:'nearest',inline:'nearest'});
+}
+function collectionChapterRailScroll(direction){
+  const list=document.querySelector('#collection-chapter-switcher .collection-chapter-list');if(!list)return;
+  list.scrollBy({left:direction*Math.max(150,Math.round(list.clientWidth*.72)),behavior:'smooth'});
+  setTimeout(_syncCollectionChapterRail,260);
+}
+function collectionChapterRailWheel(event){
+  const list=event.currentTarget;if(!list||list.scrollWidth<=list.clientWidth)return;
+  if(event.ctrlKey)return;
+  const amount=Math.abs(event.deltaX)>Math.abs(event.deltaY)?event.deltaX:event.deltaY;
+  if(!amount)return;
+  event.preventDefault();list.scrollLeft+=amount;_syncCollectionChapterRail();
+}
+window.addEventListener('resize',()=>requestAnimationFrame(_syncCollectionChapterRail));
 function _renderCollectionMembersPopover(){
   const popover=document.getElementById('collection-members-popover');if(!popover)return;
   if(!ACTIVE_COLLECTION||!COLLECTION_MEMBERS_OPEN){popover.hidden=true;popover.innerHTML='';return;}
