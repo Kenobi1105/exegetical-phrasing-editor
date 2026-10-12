@@ -8698,22 +8698,21 @@ function _pdfPhrasingLayout(){
 }
 
 /* Create a detached, off-screen row that contains only the original and
-   translation text cells.  The translation receives the original cell's
-   computed size in this clone only: project data and the live editor never
-   change. */
+   translation text cells.  Each clone retains its own configured editor
+   size, so the supporting translation does not become visually larger than
+   Hebrew/Greek in the exported PDF. */
 async function _pdfPhrasingRowSnapshot(origEl, transEl, layout){
   const hasOrig=!!origEl?.innerText?.trim();
   const hasTrans=!!transEl?.innerText?.trim();
   if(!hasOrig&&!hasTrans) return null;
 
-  const originalSize=getComputedStyle(origEl||transEl).fontSize;
   const host=document.createElement('div');
   host.className='pdf-phrasing-row-snapshot';
   host.style.cssText='position:fixed;left:-100000px;top:0;display:flex;align-items:flex-start;'
     +'box-sizing:border-box;background:#fff;pointer-events:none;z-index:-1;'
     +'width:'+(layout.origPx+layout.transPx)+'px;';
 
-  function cloneCell(source, width, normaliseSize){
+  function cloneCell(source, width){
     const sourceCell=source?.closest('.xcell');
     const cell=sourceCell?sourceCell.cloneNode(true):document.createElement('div');
     cell.removeAttribute('id');
@@ -8726,13 +8725,12 @@ async function _pdfPhrasingRowSnapshot(origEl, transEl, layout){
       editor.removeAttribute('id');
       editor.setAttribute('contenteditable','false');
       editor.style.width='100%';
-      if(normaliseSize) editor.style.fontSize=originalSize;
     }
     return cell;
   }
 
-  host.appendChild(cloneCell(origEl,layout.origPx,false));
-  if(!IS_SINGLE) host.appendChild(cloneCell(transEl,layout.transPx,true));
+  host.appendChild(cloneCell(origEl,layout.origPx));
+  if(!IS_SINGLE) host.appendChild(cloneCell(transEl,layout.transPx));
   document.body.appendChild(host);
   try{
     const canvas=await html2canvas(host,{
@@ -8996,17 +8994,60 @@ function studyNotebookIncludeInPdf(kind){
 // appropriate font for each script on screen; rasterising these small,
 // high-resolution appendix blocks preserves that same mixed-script fallback.
 function _studyPdfScript(text){
-  const value=String(text||'');
-  if(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/.test(value))return 'cjk';
-  if(/[\u0590-\u05FF\uFB1D-\uFB4F]/.test(value))return 'hebrew';
-  if(/[\u0370-\u03FF\u1F00-\u1FFF]/.test(value))return 'greek';
+  // Base direction has to follow the first strong character in this one
+  // paragraph/list item, not the first script found anywhere in its note.
+  // Otherwise a single Hebrew quotation can incorrectly turn surrounding
+  // English paragraphs and lists into RTL content.
+  const first=(String(text||'').match(/[\u0590-\u05FF\uFB1D-\uFB4F\u0370-\u03FF\u1F00-\u1FFF\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFFA-Za-z]/)||[])[0]||'';
+  if(/[\u0590-\u05FF\uFB1D-\uFB4F]/.test(first))return 'hebrew';
+  if(/[\u0370-\u03FF\u1F00-\u1FFF]/.test(first))return 'greek';
+  if(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/.test(first))return 'cjk';
   return 'latin';
 }
 function _studyPdfFontStack(script){
-  if(script==='cjk')return '"Noto Serif CJK SC", "Noto Serif SC", "Microsoft YaHei", "PingFang SC", SimSun, serif';
-  if(script==='hebrew')return '"Noto Serif Hebrew", "Noto Sans Hebrew", Arial, serif';
-  if(script==='greek')return '"Gentium Plus", Georgia, serif';
-  return '"Gentium Plus", Georgia, serif';
+  // The primary face makes the lead script balanced, while the remaining
+  // stack supplies glyphs for a Hebrew/Greek/Chinese quotation in the same
+  // line. Browser fallback is much more reliable here than one PDF font.
+  const fallback='"Noto Serif Hebrew", "Noto Sans Hebrew", "Noto Serif CJK SC", "Noto Serif SC", "Microsoft YaHei", "PingFang SC", SimSun, "Gentium Plus", Georgia, serif';
+  if(script==='cjk')return '"Noto Serif CJK SC", "Noto Serif SC", "Microsoft YaHei", "PingFang SC", SimSun, '+fallback;
+  if(script==='hebrew')return '"Noto Serif Hebrew", "Noto Sans Hebrew", '+fallback;
+  if(script==='greek')return '"Gentium Plus", Georgia, '+fallback;
+  return '"Gentium Plus", Georgia, '+fallback;
+}
+function _studyPdfApplyTextDirection(node,text){
+  const script=_studyPdfScript(text??node.textContent);
+  node.setAttribute('dir',script==='hebrew'?'rtl':'ltr');
+  node.dataset.pdfScript=script;
+  node.style.fontFamily=_studyPdfFontStack(script);
+  node.style.unicodeBidi='plaintext';
+}
+function _studyPdfApplyRichLayout(block){
+  // Apply a base direction to every independently readable rich-text block.
+  // A title, paragraph, quote, list item, and attachment label can therefore
+  // each have the correct direction within one multilingual notebook entry.
+  block.querySelectorAll('[data-study-pdf-text],p,li,blockquote,h1,h2,h3,h4,h5,h6,pre').forEach(node=>{
+    const text=(node.textContent||'').trim();
+    if(text)_studyPdfApplyTextDirection(node,text);
+  });
+  block.querySelectorAll('ul,ol').forEach(list=>{
+    let depth=0,parent=list.parentElement;
+    while(parent){if(parent.matches?.('ul,ol'))depth++;parent=parent.parentElement;}
+    list.style.display='block';
+    list.style.margin='.45em 0';
+    list.style.paddingInlineStart=(1.6+Math.min(depth,4)*.7)+'em';
+    list.style.listStylePosition='outside';
+  });
+  block.querySelectorAll('li').forEach(item=>{
+    item.style.display='list-item';
+    item.style.margin='.18em 0';
+    item.style.paddingInlineStart='.24em';
+  });
+  block.querySelectorAll('blockquote').forEach(quote=>{
+    quote.style.margin='.5em 0';
+    quote.style.paddingInlineStart='1em';
+    quote.style.borderInlineStart='2px solid #c8a84b';
+    quote.style.color='#4d4945';
+  });
 }
 function _studyPdfSafeHTML(html){
   const holder=document.createElement('div');
@@ -9032,13 +9073,14 @@ async function appendStudyNotebookPDF(doc,entries=STUDY_NOTEBOOK,title){
   const makeBlock=(html,kind,sourceText)=>{
     const block=document.createElement('section');
     const script=_studyPdfScript(sourceText);
-    block.setAttribute('dir',script==='hebrew'?'rtl':'auto');
+    block.setAttribute('dir',script==='hebrew'?'rtl':'ltr');
     block.dataset.pdfScript=script;
     block.style.cssText='box-sizing:border-box;width:100%;font-family:'+_studyPdfFontStack(script)+';unicode-bidi:plaintext;';
     if(kind==='title')block.style.cssText+='font-size:24px;font-weight:700;line-height:1.2;color:#493548;padding:0 0 14px;border-bottom:1px solid #e5ded2;margin:0 0 14px;';
     if(kind==='stage')block.style.cssText+='font-family:Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a8791d;padding:10px 0 7px;margin-top:4px;';
     if(kind==='note')block.style.cssText+='font-size:13px;line-height:1.45;color:#373432;border:1px solid #e5ded2;border-radius:8px;padding:14px 16px;margin:0 0 10px;break-inside:avoid;background:#fff;';
     block.innerHTML=html;
+    _studyPdfApplyRichLayout(block);
     host.appendChild(block);
     return block;
   };
@@ -9058,9 +9100,9 @@ async function appendStudyNotebookPDF(doc,entries=STUDY_NOTEBOOK,title){
         const bodyHTML=_studyPdfSafeHTML(note.bodyHTML)||'';
         const links=(note.attachments||[]).map(link=>link.label).filter(Boolean).join(' · ');
         const textForScript=noteTitle+' '+_studyStripHtml(bodyHTML)+' '+links;
-        const noteHTML='<div style="font-size:15px;font-weight:700;line-height:1.3;color:#1f1e1e;margin-bottom:7px">'+escH(noteTitle)+'</div>'+
-          (bodyHTML?'<div style="overflow-wrap:anywhere">'+bodyHTML+'</div>':'')+
-          (links?'<div style="font-family:Arial,sans-serif;font-size:10px;line-height:1.35;color:#786223;margin-top:10px">'+escH(links)+'</div>':'');
+      const noteHTML='<div data-study-pdf-text style="font-size:15px;font-weight:700;line-height:1.3;color:#1f1e1e;margin-bottom:7px">'+escH(noteTitle)+'</div>'+
+        (bodyHTML?'<div data-study-pdf-text style="overflow-wrap:anywhere">'+bodyHTML+'</div>':'')+
+        (links?'<div data-study-pdf-text style="font-family:Arial,sans-serif;font-size:10px;line-height:1.35;color:#786223;margin-top:10px">'+escH(links)+'</div>':'');
         blocks.push(await capture(makeBlock(noteHTML,'note',textForScript)));
       }
     }
