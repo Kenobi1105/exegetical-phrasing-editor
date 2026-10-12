@@ -8126,12 +8126,21 @@ function _setCollectionPdfOptionState(kind){
   }
   const entire=isCollection&&scope?.value==='collection';
   if(kind==='phrasing') document.getElementById('phrasing-pdf-orientation-row').hidden=!entire;
-  if(notebookLabel) notebookLabel.textContent=entire
+  if(notebookLabel) notebookLabel.textContent=isCollection
     ?_exportText('export.collection.notebook','Include Collection Study Notebook')
     :_exportText('study.export.include','Include Study Notebook');
 }
 function updatePhrasingPdfCollectionOptions(){_setCollectionPdfOptionState('phrasing');}
 function updateDiagPdfCollectionOptions(){_setCollectionPdfOptionState('diag');}
+function _currentPdfNotebookOptions(includeNotebook){
+  if(!includeNotebook)return {appendNotebook:false};
+  if(!ACTIVE_COLLECTION)return {appendNotebook:true};
+  return {
+    appendNotebook:true,
+    notebookEntries:ACTIVE_COLLECTION.notebook?.entries||[],
+    notebookTitle:ACTIVE_COLLECTION.name+' — '+_exportText('study.notebook.title','Study Notebook')
+  };
+}
 function openPhrasingPdfModal(){
   document.getElementById('phrasing-pdf-modal')?.classList.remove('hidden');
   applyLang();
@@ -8148,7 +8157,7 @@ function exportPhrasingPDFFromModal(){
   const includeNotebook=!!document.getElementById('phrasing-pdf-study-notebook')?.checked;
   closePhrasingPdfModal();
   if(scope==='collection'&&ACTIVE_COLLECTION) exportCollectionPhrasingPDF(format,contentSizing,orientation,includeNotebook);
-  else exportPDF(format,contentSizing,{appendNotebook:includeNotebook});
+  else exportPDF(format,contentSizing,_currentPdfNotebookOptions(includeNotebook));
 }
 
 /* ── Diagram PDF export ──────────────────────────────────────────────── */
@@ -8168,7 +8177,7 @@ function exportDiagramPDFFromModal(){
   const scope=document.getElementById('diag-pdf-scope')?.value||'current';
   const includeNotebook=!!document.getElementById('diag-pdf-study-notebook')?.checked;
   if(scope==='collection'&&ACTIVE_COLLECTION){closeDiagPdfModal();exportCollectionDiagramPDF(format,orientation,includeNotebook);}
-  else exportDiagramPDF(format, orientation,{appendNotebook:includeNotebook});
+  else exportDiagramPDF(format,orientation,_currentPdfNotebookOptions(includeNotebook));
 }
 
 async function exportDiagramPDF(format, orientation, options={}){
