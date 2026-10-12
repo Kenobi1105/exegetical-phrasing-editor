@@ -8451,7 +8451,7 @@ async function _runDiagramPDFExport(ref, langSrc, format, orientation, options={
   // last page: the diagram image or the pinned-to-bottom footnote zone.
   _drawPdfCitation(doc, lastContentBottom, MAR, usableW, pH);
 
-  if(options.appendNotebook??studyNotebookIncludeInPdf('diag')) appendStudyNotebookPDF(doc,options.notebookEntries,options.notebookTitle);
+  if(options.appendNotebook??studyNotebookIncludeInPdf('diag')) await appendStudyNotebookPDF(doc,options.notebookEntries,options.notebookTitle);
   return doc;
 }
 async function doExportJSON(){
@@ -8981,7 +8981,7 @@ async function _buildPhrasingPDF(ref, onProgress, format='a4', contentSizing='fi
   drawFns(pageFns);
   const lastFnZone=fnZoneH(pageFns);
   _drawPdfCitation(doc,lastFnZone?Math.max(curY,pH-PAGE_MARGIN-lastFnZone):curY,MAR,usableW,pH);
-  if(options.appendNotebook??studyNotebookIncludeInPdf('phrasing')) appendStudyNotebookPDF(doc,options.notebookEntries,options.notebookTitle);
+  if(options.appendNotebook??studyNotebookIncludeInPdf('phrasing')) await appendStudyNotebookPDF(doc,options.notebookEntries,options.notebookTitle);
   return doc;
 }
 
@@ -8990,28 +8990,104 @@ function studyNotebookIncludeInPdf(kind){
   const control=document.getElementById(exportKind+'-pdf-study-notebook');
   return !!control?.checked&&STUDY_NOTEBOOK.length>0;
 }
-function appendStudyNotebookPDF(doc,entries=STUDY_NOTEBOOK,title){
-  const margin=36,width=doc.internal.pageSize.getWidth()-margin*2,height=doc.internal.pageSize.getHeight(),notes=Array.isArray(entries)?entries:[],stageGroups=STUDY_STAGES.map(stage=>[stage,notes.filter(note=>note.stage===stage)]).filter(([,items])=>items.length);
+// jsPDF's built-in fonts only cover a small Latin character set. Notebook
+// research commonly mixes Hebrew, Greek, Chinese, and Latin in one entry, so
+// a single embedded font is not enough. The browser already resolves the
+// appropriate font for each script on screen; rasterising these small,
+// high-resolution appendix blocks preserves that same mixed-script fallback.
+function _studyPdfScript(text){
+  const value=String(text||'');
+  if(/[\u4E00-\u9FFF\u3400-\u4DBF\uF900-\uFAFF]/.test(value))return 'cjk';
+  if(/[\u0590-\u05FF\uFB1D-\uFB4F]/.test(value))return 'hebrew';
+  if(/[\u0370-\u03FF\u1F00-\u1FFF]/.test(value))return 'greek';
+  return 'latin';
+}
+function _studyPdfFontStack(script){
+  if(script==='cjk')return '"Noto Serif CJK SC", "Noto Serif SC", "Microsoft YaHei", "PingFang SC", SimSun, serif';
+  if(script==='hebrew')return '"Noto Serif Hebrew", "Noto Sans Hebrew", Arial, serif';
+  if(script==='greek')return '"Gentium Plus", Georgia, serif';
+  return '"Gentium Plus", Georgia, serif';
+}
+function _studyPdfSafeHTML(html){
+  const holder=document.createElement('div');
+  holder.innerHTML=html||'';
+  holder.querySelectorAll('script,style,iframe,object,embed,link,meta').forEach(node=>node.remove());
+  holder.querySelectorAll('*').forEach(node=>{
+    [...node.attributes].forEach(attr=>{if(/^on/i.test(attr.name))node.removeAttribute(attr.name);});
+  });
+  return holder.innerHTML;
+}
+async function appendStudyNotebookPDF(doc,entries=STUDY_NOTEBOOK,title){
+  const notes=Array.isArray(entries)?entries:[];
+  const stageGroups=STUDY_STAGES.map(stage=>[stage,notes.filter(note=>note.stage===stage)]).filter(([,items])=>items.length);
   if(!stageGroups.length)return;
-  doc.addPage();let y=margin;
-  const pageHeader=()=>{doc.setFont('helvetica','bold');doc.setFontSize(18);doc.setTextColor(73,53,72);doc.text(title||(typeof t==='function'?t('study.notebook.title'):'Study Notebook'),margin,y);y+=26;};
-  const ensure=need=>{if(y+need>height-margin){doc.addPage();y=margin;pageHeader();}};
-  pageHeader();
-  for(const [stage,notes] of stageGroups){
-    ensure(28);doc.setFont('helvetica','bold');doc.setFontSize(11);doc.setTextColor(200,168,75);doc.text(_studyStageLabel(stage).toUpperCase(),margin,y);y+=16;
-    for(const note of notes){
-      const title=_studyStripHtml(note.title)||_studyStageLabel(stage);
-      const body=_studyStripHtml(note.bodyHTML)||'';
-      const links=(note.attachments||[]).map(link=>link.label).filter(Boolean).join(' · ');
-      const titleLines=doc.splitTextToSize(title,width),bodyLines=body?doc.splitTextToSize(body,width):[],linkLines=links?doc.splitTextToSize(links,width):[];
-      const need=titleLines.length*13+bodyLines.length*12+linkLines.length*10+18;ensure(Math.min(need,height-margin*2));
-      doc.setFont('helvetica','bold');doc.setFontSize(10);doc.setTextColor(31,30,30);doc.text(titleLines,margin,y);y+=titleLines.length*13;
-      if(bodyLines.length){doc.setFont('helvetica','normal');doc.setFontSize(9);doc.setTextColor(55,52,50);doc.text(bodyLines,margin,y);y+=bodyLines.length*12;}
-      if(linkLines.length){doc.setFont('helvetica','italic');doc.setFontSize(8);doc.setTextColor(120,98,35);doc.text(linkLines,margin,y);y+=linkLines.length*10;}
-      y+=8;
+
+  const margin=36,pageWidth=doc.internal.pageSize.getWidth(),pageHeight=doc.internal.pageSize.getHeight(),width=pageWidth-margin*2;
+  const cssWidth=Math.max(480,Math.round(width*96/72));
+  const host=document.createElement('div');
+  host.setAttribute('aria-hidden','true');
+  host.style.cssText='position:fixed;left:-100000px;top:0;width:'+cssWidth+'px;padding:0;margin:0;background:#fff;color:#1f1e1e;pointer-events:none;z-index:-1;';
+  document.body.appendChild(host);
+
+  const makeBlock=(html,kind,sourceText)=>{
+    const block=document.createElement('section');
+    const script=_studyPdfScript(sourceText);
+    block.setAttribute('dir',script==='hebrew'?'rtl':'auto');
+    block.dataset.pdfScript=script;
+    block.style.cssText='box-sizing:border-box;width:100%;font-family:'+_studyPdfFontStack(script)+';unicode-bidi:plaintext;';
+    if(kind==='title')block.style.cssText+='font-size:24px;font-weight:700;line-height:1.2;color:#493548;padding:0 0 14px;border-bottom:1px solid #e5ded2;margin:0 0 14px;';
+    if(kind==='stage')block.style.cssText+='font-family:Arial,sans-serif;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#a8791d;padding:10px 0 7px;margin-top:4px;';
+    if(kind==='note')block.style.cssText+='font-size:13px;line-height:1.45;color:#373432;border:1px solid #e5ded2;border-radius:8px;padding:14px 16px;margin:0 0 10px;break-inside:avoid;background:#fff;';
+    block.innerHTML=html;
+    host.appendChild(block);
+    return block;
+  };
+  const capture=async block=>{
+    if(document.fonts?.ready)await document.fonts.ready;
+    return html2canvas(block,{scale:2,useCORS:true,allowTaint:false,backgroundColor:'#ffffff',logging:false,width:cssWidth,windowWidth:cssWidth});
+  };
+  const blocks=[];
+  try{
+    const appendixTitle=title||(typeof t==='function'?t('study.notebook.title'):'Study Notebook');
+    blocks.push(await capture(makeBlock(escH(appendixTitle),'title',appendixTitle)));
+    for(const [stage,stageNotes] of stageGroups){
+      const stageLabel=_studyStageLabel(stage);
+      blocks.push(await capture(makeBlock(escH(stageLabel),'stage',stageLabel)));
+      for(const note of stageNotes){
+        const noteTitle=_studyStripHtml(note.title)||stageLabel;
+        const bodyHTML=_studyPdfSafeHTML(note.bodyHTML)||'';
+        const links=(note.attachments||[]).map(link=>link.label).filter(Boolean).join(' · ');
+        const textForScript=noteTitle+' '+_studyStripHtml(bodyHTML)+' '+links;
+        const noteHTML='<div style="font-size:15px;font-weight:700;line-height:1.3;color:#1f1e1e;margin-bottom:7px">'+escH(noteTitle)+'</div>'+
+          (bodyHTML?'<div style="overflow-wrap:anywhere">'+bodyHTML+'</div>':'')+
+          (links?'<div style="font-family:Arial,sans-serif;font-size:10px;line-height:1.35;color:#786223;margin-top:10px">'+escH(links)+'</div>':'');
+        blocks.push(await capture(makeBlock(noteHTML,'note',textForScript)));
+      }
     }
-    y+=4;
-  }
+  }finally{host.remove();}
+
+  let y=margin;
+  const drawCanvas=canvas=>{
+    const pointPerPixel=width/canvas.width;
+    const fullHeight=canvas.height*pointPerPixel;
+    // Keep a normal title, stage label, or whole entry together whenever it
+    // fits on a fresh page. Very long research entries still paginate cleanly.
+    if(fullHeight<=pageHeight-margin*2&&fullHeight>pageHeight-margin-y){doc.addPage();y=margin;}
+    let sourceY=0;
+    while(sourceY<canvas.height){
+      const available=Math.max(1,pageHeight-margin-y);
+      const sliceHeight=Math.min(canvas.height-sourceY,Math.max(1,Math.floor(available/pointPerPixel)));
+      const slice=document.createElement('canvas');
+      slice.width=canvas.width;slice.height=sliceHeight;
+      slice.getContext('2d').drawImage(canvas,0,sourceY,canvas.width,sliceHeight,0,0,canvas.width,sliceHeight);
+      const drawHeight=sliceHeight*pointPerPixel;
+      doc.addImage(slice.toDataURL('image/png'),'PNG',margin,y,width,drawHeight);
+      y+=drawHeight;sourceY+=sliceHeight;
+      if(sourceY<canvas.height){doc.addPage();y=margin;}
+    }
+  };
+  doc.addPage();
+  try{for(const canvas of blocks)drawCanvas(canvas);}finally{blocks.length=0;}
 }
 
 async function _capturePhrasingPDFBlob(ref, format='a4', contentSizing='fit'){
@@ -9100,7 +9176,7 @@ async function exportCollectionPhrasingPDF(format='a4',contentSizing='fit',orien
       }catch(error){console.warn('Collection phrasing PDF member skipped',name,error);skipped++;}
     }
     if(!doc){toast(_exportText('export.collection.none','No Collection PDF was created. Skipped {count} unavailable chapter(s).',{count:skipped}));return;}
-    if(includeNotebook)appendStudyNotebookPDF(doc,collection.notebook?.entries||[],collection.name+' — '+_exportText('study.notebook.title','Study Notebook'));
+    if(includeNotebook)await appendStudyNotebookPDF(doc,collection.notebook?.entries||[],collection.name+' — '+_exportText('study.notebook.title','Study Notebook'));
     showProgress(95,_exportText('export.saving','Saving…'));
     doc.save(_safeName(collection.name)+' Phrasing Collection.pdf');
     _collectionPdfToast(count,skipped);
@@ -9126,7 +9202,7 @@ async function exportCollectionDiagramPDF(format='a4',orientation='landscape',in
       }catch(error){console.warn('Collection diagram PDF member skipped',name,error);skipped++;}
     }
     if(!doc){toast(_exportText('export.collection.none','No Collection PDF was created. Skipped {count} unavailable chapter(s).',{count:skipped}));return;}
-    if(includeNotebook)appendStudyNotebookPDF(doc,collection.notebook?.entries||[],collection.name+' — '+_exportText('study.notebook.title','Study Notebook'));
+    if(includeNotebook)await appendStudyNotebookPDF(doc,collection.notebook?.entries||[],collection.name+' — '+_exportText('study.notebook.title','Study Notebook'));
     showProgress(95,_exportText('export.saving','Saving…'));
     doc.save(_safeName(collection.name)+' Diagram Collection.pdf');
     _collectionPdfToast(count,skipped);
