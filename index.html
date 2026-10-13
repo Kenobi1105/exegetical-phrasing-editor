@@ -219,6 +219,7 @@
         <div class="hm-row"><span class="hm-desc" data-i18n="help.structure-toggle">Toggle Structure panel</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">O</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="study.notebook.title">Study Notebook</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">N</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.view-toggle">Toggle Phrasing / Diagram View</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">T</span></div></div>
+        <div class="hm-row"><span class="hm-desc" data-i18n="help.focus-canvas">Toggle Focus Canvas</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">F</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.diagram-edit">Toggle Split Words (Diagram View)</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">E</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.add-label">Add floating label (Diagram View)</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">L</span></div></div>
         <div class="hm-row"><span class="hm-desc" data-i18n="help.connector">Toggle connector mode (Diagram View)</span><div class="hm-key"><span class="kbd">Ctrl</span><span class="kbd">Alt</span><span class="kbd">C</span></div></div>
@@ -358,6 +359,9 @@
           <span data-i18n="view.compare">Compare</span>
         </button>
       </div>
+      <button class="tbtn" id="btn-focus-canvas" type="button" aria-pressed="false" data-i18n-title="focus-canvas.enter" data-i18n-aria-label="focus-canvas.enter" title="Focus Canvas (Ctrl+Alt+F)" onclick="toggleFocusCanvas()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="8 3 3 3 3 8"/><polyline points="16 3 21 3 21 8"/><polyline points="21 16 21 21 16 21"/><polyline points="3 16 3 21 8 21"/></svg>
+      </button>
       <button class="tbtn" id="tb-mobile-tools" data-i18n-title="toolbar.mobile-tools" title="Editing tools" onclick="toggleMobileToolPanel()" style="display:none">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2"/><path d="M6 8v13"/><circle cx="12" cy="15" r="2"/><path d="M12 17v4M12 3v10"/><circle cx="18" cy="9" r="2"/><path d="M18 11v6M18 3v4"/></svg>
       </button>
@@ -703,6 +707,8 @@
     </div>
   </div>
 
+  <button id="focus-canvas-exit" type="button" hidden onclick="toggleFocusCanvas(false)" data-i18n="focus-canvas.exit" data-i18n-title="focus-canvas.exit" data-i18n-aria-label="focus-canvas.exit" title="Exit Focus Canvas">Exit Focus Canvas</button>
+  <div id="focus-canvas-status" class="sr-only" role="status" aria-live="polite" aria-atomic="true"></div>
 </div>
 
 <!-- ══ PROJECTS PANEL ══ -->

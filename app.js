@@ -5156,6 +5156,135 @@ function closeWorkspacePopovers(){
   document.getElementById('btn-workspace-tools')?.classList.remove('on');
   document.getElementById('btn-workspace-more')?.classList.remove('on');
 }
+
+/* ── Focus Canvas ────────────────────────────────────────────────────────
+   Fullscreen is deliberately a presentation-only workspace state.  It never
+   calls a dock toggle, so the user returns to exactly the same panel, pin,
+   Collection, and editor state after leaving fullscreen. */
+let FOCUS_CANVAS_ACTIVE=false;
+let FOCUS_CANVAS_EXIT_TIMER=null;
+
+function _focusCanvasText(key,fallback){
+  const value=typeof t==='function'?t(key):'';
+  return value&&value!==key?value:fallback;
+}
+function _focusCanvasSetStatus(message){
+  const status=document.getElementById('focus-canvas-status');
+  if(status)status.textContent=message||'';
+}
+function _focusCanvasModalOpen(){
+  const ids=['phrasing-pdf-modal','diag-pdf-modal','set-modal','help-modal','acct-modal','custom-modal','study-notebook-expanded-modal','structure-expanded-modal'];
+  return ids.some(id=>{const el=document.getElementById(id);return !!el&&!el.classList.contains('hidden');});
+}
+function _focusCanvasBlocked(target=document.activeElement){
+  const app=document.getElementById('app');
+  if(!app||getComputedStyle(app).display==='none'||_focusCanvasModalOpen())return true;
+  return !!target?.closest?.('.study-note-title,.study-note-body');
+}
+function _focusCanvasCloseTransientUI(){
+  closeWorkspacePopovers();
+  document.getElementById('export-popup')?.classList.remove('show');
+  document.getElementById('brk-edit-popup')?.style.setProperty('display','none');
+  if(typeof closeColorPalette==='function')closeColorPalette();
+  if(typeof closeFontSizePopup==='function')closeFontSizePopup();
+  if(typeof closeConnEditPopup==='function')closeConnEditPopup();
+  if(typeof collectionCloseMembers==='function')collectionCloseMembers();
+}
+function _focusCanvasRefreshLayout(){
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    window.dispatchEvent(new Event('resize'));
+    if(typeof refreshDiagramConnectors==='function')refreshDiagramConnectors();
+    if(typeof refreshBrackets==='function')refreshBrackets();
+    if(typeof renderSectionStrips==='function')renderSectionStrips();
+  }));
+}
+function _focusCanvasShowExit(){
+  if(!FOCUS_CANVAS_ACTIVE)return;
+  const exit=document.getElementById('focus-canvas-exit');
+  if(!exit)return;
+  exit.classList.add('is-visible');
+  clearTimeout(FOCUS_CANVAS_EXIT_TIMER);
+  FOCUS_CANVAS_EXIT_TIMER=setTimeout(()=>{
+    if(document.activeElement!==exit&&!exit.matches(':hover'))exit.classList.remove('is-visible');
+  },2600);
+}
+function _setFocusCanvasActive(active,announce=true){
+  FOCUS_CANVAS_ACTIVE=!!active;
+  const app=document.getElementById('app');
+  const btn=document.getElementById('btn-focus-canvas');
+  const exit=document.getElementById('focus-canvas-exit');
+  app?.classList.toggle('focus-canvas-active',FOCUS_CANVAS_ACTIVE);
+  document.body.classList.toggle('focus-canvas-active',FOCUS_CANVAS_ACTIVE);
+  btn?.setAttribute('aria-pressed',String(FOCUS_CANVAS_ACTIVE));
+  btn?.classList.toggle('on',FOCUS_CANVAS_ACTIVE);
+  if(exit){
+    exit.hidden=!FOCUS_CANVAS_ACTIVE;
+    exit.classList.toggle('is-visible',FOCUS_CANVAS_ACTIVE);
+  }
+  clearTimeout(FOCUS_CANVAS_EXIT_TIMER);
+  if(FOCUS_CANVAS_ACTIVE){
+    exit?.classList.remove('is-visible');
+    if(announce)_focusCanvasSetStatus(_focusCanvasText('focus-canvas.entered','Focus Canvas enabled. Press Escape to exit.'));
+  }else{
+    if(announce)_focusCanvasSetStatus(_focusCanvasText('focus-canvas.exited','Focus Canvas exited.'));
+  }
+  _focusCanvasRefreshLayout();
+}
+async function toggleFocusCanvas(force){
+  const app=document.getElementById('app');
+  const enable=typeof force==='boolean'?force:!FOCUS_CANVAS_ACTIVE;
+  if(!app)return;
+  if(!enable){
+    if(document.fullscreenElement===app&&document.exitFullscreen){
+      try{await document.exitFullscreen();}catch(_){_setFocusCanvasActive(false);}
+    }else _setFocusCanvasActive(false);
+    return;
+  }
+  if(_focusCanvasBlocked(document.activeElement))return;
+  _focusCanvasCloseTransientUI();
+  _setFocusCanvasActive(true);
+  try{
+    if(!app.requestFullscreen)throw new Error('Fullscreen unavailable');
+    try{await app.requestFullscreen({navigationUI:'hide'});}catch(err){
+      // Older implementations accept no options but still support a true
+      // element fullscreen request.
+      if(err instanceof TypeError)await app.requestFullscreen(); else throw err;
+    }
+  }catch(_){
+    _setFocusCanvasActive(false,false);
+    const message=_focusCanvasText('focus-canvas.error','Browser fullscreen could not be enabled.');
+    _focusCanvasSetStatus(message);
+    toast(message);
+  }
+}
+document.addEventListener('fullscreenchange',()=>{
+  const app=document.getElementById('app');
+  if(document.fullscreenElement===app){
+    if(!FOCUS_CANVAS_ACTIVE)_setFocusCanvasActive(true,false);
+  }else if(FOCUS_CANVAS_ACTIVE){
+    _setFocusCanvasActive(false);
+  }
+});
+document.addEventListener('fullscreenerror',()=>{
+  if(!FOCUS_CANVAS_ACTIVE)return;
+  _setFocusCanvasActive(false,false);
+  const message=_focusCanvasText('focus-canvas.error','Browser fullscreen could not be enabled.');
+  _focusCanvasSetStatus(message);
+  toast(message);
+});
+document.addEventListener('pointermove',()=>_focusCanvasShowExit(),{passive:true});
+document.getElementById('focus-canvas-exit')?.addEventListener('mouseenter',()=>{
+  clearTimeout(FOCUS_CANVAS_EXIT_TIMER);
+  _focusCanvasShowExit();
+});
+document.getElementById('focus-canvas-exit')?.addEventListener('mouseleave',()=>_focusCanvasShowExit());
+document.getElementById('focus-canvas-exit')?.addEventListener('focus',()=>_focusCanvasShowExit());
+document.addEventListener('keydown',event=>{
+  if(event.key!=='Escape'||!FOCUS_CANVAS_ACTIVE)return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  toggleFocusCanvas(false);
+},true);
 function initWorkspaceChrome(){
   if(_workspaceChromeReady) return;
   _workspaceChromeReady=true;
@@ -12055,8 +12184,14 @@ function _authoringShortcutEditableTarget(target){
 document.addEventListener('keydown',function(ev){
   if(!(ev.ctrlKey||ev.metaKey)||!ev.altKey||ev.shiftKey)return;
   const key=String(ev.key||'').toLowerCase();
-  if(!'sdmnotelcab'.includes(key))return;
+  if(!'sdmnotelcabf'.includes(key))return;
   const consume=()=>{ev.preventDefault();ev.stopImmediatePropagation();};
+  if(key==='f'){
+    // Unlike text authoring tools, Focus Canvas is allowed from a passage
+    // editor, but never from a modal or rich-text Study Notebook entry.
+    if(_focusCanvasBlocked(ev.target)){consume();return;}
+    toggleFocusCanvas();consume();return;
+  }
   if(_authoringShortcutBlocked(ev.target)){consume();return;}
   const editable=_authoringShortcutEditableTarget(ev.target);
   const passageEditor=!!editable?.closest?.('.xrow');
