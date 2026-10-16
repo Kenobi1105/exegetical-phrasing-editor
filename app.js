@@ -3938,59 +3938,242 @@ function deleteFocusedRowContent(){
 }
 
 /* ════════════════════════════════════════
-   ROW-LEVEL UNDO STACK
-   Only tracks split/merge/add row operations.
-   Text edits inside cells use native browser undo (Ctrl+Z).
+   SESSION HISTORY
+   A single, context-aware history system replaces the former split
+   row-stack/native-browser undo path.  Project, Compare, Structure, and
+   Collection work deliberately keep separate timelines: Ctrl/Cmd+Z always
+   acts on the surface being edited rather than unexpectedly changing another
+   visible chapter.
 ════════════════════════════════════════ */
-const ROW_STACK=[];   // [{type,data}]
+const ROW_STACK=[];   // Kept as a compatibility sink for older mutation helpers.
 const ROW_REDO=[];
 const MAX_ROW=50;
+const HISTORY_MAX_ENTRIES=80;
+const HISTORY_MAX_BYTES=12*1024*1024;
+const HISTORY_IDLE_MS=700;
+const APP_HISTORY={timelines:new Map(),pending:new Map(),activeKey:null,replaying:false};
 
-function rowPush(op){
-  ROW_STACK.push(op);
-  if(ROW_STACK.length>MAX_ROW) ROW_STACK.shift();
-  ROW_REDO.length=0;
+function _historyClone(value){return value===undefined?undefined:JSON.parse(JSON.stringify(value));}
+function _historyBytes(value){try{return JSON.stringify(value).length*2;}catch(_){return 0;}}
+function _historyProjectKey(projectId){return `project:${projectId||'draft'}`;}
+function _historyCollectionKey(collectionId){return `collection:${collectionId||'none'}`;}
+function _historyTimeline(key){
+  if(!APP_HISTORY.timelines.has(key))APP_HISTORY.timelines.set(key,{undo:[],redo:[],bytes:0});
+  return APP_HISTORY.timelines.get(key);
 }
-
-function undo(){
-  // If there's a row-level op on the stack, reverse it first
-  if(ROW_STACK.length){
-    const op=ROW_STACK.pop();
-    ROW_REDO.push(op);
-    applyRowUndo(op);
-    recomputeIds(); drawConns(); autoSave();
-    updateTb();
+function _historyContextForNode(node){
+  const el=node?.nodeType===Node.ELEMENT_NODE?node:node?.parentElement;
+  const compare=el?.closest?.('.compare-pane[data-compare-pane]');
+  if(compare){
+    const index=Number(compare.dataset.comparePane),pane=COMPARE_PANES[index];
+    if(pane)return {key:_historyProjectKey(pane.projectId),kind:'compare',index,projectId:pane.projectId,label:'Compare edit'};
+  }
+  const structure=el?.closest?.('[data-structure-project]');
+  if(structure){
+    const projectId=structure.dataset.structureProject,model=COLLECTION_STRUCTURE_MODELS.get(projectId);
+    if(model)return {key:_historyProjectKey(projectId),kind:'structure',projectId,model,label:'Structure edit'};
+  }
+  if(el?.closest?.('#cmargin')&&COMPARE_NOTE_CONTEXT){
+    const index=COMPARE_NOTE_CONTEXT.index,pane=COMPARE_PANES[index];
+    if(pane)return {key:_historyProjectKey(pane.projectId),kind:'compare',index,projectId:pane.projectId,label:'Edit comparison comment'};
+  }
+  if(el?.closest?.('#study-notebook')&&ACTIVE_COLLECTION)return {key:_historyCollectionKey(ACTIVE_COLLECTION.id),kind:'collection',collectionId:ACTIVE_COLLECTION.id,label:'Study Notebook'};
+  if(ACTIVE_COLLECTION&&el?.closest?.('#collection-members-popover,#collection-chapter-strip,.compare-add-spacer,.compare-spacer-controls'))return {key:_historyCollectionKey(ACTIVE_COLLECTION.id),kind:'collection',collectionId:ACTIVE_COLLECTION.id,label:'Collection change'};
+  if(SESS)return {key:_historyProjectKey(CURRENT_PROJECT_ID),kind:'main',projectId:CURRENT_PROJECT_ID||null,label:'Edit'};
+  return null;
+}
+function _historyCurrentContext(){
+  const focused=document.activeElement;
+  const isContextual=el=>!!el?.closest?.('.compare-pane[data-compare-pane],[data-structure-project],#study-notebook,#collection-members-popover,#collection-chapter-strip,#cmargin');
+  if(isContextual(focused))return _historyContextForNode(focused);
+  if(isContextual(activeEl))return _historyContextForNode(activeEl);
+  return APP_HISTORY.activeKey&&APP_HISTORY.contexts?.get(APP_HISTORY.activeKey)||_historyContextForNode(activeEl)||_historyContextForNode(focused);
+}
+function _historySnapshot(context){
+  if(!context)return null;
+  if(context.kind==='collection')return _historyClone(ACTIVE_COLLECTION);
+  if(context.kind==='compare')return _historyClone(COMPARE_PANES[context.index]?.data);
+  if(context.kind==='structure')return _historyClone(COLLECTION_STRUCTURE_MODELS.get(context.projectId)?.data);
+  return _historyClone(collectData());
+}
+function _historyEqual(a,b){try{return JSON.stringify(a)===JSON.stringify(b);}catch(_){return false;}}
+function _historyArm(context,label){
+  if(APP_HISTORY.replaying||!context)return null;
+  APP_HISTORY.activeKey=context.key;
+  APP_HISTORY.contexts??=new Map();APP_HISTORY.contexts.set(context.key,context);
+  const existing=APP_HISTORY.pending.get(context.key);
+  if(existing){if(label&&existing.label==='Edit')existing.label=label;return existing;}
+  const pending={context,before:_historySnapshot(context),label:label||context.label,timer:null,startedAt:Date.now()};
+  APP_HISTORY.pending.set(context.key,pending);
+  return pending;
+}
+function historyBegin(contextOrNode,label){
+  const context=contextOrNode?.kind?contextOrNode:_historyContextForNode(contextOrNode||activeEl||document.activeElement);
+  return _historyArm(context,label);
+}
+function _historyTrim(timeline){
+  while(timeline.undo.length>HISTORY_MAX_ENTRIES||timeline.bytes>HISTORY_MAX_BYTES){
+    const removed=timeline.undo.shift();timeline.bytes-=removed?.bytes||0;
+  }
+  if(timeline.bytes<0)timeline.bytes=0;
+}
+function _historyPush(pending,after){
+  if(!pending?.before||_historyEqual(pending.before,after))return;
+  const timeline=_historyTimeline(pending.context.key);
+  const command={label:pending.label||'Edit',context:pending.context,before:pending.before,after,bytes:_historyBytes(pending.before)+_historyBytes(after)};
+  timeline.undo.push(command);timeline.redo.length=0;timeline.bytes+=command.bytes;_historyTrim(timeline);
+}
+function _historyCommit(key){
+  const pending=APP_HISTORY.pending.get(key);if(!pending)return;
+  clearTimeout(pending.timer);APP_HISTORY.pending.delete(key);
+  if(APP_HISTORY.replaying)return;
+  _historyPush(pending,_historySnapshot(pending.context));
+  historyUpdateControls();
+}
+function historyCommit(contextOrNode){
+  const context=contextOrNode?.kind?contextOrNode:_historyContextForNode(contextOrNode||activeEl||document.activeElement);
+  if(context)_historyCommit(context.key);
+}
+function historySchedule(contextOrNode,label,delay=HISTORY_IDLE_MS){
+  const context=contextOrNode?.kind?contextOrNode:_historyContextForNode(contextOrNode||activeEl||document.activeElement);
+  const pending=_historyArm(context,label);if(!pending)return;
+  clearTimeout(pending.timer);pending.timer=setTimeout(()=>_historyCommit(pending.context.key),delay);
+}
+function _historySaveContext(context){
+  if(context.kind==='collection'){collectionSaveActive();return;}
+  if(context.kind==='compare'){compareScheduleSave(context.index);return;}
+  if(context.kind==='structure'){const model=COLLECTION_STRUCTURE_MODELS.get(context.projectId);if(model)collectionStructureScheduleSave(model);return;}
+  autoSave();
+}
+function _historyRestore(command,snapshot){
+  const context=command.context;
+  if(context.kind==='collection'){
+    ACTIVE_COLLECTION=collectionNormalise(_historyClone(snapshot));ACTIVE_COLLECTION_ID=ACTIVE_COLLECTION.id;
+    collectionSaveActive();renderStudyNotebook();renderStructurePanel();renderCollectionCompare();syncWorkspaceChrome();return;
+  }
+  if(context.kind==='compare'){
+    const pane=COMPARE_PANES[context.index];if(!pane)return;
+    pane.data=_historyClone(snapshot);compareScheduleSave(context.index);
+    if(pane.projectId===CURRENT_PROJECT_ID){const view=EDITOR_VIEW;loadData(_historyClone(snapshot));if(view==='diagram')setEditorView(view);}
+    renderCollectionCompare();if(COMPARE_NOTE_CONTEXT?.index===context.index)renderCompareNotes();
     return;
   }
-  // Otherwise native text undo
-  ensureFocus();
-  document.execCommand('undo',false,null);
-  // Suppress carry-forward: blur then refocus WITHOUT restoring the old
-  // saved range. restoreRange() would re-anchor the caret at the pre-undo
-  // position and re-activate any pending format state (bold, italic, etc.)
-  // that the undo was supposed to clear.
-  setTimeout(()=>{
-    if(activeEl){activeEl.blur();activeEl.focus();}
-    updateTb();
-  },0);
-}
-
-function redo(){
-  if(ROW_REDO.length){
-    const op=ROW_REDO.pop();
-    ROW_STACK.push(op);
-    applyRowRedo(op);
-    recomputeIds(); drawConns(); autoSave();
-    updateTb();
-    return;
+  if(context.kind==='structure'){
+    const model=COLLECTION_STRUCTURE_MODELS.get(context.projectId);if(!model)return;
+    model.data=_historyClone(snapshot);collectionStructureScheduleSave(model);
+    if(model.projectId===CURRENT_PROJECT_ID){const view=EDITOR_VIEW;loadData(_historyClone(snapshot));if(view==='diagram')setEditorView(view);}
+    renderStructurePanel();return;
   }
-  ensureFocus();
-  document.execCommand('redo',false,null);
-  setTimeout(()=>{
-    if(activeEl){activeEl.blur();activeEl.focus();}
-    updateTb();
-  },0);
+  const view=EDITOR_VIEW;loadData(_historyClone(snapshot));if(view==='diagram')setEditorView(view);autoSave();
 }
+function _historyDo(direction){
+  const context=_historyCurrentContext();if(!context)return;
+  historyCommit(context);
+  const timeline=_historyTimeline(context.key),from=direction==='undo'?timeline.undo:timeline.redo,to=direction==='undo'?timeline.redo:timeline.undo;
+  const command=from.pop();if(!command){historyUpdateControls();return;}
+  APP_HISTORY.replaying=true;
+  try{_historyRestore(command,direction==='undo'?command.before:command.after);to.push(command);APP_HISTORY.activeKey=context.key;}
+  finally{APP_HISTORY.replaying=false;}
+  updateTb();setTimeout(()=>{drawConns();if(typeof renderStructurePanel==='function')renderStructurePanel();},0);
+  historyUpdateControls();
+  toast(`${direction==='undo'?'Undid':'Redid'} ${command.label}`);
+}
+function historyUpdateControls(){
+  const context=_historyCurrentContext(),timeline=context?_historyTimeline(context.key):null;
+  const undoButton=document.getElementById('btn-undo'),redoButton=document.getElementById('btn-redo');
+  if(undoButton){undoButton.disabled=!(timeline?.undo.length);undoButton.title=timeline?.undo.length?`Undo ${timeline.undo.at(-1).label} (Ctrl+Z)`:'Undo (Ctrl+Z)';}
+  if(redoButton){redoButton.disabled=!(timeline?.redo.length);redoButton.title=timeline?.redo.length?`Redo ${timeline.redo.at(-1).label} (Ctrl+Y / Ctrl+Shift+Z)`:'Redo (Ctrl+Y / Ctrl+Shift+Z)';}
+}
+function historyClear(){APP_HISTORY.timelines.clear();APP_HISTORY.pending.forEach(pending=>clearTimeout(pending.timer));APP_HISTORY.pending.clear();APP_HISTORY.activeKey=null;historyUpdateControls();}
+function historyClearProjectSessions(){
+  [...APP_HISTORY.timelines.keys()].filter(key=>key.startsWith('project:')).forEach(key=>APP_HISTORY.timelines.delete(key));
+  [...APP_HISTORY.pending.entries()].filter(([key])=>key.startsWith('project:')).forEach(([key,pending])=>{clearTimeout(pending.timer);APP_HISTORY.pending.delete(key);});
+  if(APP_HISTORY.activeKey?.startsWith('project:'))APP_HISTORY.activeKey=null;
+}
+function historyClearCollectionSession(id){
+  const key=_historyCollectionKey(id);APP_HISTORY.timelines.delete(key);
+  const pending=APP_HISTORY.pending.get(key);if(pending)clearTimeout(pending.timer);APP_HISTORY.pending.delete(key);
+  if(APP_HISTORY.activeKey===key)APP_HISTORY.activeKey=null;
+}
+// Existing operations still call rowPush. Event-driven snapshots now own the
+// actual history record, so this remains a harmless compatibility hook.
+function rowPush(_op){historySchedule(activeEl,'Edit');}
+function undo(){_historyDo('undo');}
+function redo(){_historyDo('redo');}
+
+function _historyInteractionLabel(target){
+  if(target?.closest?.('.study-note-card'))return 'Edit study note';
+  if(target?.closest?.('.compare-pane'))return 'Edit comparison chapter';
+  if(target?.closest?.('[data-structure-project],#structure-panel'))return 'Edit structure';
+  if(target?.closest?.('.ccard,#cmargin'))return 'Edit comment';
+  if(target?.closest?.('#dcanvas'))return 'Edit diagram';
+  const text=target?.closest?.('button')?.getAttribute('aria-label')||target?.closest?.('button')?.title||'';
+  return text.replace(/\s*\([^)]*\)\s*$/,'').trim()||'Edit';
+}
+function _historyIgnoreEvent(event){
+  const target=event.target;
+  if(APP_HISTORY.replaying||target?.closest?.('#btn-undo,#btn-redo,#s1,.modal,.cmodal,#help-modal,#set-modal,#phrasing-pdf-modal,#diag-pdf-modal'))return true;
+  if(event.type==='keydown'&&(event.ctrlKey||event.metaKey)&&['z','y'].includes(String(event.key||'').toLowerCase()))return true;
+  return false;
+}
+const HISTORY_POINTER_CONTEXTS=new Map();
+document.addEventListener('pointerdown',event=>{
+  if(_historyIgnoreEvent(event))return;
+  const context=_historyContextForNode(event.target);
+  if(!context)return;
+  HISTORY_POINTER_CONTEXTS.set(event.pointerId,context);historyBegin(context,_historyInteractionLabel(event.target));
+},true);
+document.addEventListener('pointerup',event=>{
+  const context=HISTORY_POINTER_CONTEXTS.get(event.pointerId);HISTORY_POINTER_CONTEXTS.delete(event.pointerId);
+  if(context)historySchedule(context,undefined,60);
+},true);
+document.addEventListener('pointercancel',event=>{
+  const context=HISTORY_POINTER_CONTEXTS.get(event.pointerId);HISTORY_POINTER_CONTEXTS.delete(event.pointerId);
+  if(context)historyCommit(context);
+},true);
+document.addEventListener('click',event=>{
+  if(_historyIgnoreEvent(event))return;
+  const context=_historyContextForNode(event.target);
+  if(context){historyBegin(context,_historyInteractionLabel(event.target));historySchedule(context,undefined,60);}
+},true);
+document.addEventListener('focusin',event=>{
+  const target=event.target;
+  if(_historyIgnoreEvent(event)||!(target?.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName)))return;
+  const context=_historyContextForNode(target);if(context){APP_HISTORY.activeKey=context.key;historyBegin(context,_historyInteractionLabel(target));historyUpdateControls();}
+},true);
+document.addEventListener('beforeinput',event=>{
+  if(_historyIgnoreEvent(event))return;
+  const context=_historyContextForNode(event.target);if(context)historyBegin(context,_historyInteractionLabel(event.target));
+},true);
+document.addEventListener('input',event=>{
+  if(_historyIgnoreEvent(event))return;
+  historySchedule(_historyContextForNode(event.target),_historyInteractionLabel(event.target));
+},true);
+document.addEventListener('change',event=>{
+  if(_historyIgnoreEvent(event))return;
+  historySchedule(_historyContextForNode(event.target),_historyInteractionLabel(event.target),60);
+},true);
+document.addEventListener('compositionstart',event=>{
+  if(_historyIgnoreEvent(event))return;
+  historyBegin(_historyContextForNode(event.target),_historyInteractionLabel(event.target));
+},true);
+document.addEventListener('compositionend',event=>{
+  if(_historyIgnoreEvent(event))return;
+  historySchedule(_historyContextForNode(event.target),_historyInteractionLabel(event.target));
+},true);
+document.addEventListener('focusout',event=>{
+  const target=event.target;
+  if(target?.isContentEditable||['INPUT','TEXTAREA','SELECT'].includes(target?.tagName))historyCommit(_historyContextForNode(target));
+},true);
+document.addEventListener('keydown',event=>{
+  if(_historyIgnoreEvent(event)||event.isComposing)return;
+  // Keyboard commands such as split, indent, delete, formatting, and
+  // Collection/Compare controls are armed before their existing handlers run.
+  if(event.key.length===1||['Enter','Backspace','Delete','Tab','ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(event.key)){
+    const context=_historyContextForNode(event.target);if(context)historyBegin(context,_historyInteractionLabel(event.target));
+  }
+},true);
+setTimeout(historyUpdateControls,0);
 
 // Shared by 'row-add' and 'row-delete' undo/redo — 'row-add' undo and
 // 'row-delete' redo both just remove a row by id; 'row-add' redo and
@@ -6132,24 +6315,27 @@ async function compareChoosePane(index,id){if(COMPARE_PANES[index===0?1:0]?.proj
 function compareSetView(index,view){if(COMPARE_PANES[index]){COMPARE_PANES[index].view=view;renderCollectionCompare();}}
 function compareAddSpacer(index){
   const pane=COMPARE_PANES[index];if(!pane||!ACTIVE_COLLECTION)return;
+  const history={key:_historyCollectionKey(ACTIVE_COLLECTION.id),kind:'collection',collectionId:ACTIVE_COLLECTION.id,label:'Add alignment blank'};historyBegin(history);
   const active=activeEl?.matches?.(`.compare-edit[data-compare-pane="${index}"]`)?activeEl.dataset.rid:null;
   const afterRid=active||COMPARE_ACTIVE_ROWS[index]||null;
   const map=ACTIVE_COLLECTION.compareSpacers||(ACTIVE_COLLECTION.compareSpacers={});
   const spacers=map[pane.projectId]||(map[pane.projectId]=[]);
   spacers.push({id:`compare-space-${Date.now()}-${Math.random().toString(36).slice(2,6)}`,afterRid:afterRid?String(afterRid):null,manualOffset:0,createdAt:Date.now()});
-  collectionSaveActive();renderCollectionCompare();
+  collectionSaveActive();renderCollectionCompare();historyCommit(history);
 }
 function compareAdjustSpacer(index,id,delta){
   const pane=COMPARE_PANES[index],map=ACTIVE_COLLECTION?.compareSpacers,spacer=map?.[pane?.projectId]?.find(item=>item.id===id);if(!spacer)return;
+  const history={key:_historyCollectionKey(ACTIVE_COLLECTION.id),kind:'collection',collectionId:ACTIVE_COLLECTION.id,label:'Resize alignment blank'};historyBegin(history);
   const element=[...document.querySelectorAll('[data-compare-spacer]')].find(item=>item.dataset.compareSpacer===id),base=Number(element?.dataset.compareBase)||56;
   spacer.manualOffset=Math.max(28-base,Math.min(600,(Number(spacer.manualOffset)||0)+Number(delta||0)));
-  collectionSaveActive();renderCollectionCompare();
+  collectionSaveActive();renderCollectionCompare();historyCommit(history);
 }
 function compareRemoveSpacer(index,id){
   const pane=COMPARE_PANES[index],map=ACTIVE_COLLECTION?.compareSpacers;if(!pane||!map?.[pane.projectId])return;
+  const history={key:_historyCollectionKey(ACTIVE_COLLECTION.id),kind:'collection',collectionId:ACTIVE_COLLECTION.id,label:'Remove alignment blank'};historyBegin(history);
   map[pane.projectId]=map[pane.projectId].filter(spacer=>spacer.id!==id);
   if(!map[pane.projectId].length)delete map[pane.projectId];
-  collectionSaveActive();renderCollectionCompare();
+  collectionSaveActive();renderCollectionCompare();historyCommit(history);
 }
 function compareEdit(index,rid,col,el){const pane=COMPARE_PANES[index],row=pane?.data?.rows?.find(item=>String(item.rid)===String(rid));if(!row)return;row[col==='t'?'transHTML':'origHTML']=el.innerHTML;if(pane.projectId===CURRENT_PROJECT_ID){const primary=document.querySelector(`.xrow[data-rid="${CSS.escape(String(rid))}"] #${col==='t'?'tc':'oc'}-${rid} .cedit`);if(primary&&primary!==el)primary.innerHTML=el.innerHTML;if(EDITOR_VIEW==='diagram')renderDiagram();}compareScheduleSave(index);}
 function compareFormat(index,command){const active=activeEl;if(!active?.matches?.(`.compare-edit[data-compare-pane="${index}"]`))return;active.focus();restoreRange();document.execCommand(command,false,null);compareEdit(index,active.dataset.rid,active.dataset.col,active);}
@@ -6227,6 +6413,7 @@ document.addEventListener('keydown',e=>{
   }
   // Projects/Bible handled in separate listener below
   if(e.shiftKey){
+    if((e.key==='z'||e.key==='Z')&&!e.altKey){e.preventDefault();redo();return;}
     if(e.key==='E'||e.key==='e'){
       const inEditor=getComputedStyle(document.getElementById('app')).display!=='none';
       if(inEditor){e.preventDefault();toggleExportPopup(e);}
@@ -6309,7 +6496,7 @@ function restartSess(){
   document.getElementById('svgl')?.replaceChildren();
   const pta=document.getElementById('paste-ta');if(pta)pta.innerHTML='';
   setSourceCitation('');
-  RC=CC=0;ROW_STACK.length=0;ROW_REDO.length=0;SESS='';
+  RC=CC=0;ROW_STACK.length=0;ROW_REDO.length=0;historyClear();SESS='';
   COL_WIDTHS.v=null;COL_WIDTHS.o=null;COL_WIDTHS.t=null;
   CURRENT_FILENAME=null;CURRENT_PROJECT_ID=null;
   DIAGRAM_DATA={connectors:[], labels:[]};
@@ -6781,6 +6968,7 @@ async function collectionCreate(){
 }
 async function collectionOpen(id){
   const data=await collectionRead(id);if(!data||collectionIsTrashed(data))return;
+  historyClearCollectionSession(id);
   ACTIVE_COLLECTION_ID=id;ACTIVE_COLLECTION=data;COLLECTION_MEMBERS_OPEN=false;STUDY_NOTE_ACTIVE_ID=null;COLLECTION_STRUCTURE_MODELS.clear();
   // A Collection is a working workspace, not a landing-page modal. Hide the
   // landing screen before revealing its notebook dock; previously the dock
@@ -6803,8 +6991,14 @@ async function collectionMoveToTrash(id){const data=await collectionRead(id);if(
 async function collectionRestore(id){const data=await collectionRead(id);if(!data)return;delete data.trashedAt;await collectionWrite(data);}
 async function collectionDeletePermanently(id){const data=await collectionRead(id);if(!data||!confirm(typeof t==='function'?t('collection.delete.confirm'):'Permanently delete this collection?'))return;await cIdbDelete(id);collectionStoreIndex(collectionIndex().filter(item=>item.id!==id));if(typeof acctQueueCollectionDelete==='function')acctQueueCollectionDelete(id);if(ACTIVE_COLLECTION_ID===id){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;renderStudyNotebook();}renderProjPanel();renderS1Recent();}
 function collectionRefreshActive(data,resetCompare=false){if(ACTIVE_COLLECTION_ID!==data.id)return;ACTIVE_COLLECTION=data;if(resetCompare)COMPARE_PANES=[null,null];COLLECTION_STRUCTURE_MODELS.clear();renderStudyNotebook();renderStructurePanel();syncWorkspaceChrome();}
-async function collectionMoveMember(collectionId,index,delta){const data=await collectionRead(collectionId);if(!data)return;const target=index+delta;if(index<0||target<0||index>=data.members.length||target>=data.members.length)return;[data.members[index],data.members[target]]=[data.members[target],data.members[index]];await collectionWrite(data);collectionRefreshActive(data);}
-async function collectionToggleMember(collectionId,projectId){const data=await collectionRead(collectionId);if(!data)return;const at=data.members.findIndex(item=>item.projectId===projectId);if(at>=0){data.members.splice(at,1);await collectionWrite(data);collectionRefreshActive(data,true);return;}const project=projIndex().find(item=>item.id===projectId);if(!project)return;data.members.push({projectId,label:project.name||'Untitled',reference:project.verseRef||'',addedAt:Date.now()});await collectionWrite(data);collectionRefreshActive(data,true);}
+async function collectionMoveMember(collectionId,index,delta){
+  if(collectionId===ACTIVE_COLLECTION_ID)historyBegin({key:_historyCollectionKey(collectionId),kind:'collection',collectionId,label:'Reorder collection chapters'});
+  const data=await collectionRead(collectionId);if(!data)return;const target=index+delta;if(index<0||target<0||index>=data.members.length||target>=data.members.length)return;[data.members[index],data.members[target]]=[data.members[target],data.members[index]];await collectionWrite(data);collectionRefreshActive(data);if(collectionId===ACTIVE_COLLECTION_ID)historyCommit({key:_historyCollectionKey(collectionId),kind:'collection',collectionId});
+}
+async function collectionToggleMember(collectionId,projectId){
+  if(collectionId===ACTIVE_COLLECTION_ID)historyBegin({key:_historyCollectionKey(collectionId),kind:'collection',collectionId,label:'Change collection members'});
+  const data=await collectionRead(collectionId);if(!data)return;const at=data.members.findIndex(item=>item.projectId===projectId);if(at>=0){data.members.splice(at,1);await collectionWrite(data);collectionRefreshActive(data,true);if(collectionId===ACTIVE_COLLECTION_ID)historyCommit({key:_historyCollectionKey(collectionId),kind:'collection',collectionId});return;}const project=projIndex().find(item=>item.id===projectId);if(!project)return;data.members.push({projectId,label:project.name||'Untitled',reference:project.verseRef||'',addedAt:Date.now()});await collectionWrite(data);collectionRefreshActive(data,true);if(collectionId===ACTIVE_COLLECTION_ID)historyCommit({key:_historyCollectionKey(collectionId),kind:'collection',collectionId});
+}
 async function collectionAddCurrent(id){if(!CURRENT_PROJECT_ID){toast(typeof t==='function'?t('collection.member.no-project'):'Open a saved project first.');return;}await collectionToggleMember(id,CURRENT_PROJECT_ID);}
 async function collectionPurgeTrash(){const expired=collectionIndex().filter(item=>collectionIsTrashed(item)&&Date.now()-item.trashedAt>=COLLECTION_TRASH_RETENTION_MS);for(const item of expired){await cIdbDelete(item.id);if(typeof acctQueueCollectionDelete==='function')acctQueueCollectionDelete(item.id);}if(expired.length)collectionStoreIndex(collectionIndex().filter(item=>!expired.some(x=>x.id===item.id)));}
 async function pIdbGet(id){
@@ -6928,6 +7122,9 @@ async function projSave(showPanel){
 
 async function projLoad(id,options={}){
   try{
+    // Loading a project begins a fresh project history session. Collection
+    // history remains available while switching chapters inside a Collection.
+    historyClearProjectSessions();
     if(!options.keepCollection){ACTIVE_COLLECTION=null;ACTIVE_COLLECTION_ID=null;}
     if(projIsTrashed(projIndex().find(entry=>entry.id===id))) return;
     // IndexedDB is the primary store; fall back to legacy localStorage if
@@ -8700,6 +8897,7 @@ function loadFile(e){
       // first one otherwise silently carries that leftover size into the
       // new file instead of resetting to that language's default.
       if(data.lang) _applySessionFontDefaults();
+      historyClearProjectSessions();
       loadData(data);
       CURRENT_FILENAME=loadedName;
       // A disk file is a fresh, independent document — never let it stay
@@ -8727,6 +8925,7 @@ function loadFromScreen1(e){
       document.getElementById('s1').classList.add('hidden');
       document.getElementById('s2').classList.add('hidden');
       openEditor();
+      historyClear();
       loadData(data);
       CURRENT_FILENAME=loadedName;
       CURRENT_PROJECT_ID=null; // same reasoning as loadFile() above
@@ -8745,6 +8944,7 @@ function s1ImportFile(e){
 }
 function clearAll(){
   if(!confirm(typeof t==='function'?t('confirm.clear'):'Clear all content?'))return;
+  const history={key:_historyProjectKey(CURRENT_PROJECT_ID),kind:'main',projectId:CURRENT_PROJECT_ID||null,label:'Clear project'};historyBegin(history);
   // Snapshot full state so Clear can be undone
   const snapshot=collectData();
   rowPush({type:'clear', snapshot});
@@ -8767,6 +8967,7 @@ function clearAll(){
   if(typeof _brkCloseEditPopup==='function') _brkCloseEditPopup();
   addEmptyRow();
   localStorage.removeItem(storeKey());
+  historyCommit(history);autoSave();
   toast(typeof t==='function'?t('toast.cleared'):'Cleared — press Ctrl+Z to undo');
 }
 

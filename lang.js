@@ -284,7 +284,7 @@ const LANGS = {
 
     /* ── Toolbar / editor ── */
     'toolbar.undo':        'Undo (Ctrl+Z)',
-    'toolbar.redo':        'Redo (Ctrl+Y)',
+    'toolbar.redo':        'Redo (Ctrl+Y / Ctrl+Shift+Z)',
     'toolbar.bold':        'Bold (Ctrl+B)',
     'toolbar.italic':      'Italic (Ctrl+I)',
     'toolbar.underline':   'Underline (Ctrl+U)',
@@ -934,7 +934,7 @@ const LANGS = {
 
     /* ── Toolbar / editor ── */
     'toolbar.undo':        '撤销 (Ctrl+Z)',
-    'toolbar.redo':        '重做 (Ctrl+Y)',
+    'toolbar.redo':        '重做 (Ctrl+Y / Ctrl+Shift+Z)',
     'toolbar.bold':        '粗体 (Ctrl+B)',
     'toolbar.italic':      '斜体 (Ctrl+I)',
     'toolbar.underline':   '下划线 (Ctrl+U)',

@@ -159,6 +159,7 @@ body.focus-canvas-active #proj-panel,body.focus-canvas-active #proj-divider,body
   -webkit-tap-highlight-color:transparent}
 .tbtn:hover{background:rgba(255,255,255,.12)}
 .tbtn:active{background:rgba(255,255,255,.18)}
+.tbtn:disabled{opacity:.38;cursor:not-allowed;pointer-events:none}
 .tbtn.on{background:var(--accent);color:var(--ink)}
 .tbtn svg{width:15px;height:15px;pointer-events:none}
 .tsel{height:32px;padding:0 8px;border-radius:var(--rs);background:rgba(255,255,255,.1);
