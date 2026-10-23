@@ -195,6 +195,10 @@ let _bracketJustDragged=false; // suppresses click-after-handle-drag on bracket 
    SCREEN 1 — LANGUAGE
 ════════════════════════════════════════ */
 function chooseLang(lang,customLabel,cuvVersion){
+  // Choosing a language from the landing screen always begins a fresh
+  // project workspace.  In particular, do not let a Collection notebook
+  // remain the active notebook for the new unsaved project.
+  resetFreshSessionNotebookWorkspace();
   if(cuvVersion) window._cuvVersion=cuvVersion; else window._cuvVersion=null;
   SESS=lang; IS_RTL=lang==='hebrew'; IS_SINGLE=lang==='custom';
   _applySessionFontDefaults();
@@ -6523,8 +6527,7 @@ function restartSess(){
   // Reset bracket, annotation, and legacy deck state.
   BRACKETS=[]; BRK_CTR=0; SELECTED_BRK_ID=null;
   ANNOTATIONS=[]; ANN_CTR=0;
-  STUDY_NOTEBOOK=[]; STUDY_NOTE_CTR=0; STUDY_NOTE_ACTIVE_ID=null; window.studyNotebookBibleSelection=null;
-  renderStudyNotebook();
+  resetFreshSessionNotebookWorkspace();
   if(typeof _brkCancelPending==='function') _brkCancelPending();
   LEGACY_SLIDES_DECK={slides:[]};
   sessionVersionLabel='';
@@ -6891,6 +6894,55 @@ let ACTIVE_COLLECTION=null;
 let COLLECTION_MEMBERS_OPEN=false;
 let collectionSaveTimer=null;
 let COLLECTION_PDF_EXPORTING=false;
+
+/* Start a genuinely fresh, unsaved project workspace.  This deliberately
+   drops only in-memory UI/session references: Collection and project payloads
+   have already been persisted through their own save paths and must never be
+   mutated as part of restarting or choosing a new language. */
+function resetFreshSessionNotebookWorkspace(){
+  // Return the single notebook node to its dock before Screen 1 is shown.
+  // The dock's open/closed preference remains intact.
+  if(STUDY_NOTEBOOK_MODAL_OPEN)toggleStudyNotebookExpanded(false);
+  if(COMPARE_NOTE_CONTEXT)clearCompareNotesContext();
+
+  // Stop transient Compare/Structure work from retaining an old Collection
+  // context after the new project is created.
+  COMPARE_PANES.forEach(pane=>clearTimeout(pane?.saveTimer));
+  COMPARE_PANES=[null,null];
+  COMPARE_ACTIVE_ROWS=[null,null];
+  COMPARE_LINK_SELECTION=[null,null];
+  if(COMPARE_ALIGNMENT_FRAME)cancelAnimationFrame(COMPARE_ALIGNMENT_FRAME);
+  COMPARE_ALIGNMENT_FRAME=0;
+  COMPARE_ALIGNMENT_OBSERVER?.disconnect();
+  COMPARE_ALIGNMENT_OBSERVER=null;
+  COLLECTION_STRUCTURE_MODELS.forEach(model=>clearTimeout(model?.saveTimer));
+  COLLECTION_STRUCTURE_MODELS.clear();
+  COLLECTION_STRUCTURE_RENDER_TOKEN++;
+  clearTimeout(collectionSaveTimer);
+  collectionSaveTimer=null;
+  ACTIVE_COLLECTION=null;
+  ACTIVE_COLLECTION_ID=null;
+  COLLECTION_MEMBERS_OPEN=false;
+
+  STUDY_NOTEBOOK=[];
+  STUDY_NOTE_CTR=0;
+  STUDY_NOTE_ACTIVE_ID=null;
+  STUDY_NOTE_ACTIVE_EDITOR=null;
+  STUDY_NOTE_SELECTION=null;
+  STUDY_NOTE_DRAG=null;
+  window.studyNotebookBibleSelection=null;
+
+  const search=document.getElementById('study-notebook-search');
+  const filter=document.getElementById('study-notebook-filter');
+  const list=document.getElementById('study-notebook-list');
+  if(search)search.value='';
+  if(filter)filter.value='all';
+  if(list){list.scrollTop=0;list.scrollLeft=0;}
+
+  renderStudyNotebook();
+  renderCollectionCompare();
+  syncWorkspaceChrome();
+}
 
 function projIndex(){
   try{ return JSON.parse(localStorage.getItem(PROJ_INDEX_KEY)||'[]'); }
