@@ -315,6 +315,20 @@ const LANGS = {
     'workspace.tools.structure':'Structure',
     'workspace.tools.diagram':'Diagram',
     'workspace.tools.annotations':'Annotations',
+    'navigator.label':     'Passage Navigator',
+    'navigator.expand':    'Expand Passage Navigator',
+    'navigator.collapse':  'Collapse Passage Navigator',
+    'navigator.go':        'Go to',
+    'navigator.go.placeholder':'Verse, line, or row',
+    'navigator.landmarks': 'Landmarks',
+    'navigator.empty':     'No landmarks yet.',
+    'navigator.no-results':'No matching landmark.',
+    'navigator.current':   'Current location',
+    'navigator.section':   'Section',
+    'navigator.proposition':'Proposition',
+    'navigator.verse':     'Verse',
+    'navigator.comment':   'Comment',
+    'navigator.row':       'Row',
     'workspace.menu.workspace':'Workspace',
     'workspace.menu.preferences':'Preferences',
     'workspace.menu.project-file':'Project file',
@@ -965,6 +979,20 @@ const LANGS = {
     'workspace.tools.structure':'结构',
     'workspace.tools.diagram':'图示',
     'workspace.tools.annotations':'注释工具',
+    'navigator.label':     '经文导航',
+    'navigator.expand':    '展开经文导航',
+    'navigator.collapse':  '收起经文导航',
+    'navigator.go':        '跳转到',
+    'navigator.go.placeholder':'节、行号或行',
+    'navigator.landmarks': '定位点',
+    'navigator.empty':     '尚无定位点。',
+    'navigator.no-results':'没有匹配的定位点。',
+    'navigator.current':   '当前位置',
+    'navigator.section':   '段落',
+    'navigator.proposition':'命题',
+    'navigator.verse':     '节',
+    'navigator.comment':   '注释',
+    'navigator.row':       '行',
     'workspace.menu.workspace':'工作区',
     'workspace.menu.preferences':'偏好设置',
     'workspace.menu.project-file':'项目文件',
@@ -1401,6 +1429,7 @@ function applyLang() {
 
   // Re-apply session-specific labels (session badge, column headers)
   if (typeof _applySessionLabels === 'function') _applySessionLabels();
+  if (typeof renderPhrasingNavigator === 'function') renderPhrasingNavigator();
 
   // Re-render Bible picker buttons with correct language for passage labels
   if (typeof bUpdatePickerBtn === 'function') {

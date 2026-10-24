@@ -553,6 +553,21 @@
 
     <div id="editor-area">
       <div id="tzone" style="position:relative">
+        <aside id="phrasing-navigator" class="is-expanded" aria-label="Passage Navigator" data-i18n-aria-label="navigator.label">
+          <button id="phrasing-navigator-toggle" type="button" onclick="togglePhrasingNavigator()" data-i18n-title="navigator.collapse" data-i18n-aria-label="navigator.collapse" title="Collapse Passage Navigator" aria-expanded="true">
+            <span aria-hidden="true">‹</span>
+          </button>
+          <div id="phrasing-navigator-expanded">
+            <label class="phrasing-navigator-go" for="phrasing-navigator-input">
+              <span data-i18n="navigator.go">Go to</span>
+              <input id="phrasing-navigator-input" type="search" autocomplete="off" spellcheck="false" data-i18n-ph="navigator.go.placeholder" placeholder="Verse, line, or row" oninput="updatePhrasingNavigatorSearch()" onkeydown="phrasingNavigatorKeydown(event)" aria-controls="phrasing-navigator-results" aria-autocomplete="list"/>
+            </label>
+            <div id="phrasing-navigator-results" role="listbox" hidden></div>
+            <div class="phrasing-navigator-heading" data-i18n="navigator.landmarks">Landmarks</div>
+          </div>
+          <nav id="phrasing-navigator-landmarks" aria-label="Passage landmarks" data-i18n-aria-label="navigator.landmarks"></nav>
+          <div id="phrasing-navigator-status" class="sr-only" aria-live="polite" aria-atomic="true"></div>
+        </aside>
         <div id="col-hdr">
           <div class="ch" id="ch-v" style="width:60px;min-width:60px"><span data-i18n="col.verse">Verse</span><div class="chrsz" onmousedown="startCR(event,'v')"></div></div>
           <div class="ch" id="ch-l" style="width:52px;min-width:52px" data-i18n="col.line">Line</div>

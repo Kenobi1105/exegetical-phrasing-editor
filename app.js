@@ -173,6 +173,17 @@ let STUDY_NOTEBOOK_MODAL_SCROLL={left:0,top:0};
 let STUDY_NOTE_DRAG=null;
 const STUDY_STAGES=['observation','question','cross-reference','insight','application'];
 
+/* ── Phrasing Passage Navigator ──────────────────────────────────────
+   This is deliberately a derived view of the live editor DOM and annotation
+   data. It never changes passage rows or project payloads. */
+const PHRASING_NAV_OPEN_KEY='exeg-phrasing-navigator-open';
+let PHRASING_NAV_OPEN=true;
+let PHRASING_NAV_FRAME=0;
+let PHRASING_NAV_ACTIVE_RID=null;
+let PHRASING_NAV_FOCUSED_RID=null;
+let PHRASING_NAV_LANDMARKS=[];
+let PHRASING_NAV_RESULT_INDEX=-1;
+
 /* ── Shared two-layer color palette (Highlight + Text Color + Line Color + Bracket Color) ──
    Layer 1 preset row differs by tool:
      - highlight / lineColor → 4 soft tones (original palette)
@@ -199,6 +210,8 @@ function chooseLang(lang,customLabel,cuvVersion){
   // project workspace.  In particular, do not let a Collection notebook
   // remain the active notebook for the new unsaved project.
   resetFreshSessionNotebookWorkspace();
+  PHRASING_NAV_ACTIVE_RID=null;
+  PHRASING_NAV_FOCUSED_RID=null;
   if(cuvVersion) window._cuvVersion=cuvVersion; else window._cuvVersion=null;
   SESS=lang; IS_RTL=lang==='hebrew'; IS_SINGLE=lang==='custom';
   _applySessionFontDefaults();
@@ -3599,6 +3612,162 @@ document.addEventListener('click', e=>{
    last seen verse number for ID purposes,
    without writing to the verse input.
 ════════════════════════════════════════ */
+function _navigatorText(key,fallback){return typeof t==='function'?t(key):fallback;}
+function _navigatorLabel(label,fallback){const value=String(label||'').replace(/\s+/g,' ').trim();return value||fallback;}
+function _navigatorRows(){return [...document.querySelectorAll('#rows-body .xrow')];}
+
+function _buildPhrasingNavigatorLandmarks(){
+  const sections=new Map(),dividers=new Map();
+  ANNOTATIONS.filter(ann=>ann.type==='section').forEach(ann=>{
+    const rid=String(ann.startRid||'');if(!rid)return;
+    const list=sections.get(rid)||[];
+    list.push({kind:'section',rid,label:_navigatorLabel(ann.label,_navigatorText('navigator.section','Section')),color:ann.color||'#534AB7'});
+    sections.set(rid,list);
+  });
+  ANNOTATIONS.filter(ann=>ann.type==='divider').forEach(ann=>{
+    const rid=String(ann.beforeRid||ann.afterRid||'');if(!rid)return;
+    const list=dividers.get(rid)||[];
+    list.push({kind:'divider',rid,label:_navigatorLabel(ann.label,_navigatorText('navigator.proposition','Proposition')),color:ann.color||'#C8A84B'});
+    dividers.set(rid,list);
+  });
+  const landmarks=[];
+  _navigatorRows().forEach((row,index)=>{
+    const rid=String(row.dataset.rid||'');
+    (sections.get(rid)||[]).forEach(item=>landmarks.push(item));
+    (dividers.get(rid)||[]).forEach(item=>landmarks.push(item));
+    const verse=(row.querySelector('.vin')?.value||'').trim();
+    const line=(row.querySelector('.lid')?.textContent||'').trim();
+    if(verse)landmarks.push({kind:'verse',rid,label:`${_navigatorText('navigator.verse','Verse')} ${verse}`,detail:line&&line!=='—'?line:'',index});
+    if(row.dataset.cid)landmarks.push({kind:'comment',rid,label:_navigatorText('navigator.comment','Comment'),detail:line&&line!=='—'?line:`${_navigatorText('navigator.row','Row')} ${index+1}`,index});
+  });
+  return landmarks;
+}
+
+function _phrasingNavigatorMarker(kind){return ({section:'§',divider:'¶',verse:'•',comment:'◌'})[kind]||'•';}
+function _phrasingNavigatorDescription(item){
+  const row=_navigatorRows().find(el=>String(el.dataset.rid)===String(item.rid));
+  const line=row?.querySelector('.lid')?.textContent?.trim();
+  const suffix=item.detail||((line&&line!=='—')?line:'');
+  return suffix?`${item.label} · ${suffix}`:item.label;
+}
+function _setPhrasingNavigatorExpanded(open,{persist=true}={}){
+  PHRASING_NAV_OPEN=!!open;
+  const zone=document.getElementById('tzone'),navigator=document.getElementById('phrasing-navigator'),toggle=document.getElementById('phrasing-navigator-toggle');
+  zone?.classList.toggle('navigator-expanded',PHRASING_NAV_OPEN);
+  navigator?.classList.toggle('is-expanded',PHRASING_NAV_OPEN);
+  toggle?.setAttribute('aria-expanded',String(PHRASING_NAV_OPEN));
+  if(toggle){
+    const key=PHRASING_NAV_OPEN?'navigator.collapse':'navigator.expand';
+    const label=_navigatorText(key,PHRASING_NAV_OPEN?'Collapse Passage Navigator':'Expand Passage Navigator');
+    toggle.title=label;toggle.setAttribute('aria-label',label);toggle.querySelector('span').textContent=PHRASING_NAV_OPEN?'‹':'›';
+  }
+  if(persist)try{localStorage.setItem(PHRASING_NAV_OPEN_KEY,PHRASING_NAV_OPEN?'1':'0');}catch(_){}
+}
+function togglePhrasingNavigator(){_setPhrasingNavigatorExpanded(!PHRASING_NAV_OPEN);}
+
+function renderPhrasingNavigator(){
+  const host=document.getElementById('phrasing-navigator-landmarks');if(!host)return;
+  PHRASING_NAV_LANDMARKS=_buildPhrasingNavigatorLandmarks();
+  host.replaceChildren();
+  const emptyLabel=_navigatorText('navigator.empty','No landmarks yet.');
+  if(!PHRASING_NAV_LANDMARKS.length){
+    const empty=document.createElement('p');empty.className='phrasing-navigator-empty';empty.textContent=emptyLabel;host.appendChild(empty);
+  }else PHRASING_NAV_LANDMARKS.forEach((item,index)=>{
+    const button=document.createElement('button');
+    button.type='button';button.className=`phrasing-navigator-item is-${item.kind}`;
+    button.dataset.navigatorRid=item.rid;button.dataset.navigatorIndex=String(index);
+    button.title=_phrasingNavigatorDescription(item);button.setAttribute('aria-label',button.title);
+    if(item.color)button.style.setProperty('--navigator-color',item.color);
+    const marker=document.createElement('span');marker.className='phrasing-navigator-marker';marker.setAttribute('aria-hidden','true');marker.textContent=_phrasingNavigatorMarker(item.kind);
+    const copy=document.createElement('span');copy.className='phrasing-navigator-copy';copy.dir='auto';
+    const label=document.createElement('span');label.className='phrasing-navigator-label';label.dir='auto';label.textContent=item.label;
+    const detail=document.createElement('small');detail.dir='auto';detail.textContent=item.detail||'';
+    copy.append(label,detail);button.append(marker,copy);
+    button.addEventListener('click',()=>phrasingNavigatorJumpTo(item.rid));host.appendChild(button);
+  });
+  _updatePhrasingNavigatorActive();
+  updatePhrasingNavigatorSearch();
+}
+function schedulePhrasingNavigator(){
+  if(PHRASING_NAV_FRAME)return;
+  PHRASING_NAV_FRAME=requestAnimationFrame(()=>{PHRASING_NAV_FRAME=0;renderPhrasingNavigator();});
+}
+function _updatePhrasingNavigatorActive(){
+  const scroll=document.getElementById('rows-scroll');if(!scroll)return;
+  const rows=_navigatorRows();if(!rows.length){PHRASING_NAV_ACTIVE_RID=null;return;}
+  const rect=scroll.getBoundingClientRect(),threshold=rect.top+42;
+  const current=rows.find(row=>row.getBoundingClientRect().bottom>=threshold)||rows[rows.length-1];
+  const rid=String(current.dataset.rid||'');
+  if(!rid)return;
+  const changed=rid!==PHRASING_NAV_ACTIVE_RID;PHRASING_NAV_ACTIVE_RID=rid;
+  document.querySelectorAll('.phrasing-navigator-item').forEach(button=>{
+    button.classList.toggle('is-current',button.dataset.navigatorRid===rid);
+    button.classList.toggle('is-focused',button.dataset.navigatorRid===PHRASING_NAV_FOCUSED_RID);
+  });
+  if(changed){
+    const item=PHRASING_NAV_LANDMARKS.find(entry=>entry.rid===rid);
+    const status=document.getElementById('phrasing-navigator-status');
+    if(status&&item)status.textContent=`${_navigatorText('navigator.current','Current location')}: ${_phrasingNavigatorDescription(item)}`;
+  }
+}
+function phrasingNavigatorJumpTo(rid){
+  const row=_navigatorRows().find(el=>String(el.dataset.rid)===String(rid));if(!row)return;
+  const scroll=document.getElementById('rows-scroll');
+  if(scroll){const sr=scroll.getBoundingClientRect(),rr=row.getBoundingClientRect();scroll.scrollBy({top:rr.top-sr.top-(sr.height*.25),behavior:'smooth'});}
+  const editor=row.querySelector(`#oc-${CSS.escape(String(rid))} .cedit`)||row.querySelector('.cedit');
+  if(editor){editor.focus({preventScroll:true});trackFocus(editor,rid);}
+  PHRASING_NAV_FOCUSED_RID=String(rid);_updatePhrasingNavigatorActive();
+}
+function updatePhrasingNavigatorSearch(){
+  const input=document.getElementById('phrasing-navigator-input'),results=document.getElementById('phrasing-navigator-results');if(!input||!results)return;
+  const query=input.value.trim().toLocaleLowerCase();results.replaceChildren();PHRASING_NAV_RESULT_INDEX=-1;
+  if(!query){results.hidden=true;return;}
+  const rows=_navigatorRows();
+  const matches=PHRASING_NAV_LANDMARKS.filter(item=>{
+    const row=rows.find(el=>String(el.dataset.rid)===String(item.rid));
+    const line=row?.querySelector('.lid')?.textContent||'';
+    const verse=row?.querySelector('.vin')?.value||'';
+    const rowNumber=String(rows.indexOf(row)+1);
+    return `${item.label} ${item.detail||''} ${line} ${verse} ${rowNumber}`.toLocaleLowerCase().includes(query);
+  });
+  // Landmarks are useful for scanning, but Go to must also reach ordinary
+  // rows: a user can type any line ID (for example, 18b) or row number.
+  const matchedRows=new Set(matches.map(item=>String(item.rid)));
+  rows.forEach((row,index)=>{
+    const rid=String(row.dataset.rid||'');if(!rid||matchedRows.has(rid))return;
+    const line=(row.querySelector('.lid')?.textContent||'').trim();
+    const verse=(row.querySelector('.vin')?.value||'').trim();
+    const rowNumber=String(index+1);
+    if(!`${line} ${verse} ${rowNumber}`.toLocaleLowerCase().includes(query))return;
+    matches.push({kind:'row',rid,label:_navigatorText('navigator.row','Row')+' '+rowNumber,detail:[line,verse&&`${_navigatorText('navigator.verse','Verse')} ${verse}`].filter(Boolean).join(' · ')});
+  });
+  matches.splice(8);
+  if(!matches.length){const empty=document.createElement('p');empty.textContent=_navigatorText('navigator.no-results','No matching landmark.');results.appendChild(empty);results.hidden=false;return;}
+  matches.forEach((item,index)=>{
+    const button=document.createElement('button');button.type='button';button.role='option';button.dataset.navigatorResult=String(index);button.textContent=_phrasingNavigatorDescription(item);button.addEventListener('click',()=>{input.value='';phrasingNavigatorJumpTo(item.rid);updatePhrasingNavigatorSearch();});results.appendChild(button);
+  });
+  results.hidden=false;
+}
+function phrasingNavigatorKeydown(event){
+  const results=[...document.querySelectorAll('#phrasing-navigator-results button[data-navigator-result]')];
+  if(event.key==='Escape'){event.preventDefault();event.currentTarget.value='';updatePhrasingNavigatorSearch();return;}
+  if(event.key==='ArrowDown'||event.key==='ArrowUp'){
+    if(!results.length)return;event.preventDefault();
+    PHRASING_NAV_RESULT_INDEX=(PHRASING_NAV_RESULT_INDEX+(event.key==='ArrowDown'?1:-1)+results.length)%results.length;
+    results.forEach((button,index)=>button.classList.toggle('is-active',index===PHRASING_NAV_RESULT_INDEX));results[PHRASING_NAV_RESULT_INDEX].scrollIntoView({block:'nearest'});return;
+  }
+  if(event.key==='Enter'){
+    const target=results[PHRASING_NAV_RESULT_INDEX>=0?PHRASING_NAV_RESULT_INDEX:0];
+    if(target){event.preventDefault();target.click();}
+  }
+}
+function initPhrasingNavigator(){
+  try{PHRASING_NAV_OPEN=localStorage.getItem(PHRASING_NAV_OPEN_KEY)!=='0';}catch(_){}
+  _setPhrasingNavigatorExpanded(PHRASING_NAV_OPEN,{persist:false});
+  document.getElementById('rows-scroll')?.addEventListener('scroll',_updatePhrasingNavigatorActive,{passive:true});
+  renderPhrasingNavigator();
+}
+
 /* Alternating row shading, computed here rather than via CSS :nth-child,
    because Proposition Dividers are inserted as direct DOM siblings of
    rows (row.before(el) in renderDividers) — a positional CSS selector
@@ -3661,6 +3830,7 @@ function recomputeIds(){
   });
   _syncCommentList();
   refreshDiagramIfActive();
+  schedulePhrasingNavigator();
 }
 
 /* ════════════════════════════════════════
@@ -3669,6 +3839,8 @@ function recomputeIds(){
 function trackFocus(el,rid){
   activeEl=el;
   lastFocusedRowEl=document.querySelector(`.xrow[data-rid="${rid}"]`);
+  PHRASING_NAV_FOCUSED_RID=String(rid);
+  _updatePhrasingNavigatorActive();
 }
 function onVerseKey(e,rid){
   if(e.key==='Enter'){e.preventDefault();focusOrig(rid);}
@@ -4979,6 +5151,7 @@ function _syncCommentList(){
       return Number(a.dataset.cid)-Number(b.dataset.cid);
     })
     .forEach(card=>list.appendChild(card));
+  schedulePhrasingNavigator();
 }
 
 function _revealComment(cid,{focus=true}={}){
@@ -5018,6 +5191,7 @@ function _createCommentForRow(rid){
   _dcmtSyncBadge(rid);
   _revealComment(cid);
   autoSave();
+  schedulePhrasingNavigator();
 }
 
 function toggleCmt(_btn,rid){ _createCommentForRow(rid); }
@@ -5106,7 +5280,7 @@ function closeCmt(cid){
   if(row){row.classList.remove('has-cmt');delete row.dataset.cid;const btn=row.querySelector('.cmtbtn');if(btn)btn.classList.remove('on');}
   rowPush({type:'cmt-remove',cid,rid,html,lid});
   _dcmtSyncBadge(rid);
-  card.remove();_syncCommentList();autoSave();
+  card.remove();_syncCommentList();autoSave();schedulePhrasingNavigator();
   if(typeof syncWorkspaceChrome==='function') syncWorkspaceChrome();
 }
 
@@ -6718,6 +6892,8 @@ function _stripBgFromHTML(html){
 
 function loadData(data){
   document.getElementById('rows-body').innerHTML='';
+  PHRASING_NAV_ACTIVE_RID=null;
+  PHRASING_NAV_FOCUSED_RID=null;
   document.querySelectorAll('.ccard').forEach(c=>c.remove());
   window.studyNotebookBibleSelection=null;
   RC=data.RC||0;CC=data.CC||0;CNX=data.CNX||0;LBL=data.LBL||0;
@@ -10910,6 +11086,7 @@ function renderDividers(){
     label.addEventListener('input',()=>{
       ann.label=label.textContent.trim();
       autoSave();
+      schedulePhrasingNavigator();
     });
     label.addEventListener('focus',()=>{ _annLabelFocusSnap(ann.id,label); });
     label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); _annLabelBlurSnap(ann.id,ann); autoSave(); });
@@ -10930,6 +11107,7 @@ function renderDividers(){
       ann.color=swatch.value;
       el.style.setProperty('--div-color', ann.color);
       autoSave();
+      schedulePhrasingNavigator();
       rowPush({type:'ann-edit', annId:ann.id, prop:'color', oldVal, newVal:ann.color});
     });
 
@@ -10938,6 +11116,7 @@ function renderDividers(){
     row.before(el);  // Proposition divider appears ABOVE its row
   });
   _applyRowShading();
+  schedulePhrasingNavigator();
 }
 
 function deleteDivider(id){
@@ -10962,7 +11141,7 @@ function renderSectionStrips(){
   }
   layer.innerHTML='';
   const sections=ANNOTATIONS.filter(a=>a.type==='section');
-  if(!sections.length) return;
+  if(!sections.length){schedulePhrasingNavigator();return;}
 
   const rows=_realRows();
   const ridToRow={};
@@ -11006,6 +11185,7 @@ function renderSectionStrips(){
       if(EDITOR_VIEW==='diagram') renderDiagram();
       if(!document.getElementById('structure-panel')?.classList.contains('pane-hidden'))renderStructurePanel();
       autoSave();
+      schedulePhrasingNavigator();
       rowPush({type:'ann-edit', annId:ann.id, prop:'color', oldVal, newVal:ann.color});
     });
 
@@ -11015,7 +11195,7 @@ function renderSectionStrips(){
     label.spellcheck=false;
     label.setAttribute('data-ph', typeof t==='function'?t('ann.section.ph'):'Section…');
     label.textContent=ann.label||'';
-    label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); });
+    label.addEventListener('input',()=>{ ann.label=label.textContent.trim(); autoSave(); schedulePhrasingNavigator(); });
     label.addEventListener('focus',()=>{ _annLabelFocusSnap(ann.id,label); });
     label.addEventListener('blur',()=>{ ann.label=label.textContent.trim(); _annLabelBlurSnap(ann.id,ann); autoSave(); if(!document.getElementById('structure-panel')?.classList.contains('pane-hidden'))renderStructurePanel(); });
 
@@ -11032,6 +11212,7 @@ function renderSectionStrips(){
     strip.append(topHandle, swatch, del, label, botHandle);
     layer.appendChild(strip);
   });
+  schedulePhrasingNavigator();
 }
 
 /* Drag either end of a section's range to a different row — same
@@ -12246,6 +12427,7 @@ document.addEventListener('DOMContentLoaded',async()=>{
   // retired or custom palette becomes the default Light appearance.
   setThemeMode(_currentThemeId());
   initWorkspaceChrome();
+  initPhrasingNavigator();
   // Runs once, blocking, before anything below touches project data (in
   // particular renderS1Recent() further down) — see projMigrateToIdbOnce
   // for why this is safe to await here (idempotent, resumable, leaves
